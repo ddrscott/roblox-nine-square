@@ -78,6 +78,9 @@ local hrp: BasePart? = nil
 local humanoid: Humanoid? = nil
 local usedAirJump = false       -- one extra air-jump per airtime
 local dashUntil = 0             -- while > now, the dash burst is being held
+local dashHorizVel: Vector3? = nil  -- the dash's horizontal velocity (X/Z, Y=0); carried through a jump
+                                    -- arc (re-asserted each airborne frame to beat air control) and
+                                    -- released on landing so normal ground control resumes.
 
 -- keep the local avatar upright through dash bursts and flip landings: the sharp velocity changes
 -- here (and finishing a flip mid-rotation) otherwise stumble the Humanoid into its trip/ragdoll states.
@@ -93,12 +96,15 @@ local function bindCharacter(char: Model)
 	disableTripStates(humanoid)
 	usedAirJump = false
 	dashUntil = 0
-	-- reset the extra jump whenever we touch ground
+	dashHorizVel = nil
+	-- reset the extra jump AND release carried dash momentum whenever we touch ground, so normal
+	-- ground walking resumes (no infinite slide).
 	humanoid.StateChanged:Connect(function(_, newState)
 		if newState == Enum.HumanoidStateType.Landed
 			or newState == Enum.HumanoidStateType.Running
 			or newState == Enum.HumanoidStateType.RunningNoPhysics then
 			usedAirJump = false
+			dashHorizVel = nil
 		end
 	end)
 end
@@ -138,6 +144,9 @@ local function dash(screenDir: Vector3)
 	local cur = hrp.AssemblyLinearVelocity
 	hrp.AssemblyLinearVelocity = Vector3.new(dir.X * G.dashSpeed, cur.Y, dir.Z * G.dashSpeed)
 	dashUntil = os.clock() + G.dashDuration
+	-- remember the dash's HORIZONTAL velocity; if we go airborne (jump mid-dash), the Heartbeat
+	-- maintainer re-asserts this each frame through the jump arc so the dash momentum carries.
+	dashHorizVel = Vector3.new(dir.X * G.dashSpeed, 0, dir.Z * G.dashSpeed)
 end
 
 -- ---------------------------------------------------------------------------------------------------
@@ -187,8 +196,14 @@ local function flipJump()
 	local horiz = Vector3.new(fwd.X, 0, fwd.Z)
 	horiz = (horiz.Magnitude > 1e-3) and horiz.Unit or Vector3.zero
 	local cur = hrp.AssemblyLinearVelocity
-	hrp.AssemblyLinearVelocity =
-		Vector3.new(cur.X + horiz.X * G.flipForwardBoost, G.flipUpVelocity, cur.Z + horiz.Z * G.flipForwardBoost)
+	local newX = cur.X + horiz.X * G.flipForwardBoost
+	local newZ = cur.Z + horiz.Z * G.flipForwardBoost
+	hrp.AssemblyLinearVelocity = Vector3.new(newX, G.flipUpVelocity, newZ)
+	-- if we're carrying dash momentum, fold the flip's forward boost into it so the maintainer keeps
+	-- the composed horizontal (dash -> jump -> flip preserves + adds to the dash horizontal).
+	if dashHorizVel then
+		dashHorizVel = Vector3.new(newX, 0, newZ)
+	end
 	flipSpin()
 end
 
@@ -233,6 +248,19 @@ RunService.Heartbeat:Connect(function(dt)
 		if h.Magnitude > 1e-3 then
 			local dir = h.Unit
 			hrp.AssemblyLinearVelocity = Vector3.new(dir.X * G.dashSpeed, v.Y, dir.Z * G.dashSpeed)
+		end
+	elseif hrp and dashHorizVel then
+		if isAirborne() then
+			-- the dash burst window has ended but we're still airborne carrying its momentum: pin the
+			-- dash's HORIZONTAL each frame to beat Roblox air control, leaving Y to the jump/flip + gravity.
+			-- Released on landing (StateChanged) so normal ground walking resumes.
+			local v = hrp.AssemblyLinearVelocity
+			local hv = dashHorizVel :: Vector3
+			hrp.AssemblyLinearVelocity = Vector3.new(hv.X, v.Y, hv.Z)
+		else
+			-- dash ended while grounded (a plain ground dash, never jumped): drop the carry so a LATER
+			-- unrelated jump doesn't inherit stale dash momentum.
+			dashHorizVel = nil
 		end
 	end
 	if stamina < G.staminaMax then
