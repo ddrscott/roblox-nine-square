@@ -86,6 +86,30 @@ print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotat
 -- untouched. Constructed here because it needs the live `rotation` + `bc`.
 local bots = BotController.new(rotation, bc)
 
+-- Last-saved-square pipe highlight (visual). A "save" = a (non-serve) contact that knocks the ball OUT
+-- of the hitter's square -- it counts EVEN if the ball then goes out of bounds, but NOT the King's serve
+-- and NOT a self-fault (the ball returns to the same square). On each save we light up that square's
+-- overhead frame pipes (MatchService.highlightSavedCell) and it persists until the next save.
+local lastSavedCell: string? = nil
+local function creditSave(cell: string?)
+	if not cell then return end
+	lastSavedCell = cell
+	MatchService.highlightSavedCell(cell)
+	print("[NineSquare] SAVE -> " .. cell .. " (last-saved pipes highlighted)")
+end
+-- Bot volley: a successful bot return always aims the ball out of its square -> a save for that cell.
+bots.onVolley = function(cell)
+	creditSave(cell)
+end
+-- Human volley: a player contact that ISN'T the King's jump-serve and clears the ball out of the struck
+-- square (predicted land cell differs from struck, including OOB where targetCell is nil) -> a save.
+bc.onPlayerHit = function(struckCell, targetCell, wasServe)
+	if wasServe then return end                 -- the King's serve is not a save
+	if not struckCell then return end
+	if targetCell == struckCell then return end -- self-fault: ball returns to the same square -> no save
+	creditSave(struckCell)
+end
+
 -- M3 step 4 -- the dethrone moment: when the King (rank 1) faults, the rank-2 occupant takes the
 -- throne. Make it unmistakable: flash the King square (C), play a distinct chime, and log who's King.
 -- (Full banner/VFX is M6; this is the M3-legibility stub.)

@@ -77,6 +77,21 @@ function MatchService.buildArena(origin: Vector3)
 		end
 	end
 
+	-- SaveHighlight overlay: the overhead Frame beams are CONTINUOUS lines (not per-cell), so to light up
+	-- only the LAST-SAVED square's pipes we keep a SEPARATE 4-segment neon outline that we reposition over
+	-- the saved cell's border at frameHeight. Built hidden (Transparency=1); highlightSavedCell shows it.
+	-- KEPT OUT of NineSquare.Frame + CanCollide=false on purpose: BallController:_surfaces() collides the
+	-- ball against every BasePart under NineSquare.Frame, so this overlay must NOT live there (ball feel
+	-- stays unchanged). 4 segments named N/S (E-W edges) and E/W (N-S edges) so highlightSavedCell can move them.
+	local hi = Instance.new("Folder"); hi.Name = "SaveHighlight"; hi.Parent = root
+	for _, seg in ipairs({ "N", "S", "E", "W" }) do
+		local b = Instance.new("Part")
+		b.Anchored = true; b.CanCollide = false; b.CastShadow = false
+		b.Color = G.saveHighlightColor; b.Material = Enum.Material.Neon
+		b.Transparency = 1                                   -- hidden until a save lights it
+		b.Name = "Seg_" .. seg; b.Parent = hi
+	end
+
 	-- The default Baseplate's top sits at y=0, coplanar with the gym floor -> z-fighting + a gray
 	-- 2048-stud plane poking past the court. Drop it far below (out of view); the enclosed gym is
 	-- the real floor. Done here (buildArena runs every Play) so it self-heals on a fresh place.
@@ -166,6 +181,35 @@ function MatchService.flashCell(cell: string?, duration: number?)
 		-- Only the most recent flash for this cell may hide it (a later re-assert wins).
 		if f and f.Parent and flashGen[cell] == gen then f.Transparency = 1 end
 	end)
+end
+
+-- Light up the overhead frame pipes of the LAST-SAVED square: reposition the 4 SaveHighlight edge
+-- segments to outline `cell`'s border at frameHeight and make them visible. Persists until the next
+-- call moves it to a new save. Visual only -- the overlay is non-colliding and out of _surfaces.
+function MatchService.highlightSavedCell(cell: string?)
+	if not cell then return end
+	local ns = workspace:FindFirstChild("NineSquare")
+	local hi = ns and ns:FindFirstChild("SaveHighlight")
+	if not hi then return end
+	local center = G.cellCenter(cell)
+	local y = G.frameHeight + G.saveHighlightYOffset
+	local half = G.squareSize / 2
+	local th = G.saveHighlightThickness
+	-- the cell's full edge length, slightly overlapped at the corners so the outline reads as a closed box
+	local len = G.squareSize + th
+	-- N/S = the two E-W edges (run along X, offset on Z); E/W = the two N-S edges (run along Z, offset on X)
+	local segs = {
+		N = { size = Vector3.new(len, th, th), pos = Vector3.new(center.X, y, center.Z - half) },
+		S = { size = Vector3.new(len, th, th), pos = Vector3.new(center.X, y, center.Z + half) },
+		E = { size = Vector3.new(th, th, len), pos = Vector3.new(center.X + half, y, center.Z) },
+		W = { size = Vector3.new(th, th, len), pos = Vector3.new(center.X - half, y, center.Z) },
+	}
+	for name, s in pairs(segs) do
+		local b = hi:FindFirstChild("Seg_" .. name)
+		if b and b:IsA("BasePart") then
+			b.Size = s.size; b.Position = s.pos; b.Color = G.saveHighlightColor; b.Transparency = 0
+		end
+	end
 end
 
 -- Outer square a player currently stands under, or nil.

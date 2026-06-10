@@ -146,6 +146,15 @@ GridConfig.botMissChance = 0.18      -- chance a bot fails to return the ball (-
                                      --   ride a clean rally upward and realistically climb to King.
 GridConfig.botContactBand = 3        -- studs around frameHeight that count as the bot's contact window (descending)
 
+-- Save highlight (last-saved square). A "save" = a (non-serve, non-self-fault) contact that clears the
+-- ball OUT of the hitter's square. On each save the overhead frame pipes of the struck square light up
+-- and stay lit until the next save. The continuous Frame beams can't be lit per-cell, so MatchService
+-- builds a separate non-colliding `SaveHighlight` overlay -- 4 glowing neon edge-segments outlining the
+-- saved cell's border at frameHeight -- and repositions/shows it on each save. Visual only.
+GridConfig.saveHighlightColor = Color3.fromRGB(70, 255, 140)  -- a vivid green, distinct from the dark frame
+GridConfig.saveHighlightThickness = 0.9   -- edge-segment cross-section (a touch fatter than beamThickness so it reads as a glow over the pipe)
+GridConfig.saveHighlightYOffset = 0.15    -- studs above frameHeight so the overlay sits just proud of the frame beams (no z-fight)
+
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]
 	assert(cell, "no cell for rank " .. tostring(rank))

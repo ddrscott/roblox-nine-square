@@ -31,6 +31,10 @@ function BotController.new(rotation, bc)
 	-- Debounce: the startT of the Flight arc we last resolved a bot touch on. A new bc:launch resets
 	-- bc.startT, so a fresh descent always differs -> exactly one bot touch per descent.
 	self._lastResolvedStartT = nil
+	-- Optional save hook (visual): fired with the bot's struck cell when it VOLLEYS a ball out of its
+	-- square (a successful bot volley always aims out -> always a save). NineSquareServer wires it to the
+	-- last-saved-square pipe highlight. Notification only -- the volley/physics are unchanged.
+	self.onVolley = nil :: ((cell: string) -> ())?
 	return self
 end
 
@@ -94,6 +98,9 @@ function BotController.resolve(self): boolean
 	-- Juice: LEAP the bot's body up to the live contact point so it visibly meets + strikes the ball
 	-- (apex synced to this bc:launch). Cosmetic only -- CanCollide stays false; the hit is server-resolved.
 	self._rotation:hopOccupant(occ.id, ballPos)
+	-- A successful volley clears the ball OUT of `cell` (outer->C / King->outer, always a different square)
+	-- -> a SAVE for this bot's square. Notify the save-highlight (visual only).
+	if self.onVolley then self.onVolley(cell) end
 	print(("[Bot] %s VOLLEY %s -> %s"):format(occ.id, cell, aimCell))
 	return true
 end

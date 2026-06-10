@@ -22,6 +22,11 @@
 --                                   classifies legal / self-fault / out-of-bounds and plays feedback.
 --   .onRest: (() -> ())?            fires ONCE, when the ball has bounced out its energy and stopped.
 --                                   The game decides if/when to re-serve.
+--   .onPlayerHit: ((struckCell: string?, targetCell: string?, wasServe: boolean) -> ())?
+--                                   fires after a PLAYER contact launches the ball (NOT a bot/auto volley,
+--                                   which goes through :launch directly). `wasServe` is true when the hit
+--                                   put a parked Live ball into play (the human King's jump-serve) vs a
+--                                   mid-flight return. Notification only -- physics is unchanged.
 --
 -- Motion: a true projectile arc under gravity that reflects off EVERY solid surface in the arena --
 -- the overhead frame pipes, the gym walls, ceiling, backboards/rims, and the floor. Floor contacts
@@ -56,6 +61,7 @@ function BallController.new()
 	self.targetCell = "C"               -- predicted / current landing square (for the client highlight)
 	self.onLand = nil :: ((string?, string?) -> ())?   -- game wires these; see the contract above
 	self.onRest = nil :: (() -> ())?
+	self.onPlayerHit = nil :: ((string?, string?, boolean) -> ())?
 	ball.Position = self.restPoint
 	return self
 end
@@ -243,9 +249,11 @@ function BallController:step(dt: number, playerColliders: { PlayerCollider }?)
 		local parked = (self.phase == "Live") and self.restPoint or self.ball.Position
 		local h = self:_collidePlayers(parked, parked, Vector3.zero, dt, playerColliders)
 		if h then
+			local wasServe = (self.phase == "Live")   -- a Live->Flight hit is the human King's jump-serve
 			self.ball.Position = h.pos
 			self.phase = (self.phase == "Live") and "Flight" or "Settling"
 			self:launch(h.pos, h.vel)
+			if self.onPlayerHit then self.onPlayerHit(self.struckCell, self.targetCell, wasServe) end
 			return
 		end
 		if self.phase == "Live" then self.ball.Position = self.restPoint end
@@ -265,6 +273,7 @@ function BallController:step(dt: number, playerColliders: { PlayerCollider }?)
 	if hp then
 		self.ball.Position = hp.pos
 		self:launch(hp.pos, hp.vel)   -- Flight stays Flight, Settling stays Settling (re-predicts land cell in Flight)
+		if self.onPlayerHit then self.onPlayerHit(self.struckCell, self.targetCell, false) end
 		return
 	end
 
