@@ -8,13 +8,13 @@ GridConfig.squareSize = 14          -- one square edge
 GridConfig.floorThickness = 1
 GridConfig.frameHeight = 11         -- contact plane = measured jump reach (apex ~11.2; std-jump 7.2 + hit-zone ~4)
 GridConfig.beamThickness = 0.5
-GridConfig.ballRadius = 1
+GridConfig.ballRadius = 2           -- ball sphere radius (4-stud diameter)
 GridConfig.apexHeight = 16          -- extra bulge above the serve chord midpoint
 GridConfig.serveTravel = 1.1        -- seconds, center -> target square arrival
 GridConfig.descentWindow = 0.8      -- seconds before arrival that the ring actively shrinks
 GridConfig.hitZoneRadius = 2.5      -- avatar hit-zone sphere radius
 GridConfig.hitZoneYOffset = 2.0     -- hit-zone center above HumanoidRootPart (hands/head)
-GridConfig.contactDwell = 0.15      -- (reserved for M2 tier scoring; steering read at contact)
+GridConfig.contactDwell = 0.25      -- hover/contact window at the target before a whiff
 GridConfig.steerConeDeg = 15        -- max horizontal steer nudge
 GridConfig.lobTravel = 1.0          -- seconds for a volley lob arc
 GridConfig.lobDistance = 14         -- horizontal studs a centered volley travels

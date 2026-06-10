@@ -23,7 +23,8 @@ function BallController.new()
 	ball.Parent = workspace:WaitForChild("NineSquare")
 	self.ball = ball
 	self.arc = nil :: Arc?
-	self.phase = "Idle"      -- Idle | InFlight | Descending | Resolved
+	self.phase = "Idle"      -- Idle | InFlight | Descending | Hover | Resolved
+	self.hoverStart = 0
 	self.onArrive = nil :: ((Arc) -> ())?
 	ball.Position = G.cellFramePoint("C")
 	return self
@@ -79,7 +80,8 @@ function BallController:reset()
 	BallSync:FireAllClients({ kind = "idle" })
 end
 
--- Called every Heartbeat. Moves the ball; fires onArrive once when an arc completes.
+-- Called every Heartbeat. Moves the ball; fires onArrive once when an arc resolves.
+-- A serve hovers at its target for contactDwell seconds (fair contact window) before whiffing.
 function BallController:step()
 	local a = self.arc
 	if not a then return end
@@ -89,9 +91,17 @@ function BallController:step()
 	if self.phase == "InFlight" and (now - a.startT) >= (a.travel - G.descentWindow) then
 		self.phase = "Descending"
 	end
-	if u >= 1 and self.phase ~= "Resolved" then
-		self.phase = "Resolved"
-		if self.onArrive then self.onArrive(a) end
+	if u >= 1 then
+		if a.kind == "serve" and self.phase ~= "Resolved" then
+			if self.phase ~= "Hover" then self.phase = "Hover"; self.hoverStart = now end
+			if (now - self.hoverStart) >= G.contactDwell then
+				self.phase = "Resolved"
+				if self.onArrive then self.onArrive(a) end
+			end
+		elseif a.kind ~= "serve" and self.phase ~= "Resolved" then
+			self.phase = "Resolved"
+			if self.onArrive then self.onArrive(a) end
+		end
 	end
 end
 
