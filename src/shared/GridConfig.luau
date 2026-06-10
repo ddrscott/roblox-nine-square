@@ -42,9 +42,9 @@ GridConfig.lobDistance = 14         -- (legacy)
 -- Movement skill moves (client-side; M1 reads replicated HRP velocity, so these velocities feed the
 -- velocity-proportional strike directly -- no strike-formula change). All tunable.
 GridConfig.doubleTapWindow = 0.25   -- max seconds between two taps to count as a double-tap (dash & flip)
-GridConfig.dashSpeed = 20           -- horizontal burst speed applied to the character during a dash (studs/s); ~1/4 of the original 80 for a short hop
+GridConfig.dashSpeed = 40           -- horizontal burst speed applied to the character during a dash (studs/s); 2x distance over dashDuration for a longer hop
 GridConfig.dashDuration = 0.18      -- how long the dash burst is held before control returns (s)
-GridConfig.flipUpVelocity = 75      -- upward velocity set on the double-jump flip (studs/s) -> reach higher + spike
+GridConfig.flipUpVelocity = 38      -- upward velocity set on the double-jump flip (studs/s); halved from 75 for a lower flip arc
 GridConfig.flipForwardBoost = 26    -- horizontal velocity added in the facing direction on the flip (studs/s)
 GridConfig.flipSpinTime = 0.45      -- duration of the cosmetic forward-flip rotation (s)
 GridConfig.staminaMax = 100         -- energy pool ceiling

@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Tune movement: dash 2× distance (GridConfig.dashSpeed 20→40) + halve double-jump height (flipUpVelocity 75→~38)
+- [x] Tune movement: dash 2× distance (GridConfig.dashSpeed 20→40) + halve double-jump height (flipUpVelocity 75→~38)
 - [x] Reset players to the serve spot when the ball re-serves — see [reset-players-on-serve.md](reset-players-on-serve.md)
 - [x] Add legs at the 4 grid corners (frame stands on something) — see [frame-legs.md](frame-legs.md)
 - [x] Rework player contact as a proper moving-sphere collision (fix clip/pull-down bug) — see [player-collision-rework.md](player-collision-rework.md)
