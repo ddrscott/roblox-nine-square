@@ -86,27 +86,30 @@ print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotat
 -- untouched. Constructed here because it needs the live `rotation` + `bc`.
 local bots = BotController.new(rotation, bc)
 
--- Last-saved-square pipe highlight (visual). A "save" = a (non-serve) contact that knocks the ball OUT
--- of the hitter's square -- it counts EVEN if the ball then goes out of bounds, but NOT the King's serve
--- and NOT a self-fault (the ball returns to the same square). On each save we light up that square's
--- overhead frame pipes (MatchService.highlightSavedCell) and it persists until the next save.
+-- Last-saved-square pipe highlight (visual). A "save" = the ball LEGALLY clears the hitter's square OVER a
+-- pipe (ownership transfers off the struck square). This is the SAME over-pipe signal the fault path uses,
+-- so the highlight and the fault logic agree: a low deflect that slides UNDER a pipe is NOT a save (it never
+-- clears), and the King's first serve out of C still counts (it clears C over a pipe). On each save we light
+-- up the cleared square's overhead frame pipes (MatchService.highlightSavedCell); it persists until the next.
 local lastSavedCell: string? = nil
 local function creditSave(cell: string?)
 	if not cell then return end
 	lastSavedCell = cell
 	MatchService.highlightSavedCell(cell)
-	print("[NineSquare] SAVE -> " .. cell .. " (last-saved pipes highlighted)")
+	print("[NineSquare] SAVE -> " .. cell .. " (cleared over a pipe; last-saved pipes highlighted)")
 end
--- Bot volley: a successful bot return always aims the ball out of its square -> a save for that cell.
-bots.onVolley = function(cell)
-	creditSave(cell)
-end
--- Human volley: a player contact that ISN'T the King's jump-serve and clears the ball out of the struck
--- square (predicted land cell differs from struck, including OOB where targetCell is nil) -> a save.
-bc.onPlayerHit = function(struckCell, targetCell, wasServe)
-	if wasServe then return end                 -- the King's serve is not a save
-	if not struckCell then return end
-	if targetCell == struckCell then return end -- self-fault: ball returns to the same square -> no save
+-- The King's SERVE technically clears C over a pipe, but (per the save-highlight task) a serve is not a
+-- "save" -- a save is a RETURN. This guard consumes the serve's own clear so only subsequent volleys light
+-- the pipes. Set true wherever a rally is served (human jump-serve / dummy auto-serve), cleared on its clear.
+local serveClearPending = false
+-- The authoritative save: the ball cleared the hitter's square over a pipe (a human or bot RETURN). onClear
+-- fires once, when ownership first leaves the struck square, so a low deflect never credits a save. The
+-- King's serve clear is swallowed by serveClearPending so it isn't mistaken for a save.
+bc.onClear = function(struckCell, _ownerCell)
+	if serveClearPending then
+		serveClearPending = false   -- this clear is the serve itself, not a return -> not a save
+		return
+	end
 	creditSave(struckCell)
 end
 
@@ -167,6 +170,7 @@ end
 -- random outer square. Idempotent-ish: we only serve when the ball is idle (Rest/Live), not mid-rally.
 local function serveNextRally()
 	rallyArmed = false
+	serveClearPending = true   -- the upcoming serve's over-pipe clear is the serve itself, not a save -> swallow it
 	if rotation:isHumanKing() then
 		-- Human serves physically: park the ball hovering at C. rallyArmed flips true when they strike it.
 		bc:resetToServe()
@@ -186,29 +190,35 @@ local function serveNextRally()
 	end
 end
 
--- First floor contact of a rally: attribute the fault per PRD §6 and FLASH the OUT square red so everyone
--- immediately sees who's out -- but DO NOT rotate yet. The grid shift + re-serve are DEFERRED to onRest
--- (when the ball stops bouncing), which feels far less abrupt than snapping players to new squares while
--- the ball is still in the air. We only record the rank to rotate here. struck = square the ball was last
--- struck/served from; landed = square the ball first hit the floor in (nil = out of bounds).
-bc.onLand = function(landed, struck)
+-- First floor contact of a rally: attribute the fault per PRD §6 (corrected for over-the-pipe ownership)
+-- and FLASH the OUT square red so everyone immediately sees who's out -- but DO NOT rotate yet. The grid
+-- shift + re-serve are DEFERRED to onRest (when the ball stops bouncing), which feels far less abrupt than
+-- snapping players to new squares while the ball is still in the air. We only record the rank to rotate
+-- here. struck = square the ball was last struck/served from; landed = square the ball first hit the floor
+-- in (nil = out of bounds); owner = the square the ball LEGALLY belongs to (it only transfers when the ball
+-- clears a pipe -- so a low deflect under a pipe into a neighbour keeps owner == struck and faults the
+-- HITTER, not the neighbour). We attribute by owner, NOT the raw landing XZ.
+bc.onLand = function(landed, struck, owner)
 	if not rallyArmed then return end          -- a stray landing outside an armed rally -> ignore
 	rallyArmed = false
 
-	-- Which square owns the fault (PRD §6)?
+	-- Which square owns the fault (PRD §6, corrected for over-the-pipe ownership)?
 	local faultCell: string?
 	if landed == nil then
-		-- Out of bounds: the hitter (occupant of the struck square) faulted.
+		-- Out of bounds: the hitter (occupant of the struck square) faulted. OOB is always on the hitter.
 		faultCell = struck
-		print("[NineSquare] FAULT (out-of-bounds) struck=" .. tostring(struck))
-	elseif landed == struck then
-		-- Self-square: the hitter failed to clear their own square.
+		print(("[NineSquare] FAULT (out-of-bounds) struck=%s owner=%s"):format(tostring(struck), tostring(owner)))
+	elseif owner == struck then
+		-- The ball never LEGALLY left the hitter's square: it either landed back in it, or was deflected LOW
+		-- into a neighbour WITHOUT clearing a pipe. Either way the hitter failed to clear -> hitter faults.
+		-- (Bug fix: the low-deflected neighbour `landed` is NOT knocked out.)
 		faultCell = struck
-		print("[NineSquare] FAULT (self-square) cell=" .. landed)
+		print(("[NineSquare] FAULT (never cleared over a pipe) struck=%s landed=%s owner=%s")
+			:format(tostring(struck), tostring(landed), tostring(owner)))
 	else
-		-- Floor fault: the occupant of the landing square failed to return it (a dummy square always lands here).
-		faultCell = landed
-		print("[NineSquare] FAULT (floor / unreturned) cell=" .. landed)
+		-- The ball legally cleared a pipe into `owner`'s square; its occupant failed to return it -> they fault.
+		faultCell = owner
+		print(("[NineSquare] FAULT (floor / unreturned) owner=%s landed=%s"):format(tostring(owner), tostring(landed)))
 	end
 
 	-- Flash the OUT square red and hold it through the land->rest settle (faultFlashDuration covers the

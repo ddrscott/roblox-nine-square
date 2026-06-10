@@ -136,6 +136,15 @@ GridConfig.serveArcApex = 6          -- extra studs the auto-serve arc peaks ABO
 -- window. Generous on purpose: better to hold the red a touch long than blank it mid-settle.
 GridConfig.faultFlashDuration = 2.5  -- seconds the OUT square holds red after a fault (covers land -> rest)
 
+-- Over-the-pipe ownership (fault attribution). A ball only LEGALLY enters a square by clearing the
+-- dividing pipe and dropping in. BallController tracks an `ownerCell` (the square the ball legally
+-- belongs to) and only transfers it on a cell-boundary crossing whose height is at/above this
+-- threshold (the ball cleared the pipe top). A crossing BELOW this (a low deflect that slid UNDER the
+-- pipe into a neighbour) does NOT transfer ownership -- the ball is still the hitter's responsibility,
+-- so the neighbour is not wrongly knocked out. ~= frameHeight + ballRadius: the ball's centre is above
+-- the pipe top (pipe top ~= frameHeight; clearing it means the centre rose a ball radius past it).
+GridConfig.pipeClearHeight = GridConfig.frameHeight + GridConfig.ballRadius  -- = 13 with current tunables
+
 -- Bot volley (M4 step 1). Each Heartbeat BotController intercepts a DESCENDING Flight ball over a bot
 -- square within `botContactBand` of frameHeight and either volleys it toward the aim target (outer->C /
 -- King->random outer) reusing the serve arc, or MISSES (prob botMissChance) -> floor fault -> rotation.

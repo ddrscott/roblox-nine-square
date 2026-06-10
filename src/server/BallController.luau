@@ -17,9 +17,15 @@
 --   .ball: Part                     the rendered ball (read-only)
 --   .phase: string                  "Live" | "Flight" | "Settling" | "Rest" (read-only)
 --   .struckCell / .targetCell       last struck square / predicted landing square (read-only)
---   .onLand: ((landedCell: string?, struckCell: string?) -> ())?
+--   .ownerCell                      the square the ball LEGALLY belongs to (read-only). Reset to struckCell
+--                                   on each launch; transfers to a new cell ONLY when the ball crosses a
+--                                   cell boundary ABOVE the pipe (centre Y >= G.pipeClearHeight). A low
+--                                   deflect that slides UNDER a pipe into a neighbour does NOT transfer it,
+--                                   so the fault path can keep the ball on the hitter (no wrong knock-out).
+--   .onLand: ((landedCell: string?, struckCell: string?, ownerCell: string?) -> ())?
 --                                   fires ONCE, on the first floor contact after a launch. The game
---                                   classifies legal / self-fault / out-of-bounds and plays feedback.
+--                                   classifies legal / self-fault / out-of-bounds (using ownerCell, NOT the
+--                                   raw landing XZ) and plays feedback.
 --   .onRest: (() -> ())?            fires ONCE, when the ball has bounced out its energy and stopped.
 --                                   The game decides if/when to re-serve.
 --   .onPlayerHit: ((struckCell: string?, targetCell: string?, wasServe: boolean) -> ())?
@@ -27,6 +33,12 @@
 --                                   which goes through :launch directly). `wasServe` is true when the hit
 --                                   put a parked Live ball into play (the human King's jump-serve) vs a
 --                                   mid-flight return. Notification only -- physics is unchanged.
+--   .onClear: ((struckCell: string?, ownerCell: string?) -> ())?
+--                                   fires ONCE per launch, the moment the ball LEGALLY clears its hitter's
+--                                   square over a pipe (ownerCell first transfers off struckCell). This is
+--                                   the authoritative "save" signal: a low deflect under a pipe never fires
+--                                   it (ownership doesn't transfer), so the save highlight agrees with the
+--                                   fault attribution. Notification only.
 --
 -- Motion: a true projectile arc under gravity that reflects off EVERY solid surface in the arena --
 -- the overhead frame pipes, the gym walls, ceiling, backboards/rims, and the floor. Floor contacts
@@ -59,9 +71,12 @@ function BallController.new()
 	self.startT = 0
 	self.struckCell = "C"               -- square the ball was last struck from
 	self.targetCell = "C"               -- predicted / current landing square (for the client highlight)
-	self.onLand = nil :: ((string?, string?) -> ())?   -- game wires these; see the contract above
+	self.ownerCell = "C"                -- square the ball legally belongs to (over-pipe entry); see contract
+	self._lastCell = "C"                -- the ball's XZ cell on the previous step (to detect boundary crossings)
+	self.onLand = nil :: ((string?, string?, string?) -> ())?   -- game wires these; see the contract above
 	self.onRest = nil :: (() -> ())?
 	self.onPlayerHit = nil :: ((string?, string?, boolean) -> ())?
+	self.onClear = nil :: ((string?, string?) -> ())?
 	ball.Position = self.restPoint
 	return self
 end
@@ -104,6 +119,11 @@ function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self.p0 = fromPoint; self.v0 = v0
 	self.startT = workspace:GetServerTimeNow()
 	self.struckCell = G.cellAtPosition(fromPoint)
+	-- A fresh strike resets ownership to the hitter's square: the ball is the hitter's responsibility until
+	-- it legally clears a pipe into another square. _lastCell seeds the boundary-crossing tracker at the
+	-- launch XZ so the first over-pipe crossing is detected cleanly.
+	self.ownerCell = self.struckCell
+	self._lastCell = self.struckCell
 	if self.phase == "Settling" or self.phase == "Rest" then
 		self.phase = "Settling"
 	else
@@ -287,12 +307,29 @@ function BallController:step(dt: number, playerColliders: { PlayerCollider }?)
 		return
 	end
 
+	-- Over-the-pipe ownership: detect a cell-boundary crossing this frame and transfer ownership ONLY if
+	-- the ball cleared the pipe (centre Y at/above G.pipeClearHeight) on the way over. A crossing BELOW
+	-- that height is an illegal low deflect under the pipe -> ownership stays with the previous square
+	-- (the hitter), so the fault path won't wrongly knock out the neighbour. We track every true XZ
+	-- transition (update _lastCell each time) but only move ownerCell on the high (legal) ones.
+	local nowCell = G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z))
+	if nowCell and nowCell ~= self._lastCell then
+		if pos.Y >= G.pipeClearHeight then
+			-- A legal over-pipe entry: the ball now belongs to this square. The FIRST such transfer off the
+			-- hitter's struck square is the authoritative "clear" (save) -- fire onClear once for it.
+			local firstClear = (self.ownerCell == self.struckCell) and (nowCell ~= self.struckCell)
+			self.ownerCell = nowCell
+			if firstClear and self.onClear then self.onClear(self.struckCell, self.ownerCell) end
+		end
+		self._lastCell = nowCell       -- record the transition either way (so each boundary counts once)
+	end
+
 	-- floor: a robust ground-plane test (the ball rests at y = ballRadius). The first floor contact of
 	-- a rally is the "landing"; afterwards it just bounces with restitution + ground friction til rest.
 	if pos.Y <= G.ballRadius then
 		if self.phase == "Flight" then
 			self.phase = "Settling"
-			if self.onLand then self.onLand(G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z)), self.struckCell) end
+			if self.onLand then self.onLand(G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z)), self.struckCell, self.ownerCell) end
 		end
 		local up = -vel.Y * G.floorRestitution
 		local horiz = Vector3.new(vel.X, 0, vel.Z) * G.floorFriction
