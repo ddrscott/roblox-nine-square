@@ -1,12 +1,10 @@
 --!strict
 -- ServerScriptService.NineSquare.BallController
 -- Owns the single anchored ball. The ball hovers at a rest point (Live) until a player gets under
--- it and strikes it. The strike imparts a radial-impulse velocity (server/HitResolver) and the ball
--- follows a TRUE projectile arc (Flight) under gravity, falling all the way through the target square
--- to the floor. You can intercept it mid-descent to volley on. On reaching the floor it resolves:
---   * a DIFFERENT in-bounds square -> a clean landing (rally ended), re-serve from center
---   * the SAME square it was struck from -> self-fault (didn't clear your square)
---   * outside the court -> out-of-bounds fault
+-- it and strikes it. The strike imparts a velocity (server/HitResolver) and the ball follows a TRUE
+-- projectile arc (Flight) under gravity, BOUNCING off the overhead frame pipes it hits, until it
+-- lands on the floor. On landing it resolves: different square = legal, same square = self-fault,
+-- outside the court = out-of-bounds fault.
 local RS = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 local G = require(RS.GridConfig)
@@ -14,6 +12,8 @@ local BallSync = RS.NineSquareRemotes.BallSync
 
 local BallController = {}
 BallController.__index = BallController
+
+local FRAME_RESTITUTION = 0.6   -- bounciness when the ball strikes a frame pipe
 
 function BallController.new()
 	local self = setmetatable({}, BallController)
@@ -57,28 +57,55 @@ function BallController:resetToServe()
 	self:hoverAt(G.cellFramePoint("C"))
 end
 
--- time for the projectile launched from p0 with v0 to fall to the floor (y = ballRadius)
-function BallController:_floorTime(): number
+-- predicted floor-landing square for the current p0/v0 (ignores future bounces)
+function BallController:_predictLandCell(): string?
 	local A, B, C = -0.5 * self.gravity, self.v0.Y, self.p0.Y - G.ballRadius
 	local disc = B*B - 4*A*C
-	if disc < 0 then return 0 end
-	return math.max((-B + math.sqrt(disc)) / (2*A), (-B - math.sqrt(disc)) / (2*A))
+	if disc < 0 then return nil end
+	local t = math.max((-B + math.sqrt(disc))/(2*A), (-B - math.sqrt(disc))/(2*A))
+	local land = self.p0 + self.v0 * t
+	return G.cellAtPosition(Vector3.new(land.X, 0, land.Z))
 end
 
--- Strike: launch from a contact point with an initial velocity (radial impulse from the hit).
+-- Strike: launch from a contact point with an initial velocity.
 function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self.p0 = fromPoint; self.v0 = v0
 	self.startT = workspace:GetServerTimeNow(); self.lastHitT = self.startT
 	self.phase = "Flight"
 	self.struckCell = G.cellAtPosition(fromPoint)
-	local land = fromPoint + v0 * self:_floorTime()
-	self.targetCell = G.cellAtPosition(Vector3.new(land.X, 0, land.Z))
+	self.targetCell = self:_predictLandCell()
 	self:resync()
 end
 
 -- A served/flying ball can be struck, after a short cooldown so one jump fires once.
 function BallController:isHittable(now: number): boolean
 	return (self.phase == "Live" or self.phase == "Flight") and (now - self.lastHitT) >= G.hitCooldown
+end
+
+-- Sphere-vs-frame-pipe test. If the ball penetrates a (axis-aligned) frame bar while moving into it,
+-- returns (true, correctedPos, reflectedVel); otherwise false.
+function BallController:_collideFrame(pos: Vector3, vel: Vector3)
+	local frame = self.ball.Parent and self.ball.Parent:FindFirstChild("Frame")
+	if not frame then return false end
+	local r = G.ballRadius
+	for _, beam in ipairs(frame:GetChildren()) do
+		if beam:IsA("BasePart") then
+			local c, h = beam.Position, beam.Size / 2
+			local closest = Vector3.new(
+				math.clamp(pos.X, c.X - h.X, c.X + h.X),
+				math.clamp(pos.Y, c.Y - h.Y, c.Y + h.Y),
+				math.clamp(pos.Z, c.Z - h.Z, c.Z + h.Z))
+			local delta = pos - closest
+			local dist = delta.Magnitude
+			if dist < r and dist > 1e-4 and vel:Dot(delta.Unit) < 0 then
+				local n = delta.Unit
+				local newVel = vel - (1 + FRAME_RESTITUTION) * vel:Dot(n) * n
+				local newPos = closest + n * (r + 0.05)
+				return true, newPos, newVel
+			end
+		end
+	end
+	return false
 end
 
 function BallController:_flash(cell: string?)
@@ -120,9 +147,20 @@ function BallController:step()
 		self.ball.Position = self.restPoint
 		return
 	elseif self.phase == "Flight" then
-		local t = workspace:GetServerTimeNow() - self.startT
+		local now = workspace:GetServerTimeNow()
+		local t = now - self.startT
 		local g = self.gravity
+		local vel = self.v0 + Vector3.new(0, -g * t, 0)
 		local pos = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
+		-- bounce off the overhead frame pipes
+		local hit, newPos, newVel = self:_collideFrame(pos, vel)
+		if hit then
+			self.p0 = newPos; self.v0 = newVel; self.startT = now
+			self.ball.Position = newPos
+			self.targetCell = self:_predictLandCell()
+			self:resync()
+			return
+		end
 		if pos.Y <= G.ballRadius then
 			pos = Vector3.new(pos.X, G.ballRadius, pos.Z)
 			self.ball.Position = pos
