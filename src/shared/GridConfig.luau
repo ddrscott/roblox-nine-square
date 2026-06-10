@@ -12,8 +12,10 @@ GridConfig.ballRadius = 2           -- ball sphere radius (4-stud diameter)
 GridConfig.apexHeight = 16          -- (legacy) extra bulge for the old lerp-arc serve
 GridConfig.serveTravel = 1.1        -- (legacy)
 GridConfig.descentWindow = 0.8      -- (legacy)
-GridConfig.hitZoneRadius = 2.5      -- avatar hit-zone sphere radius
-GridConfig.hitZoneYOffset = 2.0     -- hit-zone center above HumanoidRootPart (hands/head)
+GridConfig.hitZoneRadius = 1.6      -- avatar hit-zone sphere radius (upper-body sized; volley with head/shoulders/hands)
+GridConfig.hitZoneYOffset = 2.9     -- hit-zone center above HumanoidRootPart (raised to head/upper torso)
+                                    --   reach at std-jump apex = HRP_Y + yOffset + radius + ballRadius
+                                    --   = 7.2 + 2.9 + 1.6 + 2 = 13.7 >= frameHeight(11): frame plane stays hittable
 GridConfig.hitRestitution = 1.5     -- player-strike bounciness: outgoing speed along the contact normal
                                     --   ~ (1 + this) * the player's velocity toward the ball (sphere bounce)
 GridConfig.hitMinPop = 55           -- floor on that outgoing speed so a clean contact always stays in play
