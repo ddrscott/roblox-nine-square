@@ -70,7 +70,7 @@ GridConfig.camFollowNearLook = Vector3.new(0, 10, 0)
 -- Camera wall fade (occlusion): the Scriptable cam skips Roblox's built-in auto-transparency, so we fade
 -- the gym walls/ceiling ourselves when the camera eye crosses to their outside (would block/clip the view).
 -- Whitelisted occluders only (WallE/W/N/S, Ceiling); never the floor, grid, frame, ball, player, or Glass.
-GridConfig.camWallFadeTransparency = 0.92  -- target transparency for an obstructing wall/ceiling (near-invisible)
+GridConfig.camWallFadeTransparency = 1.0   -- target transparency for an obstructing wall/ceiling (fully transparent)
 GridConfig.camWallFadeSpeed = 10           -- lerp rate per second toward the target (higher = snappier, no pop)
 GridConfig.camWallFadeMargin = 6           -- studs of slack so a wall fades just BEFORE the eye reaches its plane
 
