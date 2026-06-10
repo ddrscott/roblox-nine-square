@@ -20,11 +20,12 @@ function MatchService.buildArena(origin: Vector3)
 	end
 	local frame = Instance.new("Folder"); frame.Name = "Frame"; frame.Parent = root
 	local span = 3 * G.squareSize
-	for i = -1, 1 do
-		local offs = i * G.squareSize + G.squareSize/2
+	-- four boundary lines per axis at the cell edges: +/-0.5 and +/-1.5 squares
+	for _, m in ipairs({ -1.5, -0.5, 0.5, 1.5 }) do
+		local offs = m * G.squareSize
 		local beams = {
-			{ Vector3.new(span, G.beamThickness, G.beamThickness), Vector3.new(0,0,offs) },
-			{ Vector3.new(G.beamThickness, G.beamThickness, span), Vector3.new(offs,0,0) },
+			{ Vector3.new(span, G.beamThickness, G.beamThickness), Vector3.new(0, 0, offs) },  -- E-W beam
+			{ Vector3.new(G.beamThickness, G.beamThickness, span), Vector3.new(offs, 0, 0) },  -- N-S beam
 		}
 		for _, ln in ipairs(beams) do
 			local b = Instance.new("Part"); b.Anchored = true; b.Size = ln[1]
