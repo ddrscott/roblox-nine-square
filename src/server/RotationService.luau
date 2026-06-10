@@ -25,6 +25,7 @@ export type RotationService = typeof(setmetatable(
 		byRank: { [number]: Occupant },
 		_dummyParts: { [string]: BasePart },   -- id -> the dummy's part (human has none)
 		_placeHuman: (cell: string) -> (),     -- injected: teleport the human's HRP to a cell
+		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
 	},
 	RotationService
 ))
@@ -103,6 +104,41 @@ function RotationService.placeAll(self: RotationService)
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
 		if occ then self:_placeOccupant(occ) end
+	end
+end
+
+-- Rotate the queue after a fault (PRD §4.3 / M3 design §4). The occupant who faulted at `faultRank`
+-- is pushed to the tail (rank 9 / NW entry square) and every occupant at faultRank+1..9 advances ONE
+-- rank toward the King (rank K takes rank K-1's cell). With the fixed 9 occupants this is exactly a
+-- cyclic shift of ranks faultRank..9. A fault at rank 1 is a DETHRONE: the rank-2 occupant becomes the
+-- new King (rank 1 / C) and onDethrone fires with them.
+--
+-- MECHANISM ONLY: this does not decide WHO faulted (that's step 3's fault attribution); the caller
+-- passes the rank. After the shift it re-places everyone (incl. the human, via the injected teleport).
+function RotationService.rotateOnFault(self: RotationService, faultRank: number)
+	assert(faultRank >= 1 and faultRank <= RANKS, "faultRank out of range: " .. tostring(faultRank))
+
+	local faulter = self.byRank[faultRank]
+	-- Advance ranks faultRank+1..9 down one toward faultRank (each takes the slot below it).
+	for r = faultRank, RANKS - 1 do
+		local up = self.byRank[r + 1]
+		self.byRank[r] = up
+		up.rank = r
+	end
+	-- The faulter goes to the tail.
+	self.byRank[RANKS] = faulter
+	faulter.rank = RANKS
+
+	print(("[Rotation] rotateOnFault(%d): %s -> rank 9; ranks %d..9 advanced toward King")
+		:format(faultRank, faulter.id, faultRank + 1))
+
+	self:placeAll()
+
+	-- A King fault means a new King now sits at rank 1.
+	if faultRank == 1 then
+		local newKing = self.byRank[1]
+		print(("[Rotation] DETHRONE: new King is %s (rank 1 / %s)"):format(newKing.id, G.cellForRank(1)))
+		if self.onDethrone then self.onDethrone(newKing) end
 	end
 end
 

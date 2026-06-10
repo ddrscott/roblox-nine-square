@@ -103,6 +103,15 @@ function GridConfig.cellForRank(rank: number): string
 	return cell
 end
 
+-- Cell -> rank (reverse of cellForRank). Returns the rank whose square is `cell`, or nil if unknown.
+-- M3 step 3 needs this to attribute a fault (the ball landed in cell X) to the occupant at that rank.
+function GridConfig.rankForCell(cell: string): number?
+	for rank, c in ipairs(GridConfig.rankCells) do
+		if c == cell then return rank end
+	end
+	return nil
+end
+
 function GridConfig.cellCenter(cell: string): Vector3
 	local c = GridConfig.cells[cell]
 	assert(c, "unknown cell " .. tostring(cell))

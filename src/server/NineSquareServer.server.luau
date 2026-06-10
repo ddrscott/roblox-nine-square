@@ -81,6 +81,22 @@ local rotation = RotationService.new(placeHumanAtAssignedCell)
 rotation:placeAll()
 print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotation:humanCell()) .. ", dummies ranks 1..8)")
 
+-- M3 step 2 dethrone hook. Step 4 adds emphasis/VFX; for now a print confirms it fires.
+rotation.onDethrone = function(newKing)
+	print("[NineSquare] onDethrone fired -> new King: " .. newKing.id)
+end
+
+-- TEMPORARY (M3 step 2) verification trigger. Real fault/serve wiring is step 3, so for now expose a
+-- callable so the rotation can be eyeballed in Play (no auto-loop):
+--   in the Server-context command bar: _G.NineSquareDebugRotate(R)
+-- It rotates rank R, then prints the resulting rank order so the shift is visible alongside placement.
+_G.NineSquareDebugRotate = function(faultRank: number)
+	rotation:rotateOnFault(faultRank or 9)
+	local order = {}
+	for r = 1, 9 do order[r] = "r" .. r .. "=" .. rotation.byRank[r].id end
+	print("[NineSquare] rank order: " .. table.concat(order, " "))
+end
+
 -- Snap every present human back to their assigned square (e.g. on re-serve). Dummies are static and stay.
 local function placeAllAtCourt()
 	rotation:placeAll()
