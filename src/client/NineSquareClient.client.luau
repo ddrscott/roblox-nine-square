@@ -69,3 +69,19 @@ RunService.RenderStepped:Connect(function()
 	local tfloor = ns:FindFirstChild("Floors") and ns.Floors:FindFirstChild("Floor_" .. tostring(tcell))
 	highlight.Adornee = tfloor
 end)
+
+-- Serve input: PC = E key / click, mobile = a button, console = ButtonY.
+local UIS = game:GetService("UserInputService")
+local Serve = Remotes:WaitForChild("Serve")
+local function tryServe() Serve:FireServer() end
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.E or input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.KeyCode == Enum.KeyCode.ButtonY then tryServe() end
+end)
+do
+	local hud = Instance.new("ScreenGui"); hud.Name = "NineSquareHUD"; hud.ResetOnSpawn = false; hud.Parent = plr:WaitForChild("PlayerGui")
+	local b = Instance.new("TextButton"); b.Size = UDim2.fromOffset(160,64); b.Position = UDim2.new(0.5,-80,1,-100)
+	b.Text = "SERVE"; b.TextScaled = true; b.Parent = hud
+	b.Activated:Connect(tryServe)
+end
