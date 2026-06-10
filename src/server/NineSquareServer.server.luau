@@ -5,6 +5,7 @@
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
 local G = require(RS.GridConfig)
 local ns = game.ServerScriptService:WaitForChild("NineSquare")
 local BallController = require(ns.BallController)
@@ -34,6 +35,30 @@ MatchService.buildGym(Vector3.new(0, 0, 200))
 MatchService.buildArena(Vector3.new(0, 0, 200))
 local bc = BallController.new()
 print("[NineSquare] arena + ball ready")
+
+-- The ball reports physics events; the game owns the rules, feedback, and re-serve timing.
+local function playOof()
+	local s = Instance.new("Sound"); s.SoundId = "rbxasset://sounds/uuhhh.mp3"; s.Volume = 1
+	s.Parent = bc.ball; s:Play(); Debris:AddItem(s, 3)
+end
+
+-- First floor contact of a rally: legal land elsewhere, self-square fault, or out-of-bounds.
+bc.onLand = function(landed, struck)
+	if landed == nil then
+		print("[NineSquare] FAULT (out-of-bounds) struck=" .. tostring(struck))
+		MatchService.flashCell(struck); playOof()
+	elseif landed == struck then
+		print("[NineSquare] FAULT (self-square) cell=" .. landed)
+		MatchService.flashCell(landed); playOof()
+	else
+		print("[NineSquare] ball landed in " .. landed .. " (unreturned)")
+	end
+end
+
+-- Ball has bounced out its energy and stopped: re-serve after a beat (unless it's batted back into play).
+bc.onRest = function()
+	task.delay(0.6, function() if bc.phase == "Rest" then bc:resetToServe() end end)
+end
 
 RunService.Heartbeat:Connect(function()
 	bc:step()

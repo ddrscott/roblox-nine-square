@@ -125,6 +125,18 @@ function MatchService.buildGym(origin: Vector3)
 	return gym
 end
 
+-- Briefly flash a square's (normally-invisible) floor marker red -- e.g. when the game scores a fault.
+function MatchService.flashCell(cell: string?)
+	if not cell then return end
+	local ns = workspace:FindFirstChild("NineSquare")
+	local floors = ns and ns:FindFirstChild("Floors")
+	local f = floors and floors:FindFirstChild("Floor_" .. cell)
+	if not f or not f:IsA("BasePart") then return end
+	f.Color = Color3.fromRGB(205, 45, 45)
+	f.Transparency = 0.3
+	task.delay(0.6, function() if f and f.Parent then f.Transparency = 1 end end)
+end
+
 -- Outer square a player currently stands under, or nil.
 function MatchService.playerCell(plr: Player): string?
 	local char = plr.Character
