@@ -200,3 +200,47 @@ type ContactIntent = {
 All four success criteria in §1 are demonstrably true in a live Studio playtest, with the telegraph
 readable and the contact direction visibly governed by where the ball is struck. Numbers are
 tunable in `GridConfig`. Then proceed to M2 (timing tiers + scatter on top of this same contact).
+
+## M1 Acceptance
+
+**Date:** 2026-06-10 · **Place:** "9 Square Beta" · **Verified via:** `robloxstudio` MCP (official
+Studio MCP server) — live playtest screenshots + a server probe that exercises the real
+`HitResolver` / `GridConfig` / `BallController` modules.
+
+**Result: PASS (go for M2).**
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Readable **where/when** (floor shadow + descent ring + target highlight) | ✅ Pass | Playtest capture: hovering ball with its soft shadow disc directly beneath (the "where" cue) and the yellow target-square highlight, under a fixed court camera. The shadow grows + the strike ring shrinks with ball height (height-aware), bottoming out at strike height — the "when" cue, best read in motion. |
+| 2 | Timed **jump** meets the ball at the frame plane → volley | ✅ Pass | Server probe: every clean contact at the frame plane returns an upward normal (`up = 0.30 = minLift`) and launches the ball into Flight. Confirmed live in organic play (repeated jump-volleys before re-serve). |
+| 3 | **Contact point governs outgoing direction** | ✅ Pass | Server probe striking the ball on each side from a centered hit-zone: **NE→NE, SW→SW, SE→SE, NW→NW, dead-center→straight up (C)**. Outgoing horizontal = `unit(ball − hands)` flattened, exactly as designed. |
+| 4 | Key numbers live in `GridConfig`, tunable live | ✅ Pass | All dimensions/speeds in `src/shared/GridConfig.luau`; tuned live via MCP across the session. |
+
+### Divergences from this spec, as built (intentional — supersede the noted sections)
+
+- **Serve is physical, not a button** (supersedes §4 "Pressing Serve"): the ball hovers at center and
+  you strike it like any volley. No `Serve` client intent; the only inputs are movement + jump.
+- **True projectile arcs with bounce** (supersedes §5 lerp-parabola / §9 `apex`/`travel` arc params):
+  the ball is launched with a velocity and integrated under gravity each Heartbeat, bouncing off the
+  overhead frame pipes + gym walls/ceiling (`BallController:_collide`).
+- **Contact-aim by radial impulse** (supersedes §5.4 aim-assist *and* the §6 `steerCone` "stir"): outgoing
+  horizontal direction comes purely from the contact normal; vertical is a fixed `hitSpeedV` pop for hang
+  time, with a `minLift` floor. No steering cone is applied.
+- **Faults added (beyond M1 scope):** returning to the square you struck from = self-fault; landing
+  outside the 9 squares = out-of-bounds. Both flash the square + play the oof sound, then re-serve.
+- **Enclosed gym scene + painted grid lines** (beyond M1 greybox) so the grid reads in Play without
+  relying on dynamic shadows.
+
+### Final tuned `GridConfig` values (M1)
+
+`squareSize=14`, `floorThickness=1`, `frameHeight=11`, `beamThickness=0.5`, `ballRadius=2`,
+`hitZoneRadius=2.5`, `hitZoneYOffset=2.0`, `hitSpeedH=22`, `hitSpeedV=72`, `hitCooldown=0.30`,
+`minLift=0.30`. (Legacy lerp-arc params — `apexHeight`, `serveTravel`, `descentWindow`, `steerConeDeg`,
+`lobTravel`, `lobDistance` — remain in the file but are unused by the projectile/contact-aim model.)
+
+### Known issue carried into M2
+
+- **Frame-pipe collision is dormant.** With the current apex (~24) vs `frameHeight` 11, the ball clears
+  every pipe by ~4 studs, so the bounce code never fires on the frame. Flatten trajectories
+  (lower `hitSpeedV` / raise `hitSpeedH`, or lower the apex relative to the frame) to make the frame
+  interactive. Not an M1 acceptance blocker.
