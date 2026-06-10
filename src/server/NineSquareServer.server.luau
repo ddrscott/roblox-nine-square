@@ -12,6 +12,7 @@ local BallController = require(ns.BallController)
 local MatchService = require(ns.MatchService)
 local HitResolver = require(ns.HitResolver)
 local RotationService = require(ns.RotationService)
+local BotController = require(ns.BotController)
 
 -- Overhead noon sun so the frame casts straight-down grid shadows on the floor.
 local function setupLighting()
@@ -78,6 +79,12 @@ rotation._setHumanRank = function(rank: number)
 end
 rotation:placeAll()
 print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotation:humanCell()) .. ", dummies ranks 1..8)")
+
+-- M4 step 1: the bot volley resolver. Each Heartbeat (after bc:step) it intercepts a descending Flight
+-- ball at the contact window over a BOT-occupied square and either volleys it onward (outer->C / King->
+-- outer) or misses -> floor fault -> rotation. Server-authoritative; the human's physical volley is
+-- untouched. Constructed here because it needs the live `rotation` + `bc`.
+local bots = BotController.new(rotation, bc)
 
 -- M3 step 4 -- the dethrone moment: when the King (rank 1) faults, the rank-2 occupant takes the
 -- throne. Make it unmistakable: flash the King square (C), play a distinct chime, and log who's King.
@@ -203,6 +210,9 @@ end
 -- exactly like it bounces off the pipes/walls/floor. No more proximity trigger or time cooldown.
 RunService.Heartbeat:Connect(function(dt)
 	bc:step(dt, HitResolver.playerColliders())
+	-- M4: after physics, let the bots resolve a volley/miss over their squares (server-authoritative).
+	-- A bot volley calls bc:launch (keeps the rally armed); a miss lets the ball fall -> onLand fault.
+	bots:resolve()
 	-- Arm the rally the instant the ball enters Flight (a human King's physical jump-serve, or any volley):
 	-- onLand only scores when a rally is armed. The dummy-King auto-serve arms itself in serveNextRally.
 	if bc.phase == "Flight" and not rallyArmed then

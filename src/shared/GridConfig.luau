@@ -103,6 +103,12 @@ GridConfig.dummyKingColor = Color3.fromRGB(225, 185, 60) -- the King (rank 1 / C
 GridConfig.serveDelay = 1.2          -- seconds the dummy King "winds up" before auto-serving (also the beat after a fault)
 GridConfig.serveArcApex = 6          -- extra studs the auto-serve arc peaks ABOVE the higher of its two frame endpoints
 
+-- Bot volley (M4 step 1). Each Heartbeat BotController intercepts a DESCENDING Flight ball over a bot
+-- square within `botContactBand` of frameHeight and either volleys it toward the aim target (outer->C /
+-- King->random outer) reusing the serve arc, or MISSES (prob botMissChance) -> floor fault -> rotation.
+GridConfig.botMissChance = 0.25      -- chance a bot fails to return the ball (-> fault -> grid rotates); tuned in step 2
+GridConfig.botContactBand = 3        -- studs around frameHeight that count as the bot's contact window (descending)
+
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]
 	assert(cell, "no cell for rank " .. tostring(rank))
