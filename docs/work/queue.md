@@ -1,5 +1,8 @@
 # Work Queue
 
+- [-] M3 step 2: rotation-on-fault (the rotation mechanism) — see [m3-step2-rotation.md](m3-step2-rotation.md)
+- [ ] M3 step 3: King serve + fault→rotation wiring (the live loop) — see [m3-step3-serve-fault-loop.md](m3-step3-serve-fault-loop.md)
+- [ ] M3 step 4: dethrone emphasis + minimal rank/King HUD — see [m3-step4-dethrone-hud.md](m3-step4-dethrone-hud.md)
 - [x] Camera wall-fade: fully transparent when blocking (GridConfig.camWallFadeTransparency 0.92 → 1.0) so it doesn't haze/wash the view
 - [x] M3 step 1: rank↔cell map + occupant model + dummy occupants + placeAll — see [m3-step1-rank-occupants.md](m3-step1-rank-occupants.md)
 - [x] Maintain dash momentum when jumping mid-dash — see [dash-jump-momentum.md](dash-jump-momentum.md)
