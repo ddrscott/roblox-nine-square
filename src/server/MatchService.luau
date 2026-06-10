@@ -112,7 +112,7 @@ function MatchService.buildGym(origin: Vector3)
 		p.Parent = gym
 		return p
 	end
-	local W, L, H = 70, 100, 50          -- interior width (x), length (z), height (ceiling clears the camera)
+	local W, L, H = 70, 70, 50           -- square interior (x = z); height clears the camera
 	local hx, hz, wy = W/2, L/2, H/2
 	local wood = Color3.fromRGB(196, 152, 98)
 	local wall = Color3.fromRGB(224, 216, 196)
