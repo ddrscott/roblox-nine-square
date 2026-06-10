@@ -114,7 +114,7 @@ local function cameraRelative(screenDir: Vector3): Vector3
 	local look = cam.CFrame.LookVector
 	local fwd = Vector3.new(look.X, 0, look.Z)
 	fwd = (fwd.Magnitude > 1e-3) and fwd.Unit or Vector3.new(0, 0, -1)
-	local right = Vector3.new(fwd.Z, 0, -fwd.X)   -- 90 deg clockwise of fwd on the XZ plane
+	local right = Vector3.new(-fwd.Z, 0, fwd.X)   -- camera-right on the XZ plane (90 deg CW of fwd)
 	local dir = right * screenDir.X + fwd * (-screenDir.Z)
 	return (dir.Magnitude > 1e-3) and dir.Unit or fwd
 end
