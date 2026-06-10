@@ -94,8 +94,38 @@ local function updateCamera()
 	cam.CFrame = CFrame.lookAt(focus + farEye:Lerp(nearEye, zoom), focus + farLook:Lerp(nearLook, zoom))
 end
 
-RunService.RenderStepped:Connect(function()
+-- Camera-occlusion fade: the Scriptable camera bypasses Roblox's built-in auto-transparency, so when the
+-- eye crosses to the OUTSIDE of a gym wall/ceiling (relative to the court centre) it would block the view
+-- or let you see through into the void. We fade just those whitelisted occluders toward transparent and
+-- restore them to opaque when the eye is back inside. The gym is an axis-aligned box and the camera exits
+-- through at most one wall/ceiling at a time, so a per-wall side test (eye vs. the wall plane, plus a
+-- margin) is robust -- no raycasting needed. Floor, grid, frame, ball, player, and Glass windows are never
+-- touched (only the names below are considered).
+local WALL_NAMES = { "WallE", "WallW", "WallN", "WallS", "Ceiling" }
+-- For each wall: the position component to test and the sign of "outside" (eye beyond the plane = obstructing).
+-- WallE is at +X, so the eye is outside when eye.X > wall.X (sign +1); WallW at -X uses sign -1; etc.
+local WALL_AXIS = { WallE = { "X", 1 }, WallW = { "X", -1 }, WallN = { "Z", -1 }, WallS = { "Z", 1 }, Ceiling = { "Y", 1 } }
+local function updateWallFade(dt: number)
+	local gym = workspace:FindFirstChild("Gym")
+	if not gym then return end
+	local eye = cam.CFrame.Position
+	local k = math.clamp(dt * G.camWallFadeSpeed, 0, 1)   -- frame-rate-independent lerp factor
+	for _, name in ipairs(WALL_NAMES) do
+		local wall = gym:FindFirstChild(name)
+		local axis = WALL_AXIS[name]
+		if wall and wall:IsA("BasePart") and axis then
+			local comp, sign = axis[1], axis[2]
+			-- eye position past the wall plane (toward outside), minus a margin so it fades a touch early
+			local obstructing = (eye[comp] - wall.Position[comp]) * sign > -G.camWallFadeMargin
+			local goal = obstructing and G.camWallFadeTransparency or 0
+			wall.Transparency = wall.Transparency + (goal - wall.Transparency) * k
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(function(dt)
 	updateCamera()
+	updateWallFade(dt)
 	-- player ground shadow: tracks the local player's XZ; grows + fades with jump height
 	local pchar = LocalPlayer.Character
 	local phrp = pchar and pchar:FindFirstChild("HumanoidRootPart")
