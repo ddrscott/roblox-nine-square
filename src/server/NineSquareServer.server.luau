@@ -10,8 +10,10 @@ local BallController = require(ns.BallController)
 local MatchService = require(ns.MatchService)
 local Serve = RS.NineSquareRemotes.Serve
 
+print("[NineSquare] server starting")
 MatchService.buildArena(Vector3.new(0, 0, 200))
 local bc = BallController.new()
+print("[NineSquare] arena + ball ready")
 
 bc.onArrive = function(arc)
 	-- Task 6 replaces this with HitResolver. For now: whiff -> reset after a beat.
@@ -30,7 +32,12 @@ RunService.Heartbeat:Connect(function() bc:step() end)
 -- z=200. Place each spawning character under square N so they start in play position.
 local function placeAtCourt(char: Model)
 	local hrp = char:WaitForChild("HumanoidRootPart", 5)
-	if hrp then hrp.CFrame = CFrame.new(G.cellCenter("N") + Vector3.new(0, 5, 0)) end
+	if hrp then
+		hrp.CFrame = CFrame.new(G.cellCenter("N") + Vector3.new(0, 5, 0))
+		print(("[NineSquare] placed %s at %s"):format(char.Name, tostring(hrp.Position)))
+	else
+		warn("[NineSquare] no HumanoidRootPart to place: " .. char.Name)
+	end
 end
 local function hook(plr: Player)
 	if plr.Character then placeAtCourt(plr.Character) end
