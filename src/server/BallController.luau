@@ -2,8 +2,9 @@
 -- ServerScriptService.NineSquare.BallController
 -- Owns the single anchored ball. The ball hovers at a rest point (Live) until a player gets under
 -- it and strikes it. The strike imparts a radial-impulse velocity (server/HitResolver) and the ball
--- follows a TRUE projectile arc (Flight) under gravity. When it returns to strike height it settles:
---   * a DIFFERENT in-bounds square -> hover there (legal; rally continues)
+-- follows a TRUE projectile arc (Flight) under gravity, falling all the way through the target square
+-- to the floor. You can intercept it mid-descent to volley on. On reaching the floor it resolves:
+--   * a DIFFERENT in-bounds square -> a clean landing (rally ended), re-serve from center
 --   * the SAME square it was struck from -> self-fault (didn't clear your square)
 --   * outside the court -> out-of-bounds fault
 local RS = game:GetService("ReplicatedStorage")
@@ -30,7 +31,7 @@ function BallController.new()
 	self.startT = 0
 	self.lastHitT = -1
 	self.struckCell = "C"               -- square the ball was last struck from
-	self.targetCell = "C"               -- predicted / current settle square (for highlight)
+	self.targetCell = "C"               -- predicted / current landing square (for highlight)
 	ball.Position = self.restPoint
 	return self
 end
@@ -56,9 +57,12 @@ function BallController:resetToServe()
 	self:hoverAt(G.cellFramePoint("C"))
 end
 
--- time for the projectile to return to its launch height (apex is at half this)
-function BallController:_settleTime(): number
-	return (2 * self.v0.Y) / self.gravity
+-- time for the projectile launched from p0 with v0 to fall to the floor (y = ballRadius)
+function BallController:_floorTime(): number
+	local A, B, C = -0.5 * self.gravity, self.v0.Y, self.p0.Y - G.ballRadius
+	local disc = B*B - 4*A*C
+	if disc < 0 then return 0 end
+	return math.max((-B + math.sqrt(disc)) / (2*A), (-B - math.sqrt(disc)) / (2*A))
 end
 
 -- Strike: launch from a contact point with an initial velocity (radial impulse from the hit).
@@ -67,8 +71,8 @@ function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self.startT = workspace:GetServerTimeNow(); self.lastHitT = self.startT
 	self.phase = "Flight"
 	self.struckCell = G.cellAtPosition(fromPoint)
-	local settle = fromPoint + v0 * self:_settleTime()
-	self.targetCell = G.cellAtPosition(Vector3.new(settle.X, 0, settle.Z))
+	local land = fromPoint + v0 * self:_floorTime()
+	self.targetCell = G.cellAtPosition(Vector3.new(land.X, 0, land.Z))
 	self:resync()
 end
 
@@ -103,6 +107,14 @@ function BallController:_fault(cell: string?, kind: string)
 	task.delay(0.9, function() if self.phase == "Dead" then self:resetToServe() end end)
 end
 
+-- Legal landing in another square that nobody returned: rally ends, re-serve from center.
+function BallController:_land(cell: string)
+	self.phase = "Dead"; self.targetCell = cell
+	self:resync()
+	print("[NineSquare] ball landed in " .. cell .. " (unreturned)")
+	task.delay(0.7, function() if self.phase == "Dead" then self:resetToServe() end end)
+end
+
 function BallController:step()
 	if self.phase == "Live" then
 		self.ball.Position = self.restPoint
@@ -110,18 +122,20 @@ function BallController:step()
 	elseif self.phase == "Flight" then
 		local t = workspace:GetServerTimeNow() - self.startT
 		local g = self.gravity
-		self.ball.Position = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
-		if t >= self:_settleTime() then
-			local settle = self.p0 + self.v0 * self:_settleTime()
-			local point = Vector3.new(settle.X, G.frameHeight, settle.Z)
-			local cell = G.cellAtPosition(point)
+		local pos = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
+		if pos.Y <= G.ballRadius then
+			pos = Vector3.new(pos.X, G.ballRadius, pos.Z)
+			self.ball.Position = pos
+			local cell = G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z))
 			if cell == nil then
 				self:_fault(self.struckCell, "out-of-bounds")
 			elseif cell == self.struckCell then
 				self:_fault(cell, "self-square")
 			else
-				self:hoverAt(point)   -- legal: settle in a new square; rally continues
+				self:_land(cell)
 			end
+		else
+			self.ball.Position = pos
 		end
 	end
 end

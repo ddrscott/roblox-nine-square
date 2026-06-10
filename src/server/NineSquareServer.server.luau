@@ -11,7 +11,17 @@ local BallController = require(ns.BallController)
 local MatchService = require(ns.MatchService)
 local HitResolver = require(ns.HitResolver)
 
+-- Overhead noon sun so the frame casts straight-down grid shadows on the floor.
+local function setupLighting()
+	local L = game:GetService("Lighting")
+	L.GeographicLatitude = 23.5   -- cancels Roblox's ~23.5deg sun tilt: noon sun ends up at the zenith
+	L.ClockTime = 12
+	L.GlobalShadows = true
+	-- NOTE: Lighting.Technology (ShadowMap/Future) cannot be set by scripts; set it once in Studio Properties.
+end
+
 print("[NineSquare] server starting")
+setupLighting()
 MatchService.buildArena(Vector3.new(0, 0, 200))
 local bc = BallController.new()
 print("[NineSquare] arena + ball ready")
