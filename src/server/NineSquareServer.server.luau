@@ -41,11 +41,11 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.
--- Place each spawning character under square N so they start in play position.
+-- Place each spawning character at the center square (C) so they start in play position.
 local function placeAtCourt(char: Model)
 	local hrp = char:WaitForChild("HumanoidRootPart", 5)
 	if hrp then
-		hrp.CFrame = CFrame.new(G.cellCenter("N") + Vector3.new(0, 5, 0))
+		hrp.CFrame = CFrame.new(G.cellCenter("C") + Vector3.new(0, 5, 0))
 		print(("[NineSquare] placed %s at %s"):format(char.Name, tostring(hrp.Position)))
 	else
 		warn("[NineSquare] no HumanoidRootPart to place: " .. char.Name)
