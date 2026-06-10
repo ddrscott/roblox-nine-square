@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] M3 step 1: rank↔cell map + occupant model + dummy occupants + placeAll — see [m3-step1-rank-occupants.md](m3-step1-rank-occupants.md)
 - [x] Maintain dash momentum when jumping mid-dash — see [dash-jump-momentum.md](dash-jump-momentum.md)
 - [x] Stop the player tripping on dash/flip (disable trip states + land flip upright) — see [stop-player-tripping.md](stop-player-tripping.md)
 - [x] Tune movement: dash 2× distance (GridConfig.dashSpeed 20→40) + halve double-jump height (flipUpVelocity 75→~38)
