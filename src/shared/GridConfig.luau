@@ -130,6 +130,12 @@ GridConfig.botLeapSquashFrac = 0.12  -- a touch of stretch on the way up / squas
 GridConfig.serveDelay = 1.2          -- seconds the dummy King "winds up" before auto-serving (also the beat after a fault)
 GridConfig.serveArcApex = 6          -- extra studs the auto-serve arc peaks ABOVE the higher of its two frame endpoints
 
+-- Fault feedback. The red floor panel that marks the OUT square must stay readable from the landing
+-- (onLand) through the ball's settle to rest (onRest, where the rotation now runs). flashCell uses this
+-- as its default hold time; the server re-asserts the flash at onLand so it covers the whole land->rest
+-- window. Generous on purpose: better to hold the red a touch long than blank it mid-settle.
+GridConfig.faultFlashDuration = 2.5  -- seconds the OUT square holds red after a fault (covers land -> rest)
+
 -- Bot volley (M4 step 1). Each Heartbeat BotController intercepts a DESCENDING Flight ball over a bot
 -- square within `botContactBand` of frameHeight and either volleys it toward the aim target (outer->C /
 -- King->random outer) reusing the serve arc, or MISSES (prob botMissChance) -> floor fault -> rotation.

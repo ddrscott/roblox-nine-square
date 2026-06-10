@@ -109,6 +109,12 @@ end
 -- also fire, and a dead ball can be batted around -- none of that should re-fault or double-serve).
 local rallyArmed = false
 
+-- Deferred rotation: on a fault we mark the OUT square red AT THE LANDING (onLand) so everyone sees who's
+-- out, but we DON'T rotate yet -- we record the rank to rotate here and run the shift only once the ball
+-- comes to REST (onRest). Survives a dead ball being batted around mid-settle: it stays set until onRest
+-- consumes it, so rotation happens exactly once, when the ball finally stops.
+local pendingFaultRank: number? = nil
+
 -- Auto-serve: launch the ball from the King square (C) frame point so it ARCS DOWN INTO the target
 -- square and lands on its floor (where onLand will report `targetCell` -> that dummy faults). The arc
 -- peaks `serveArcApex` above the launch height, then falls to the target square's floor (y = ballRadius).
@@ -156,9 +162,11 @@ local function serveNextRally()
 	end
 end
 
--- First floor contact of a rally: attribute the fault per PRD §6, rotate everyone toward the King, then
--- the new King serves the next rally. struck = square the ball was last struck/served from; landed =
--- square the ball first hit the floor in (nil = out of bounds).
+-- First floor contact of a rally: attribute the fault per PRD §6 and FLASH the OUT square red so everyone
+-- immediately sees who's out -- but DO NOT rotate yet. The grid shift + re-serve are DEFERRED to onRest
+-- (when the ball stops bouncing), which feels far less abrupt than snapping players to new squares while
+-- the ball is still in the air. We only record the rank to rotate here. struck = square the ball was last
+-- struck/served from; landed = square the ball first hit the floor in (nil = out of bounds).
 bc.onLand = function(landed, struck)
 	if not rallyArmed then return end          -- a stray landing outside an armed rally -> ignore
 	rallyArmed = false
@@ -169,34 +177,42 @@ bc.onLand = function(landed, struck)
 		-- Out of bounds: the hitter (occupant of the struck square) faulted.
 		faultCell = struck
 		print("[NineSquare] FAULT (out-of-bounds) struck=" .. tostring(struck))
-		MatchService.flashCell(struck); playOof()
 	elseif landed == struck then
 		-- Self-square: the hitter failed to clear their own square.
 		faultCell = struck
 		print("[NineSquare] FAULT (self-square) cell=" .. landed)
-		MatchService.flashCell(landed); playOof()
 	else
 		-- Floor fault: the occupant of the landing square failed to return it (a dummy square always lands here).
 		faultCell = landed
 		print("[NineSquare] FAULT (floor / unreturned) cell=" .. landed)
-		MatchService.flashCell(landed); playOof()
 	end
+
+	-- Flash the OUT square red and hold it through the land->rest settle (faultFlashDuration covers the
+	-- bounce-out window), plus the oof. This is the immediate "who's out" read; the rotation comes later.
+	MatchService.flashCell(faultCell, G.faultFlashDuration); playOof()
 
 	local faultRank = faultCell and G.rankForCell(faultCell)
 	if faultRank then
 		local occ = rotation:occupantAtCell(faultCell)
-		print(("[NineSquare] attributing fault: cell=%s rank=%d occupant=%s")
+		print(("[NineSquare] fault marked (rotation deferred to rest): cell=%s rank=%d occupant=%s")
 			:format(tostring(faultCell), faultRank, occ and occ.id or "?"))
-		rotation:rotateOnFault(faultRank)
+		pendingFaultRank = faultRank          -- rotate at onRest, not now
 	else
 		warn("[NineSquare] could not attribute fault (no rank for cell " .. tostring(faultCell) .. ")")
 	end
 end
 
--- Ball has bounced out its energy and stopped. The rally already faulted + rotated on the landing
--- (onLand); now, after a beat, the new King serves the next rally. (Rotation already re-placed everyone
--- via placeAll -- this REPLACES the old M1 "reset players to centre + re-serve at centre" path.)
+-- Ball has bounced out its energy and stopped. NOW we run the deferred rotation (if a fault is pending):
+-- rotate everyone toward the King (placeAll re-places them), THEN after a beat the new King serves the
+-- next rally. This is the moment the OUT player rotates -- the red panel has been showing who's out the
+-- whole settle. (If a dead ball got batted mid-settle, the pending fault still stands and rotates here.)
 bc.onRest = function()
+	if pendingFaultRank then
+		local faultRank = pendingFaultRank
+		pendingFaultRank = nil
+		print(("[NineSquare] ball at rest -- applying deferred rotation (rank %d)"):format(faultRank))
+		rotation:rotateOnFault(faultRank)
+	end
 	task.delay(G.serveDelay, function()
 		if bc.phase == "Rest" and not rallyArmed then
 			serveNextRally()

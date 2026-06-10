@@ -145,16 +145,27 @@ function MatchService.buildGym(origin: Vector3)
 	return gym
 end
 
--- Briefly flash a square's (normally-invisible) floor marker red -- e.g. when the game scores a fault.
-function MatchService.flashCell(cell: string?)
+-- Per-cell flash generation tokens. Each flashCell call bumps the cell's token and captures it; only the
+-- LATEST call's delayed hide is allowed to blank the panel. This lets the server RE-ASSERT a flash (e.g.
+-- extend the OUT square's red through the land->rest settle) without an earlier, shorter hide clearing it.
+local flashGen: { [string]: number } = {}
+
+-- Flash a cell's floor panel red for `duration` seconds (default GridConfig.faultFlashDuration). The OUT
+-- square stays red from the fault landing until the rotation runs at rest; re-asserting just extends it.
+function MatchService.flashCell(cell: string?, duration: number?)
 	if not cell then return end
 	local ns = workspace:FindFirstChild("NineSquare")
 	local floors = ns and ns:FindFirstChild("Floors")
 	local f = floors and floors:FindFirstChild("Floor_" .. cell)
 	if not f or not f:IsA("BasePart") then return end
+	local gen = (flashGen[cell] or 0) + 1
+	flashGen[cell] = gen
 	f.Color = Color3.fromRGB(205, 45, 45)
 	f.Transparency = 0.3
-	task.delay(0.6, function() if f and f.Parent then f.Transparency = 1 end end)
+	task.delay(duration or G.faultFlashDuration, function()
+		-- Only the most recent flash for this cell may hide it (a later re-assert wins).
+		if f and f.Parent and flashGen[cell] == gen then f.Transparency = 1 end
+	end)
 end
 
 -- Outer square a player currently stands under, or nil.
