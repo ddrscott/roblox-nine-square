@@ -2,8 +2,9 @@
 -- StarterPlayer.StarterPlayerScripts.Movement
 --
 -- Client-side movement skill moves that raise the skill ceiling and feed the velocity-proportional
--- strike. The server's HitResolver reads the LOCAL character's replicated HumanoidRootPart
--- AssemblyLinearVelocity, so every burst applied here flows straight into BallController:strike with
+-- strike. The server's HitResolver reports the LOCAL character's replicated HumanoidRootPart
+-- AssemblyLinearVelocity as the player hit-sphere's velocity, which BallController folds into its
+-- moving-sphere collision, so every burst applied here flows straight into the strike rebound with
 -- NO server change and NO strike-formula change (per M1; anti-cheat is M5).
 --
 --   * Dash        -- double-tap a movement key (W/A/S/D) within doubleTapWindow -> a brief horizontal

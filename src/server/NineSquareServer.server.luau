@@ -60,18 +60,12 @@ bc.onRest = function()
 	task.delay(0.6, function() if bc.phase == "Rest" then bc:resetToServe() end end)
 end
 
+-- Physical contact is now a real collision inside the ball's step: each Heartbeat we gather the
+-- players' moving hit-spheres and hand them to bc:step, which resolves a hit only on penetration +
+-- approach (so a descending player can't pull a rising ball down) and bounces the ball off the sphere
+-- exactly like it bounces off the pipes/walls/floor. No more proximity trigger or time cooldown.
 RunService.Heartbeat:Connect(function()
-	bc:step()
-	local now = workspace:GetServerTimeNow()
-	if bc:isHittable(now) then
-		local res = HitResolver.checkContact(bc.ball.Position)
-		if res.contact then
-			-- impact is a simple sphere bounce: proportional to the player's velocity toward the ball
-			bc:strike(res.point, res.normal, res.playerVel)
-			print(("[NineSquare] hit by %s  vPlayer=%s  -> %s"):format(
-				res.player and res.player.Name or "?", tostring(res.playerVel), tostring(bc.targetCell)))
-		end
-	end
+	bc:step(HitResolver.playerColliders())
 end)
 
 -- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.

@@ -1,40 +1,37 @@
 --!strict
 -- ServerScriptService.NineSquare.HitResolver
--- Detects a physical contact (a player's hit-sphere overlaps the ball) and reports the contact
--- geometry + the player's velocity. The hit-sphere is centred on the avatar and roughly body-sized
--- ("slightly smaller than the player"). The server turns the normal + player velocity into a simple
--- sphere-bounce impulse, so the impact is proportional to how fast the player drives into the ball.
+-- Geometry/state provider for the players' hit-spheres. Each character carries a body-sized contact
+-- sphere (centre = HumanoidRootPart + hitZoneYOffset, radius = hitZoneRadius) that moves with the
+-- player's current velocity. BallController folds these in as MOVING-sphere colliders during its
+-- collision step (alongside the pipes/walls/floor) so a contact is a real penetration+rebound, not a
+-- one-shot proximity trigger. This module owns no ball logic; it just reports where the spheres are.
 -- Reads replicated character state (M1 simplification; intent validation + anti-cheat are M5).
-local RS = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
 local G = require(RS.GridConfig)
 
 local HitResolver = {}
 
-export type Result = { contact: boolean, point: Vector3, normal: Vector3, playerVel: Vector3, player: Player? }
+export type PlayerCollider = { center: Vector3, radius: number, vel: Vector3, player: Player }
 
--- Does any player's hit-sphere currently overlap the ball? First overlap wins. Returns the contact
--- normal (line of centres, biased upward by minLift) and the player's current velocity.
-function HitResolver.checkContact(ballPos: Vector3): Result
+-- One moving-sphere collider per player that has a character with a HumanoidRootPart. Centre is the
+-- hit-zone (HRP raised by hitZoneYOffset); velocity is the HRP's assembly velocity so a faster drive
+-- into the ball hits harder. BallController decides penetration/approach + the rebound.
+function HitResolver.playerColliders(): { PlayerCollider }
+	local list: { PlayerCollider } = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
 		local char = plr.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			local center = hrp.Position + Vector3.new(0, G.hitZoneYOffset, 0)
-			if (ballPos - center).Magnitude <= (G.hitZoneRadius + G.ballRadius) then
-				local d = ballPos - center
-				local n = (d.Magnitude > 1e-3) and d.Unit or Vector3.new(0, 1, 0)
-				-- bias the normal upward so a clean bump tends to arc the ball up and over
-				if n.Y < G.minLift then
-					local h = Vector3.new(n.X, 0, n.Z)
-					h = (h.Magnitude > 1e-3) and h.Unit or Vector3.zero
-					n = (h * math.sqrt(1 - G.minLift * G.minLift) + Vector3.new(0, G.minLift, 0)).Unit
-				end
-				return { contact = true, point = ballPos, normal = n, playerVel = hrp.AssemblyLinearVelocity, player = plr }
-			end
+		if hrp and hrp:IsA("BasePart") then
+			table.insert(list, {
+				center = hrp.Position + Vector3.new(0, G.hitZoneYOffset, 0),
+				radius = G.hitZoneRadius,
+				vel = hrp.AssemblyLinearVelocity,
+				player = plr,
+			})
 		end
 	end
-	return { contact = false, point = ballPos, normal = Vector3.new(0, 1, 0), playerVel = Vector3.zero, player = nil }
+	return list
 end
 
 return HitResolver

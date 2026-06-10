@@ -10,8 +10,9 @@
 --   :hoverAt(point: Vector3)        park the ball, hovering in place (phase "Live")
 --   :resetToServe()                 hover at the serve point (centre, frame height)
 --   :launch(fromPoint, v0)          strike: begin a projectile arc (phase "Flight")
---   :isHittable(now): boolean       may a contact strike it right now? (cooldown only)
---   :step()                         advance the simulation one tick; call every Heartbeat
+--   :step(playerColliders?)         advance the simulation one tick; call every Heartbeat. Pass the
+--                                   players' moving hit-spheres (from HitResolver) so a contact is a
+--                                   real penetration+rebound collision, resolved alongside the surfaces.
 --   :resync()                       replicate the current ball state to clients
 --   .ball: Part                     the rendered ball (read-only)
 --   .phase: string                  "Live" | "Flight" | "Settling" | "Rest" (read-only)
@@ -32,6 +33,8 @@ local BallSync = RS.NineSquareRemotes.BallSync
 local BallController = {}
 BallController.__index = BallController
 
+export type PlayerCollider = { center: Vector3, radius: number, vel: Vector3, player: Player }
+
 local SURFACE_RESTITUTION = 0.6   -- bounciness off the rigid surfaces (frame pipes, walls, ceiling, hoops)
 
 function BallController.new()
@@ -49,7 +52,6 @@ function BallController.new()
 	self.p0 = self.restPoint
 	self.v0 = Vector3.zero
 	self.startT = 0
-	self.lastHitT = -1
 	self.struckCell = "C"               -- square the ball was last struck from
 	self.targetCell = "C"               -- predicted / current landing square (for the client highlight)
 	self.onLand = nil :: ((string?, string?) -> ())?   -- game wires these; see the contract above
@@ -94,7 +96,7 @@ end
 -- again -- no new landing is reported, so the rally is not re-scored and any pending re-serve is moot.
 function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self.p0 = fromPoint; self.v0 = v0
-	self.startT = workspace:GetServerTimeNow(); self.lastHitT = self.startT
+	self.startT = workspace:GetServerTimeNow()
 	self.struckCell = G.cellAtPosition(fromPoint)
 	if self.phase == "Settling" or self.phase == "Rest" then
 		self.phase = "Settling"
@@ -105,11 +107,6 @@ function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self:resync()
 end
 
--- The ball can be struck in any phase (you can keep batting a dead ball); the cooldown debounces a jump.
-function BallController:isHittable(now: number): boolean
-	return (now - self.lastHitT) >= G.hitCooldown
-end
-
 -- The ball's instantaneous velocity right now (zero unless it's in motion).
 function BallController:currentVelocity(): Vector3
 	if self.phase == "Flight" or self.phase == "Settling" then
@@ -118,16 +115,24 @@ function BallController:currentVelocity(): Vector3
 	return Vector3.zero
 end
 
--- A player strikes the ball along the line of centres `n`. The impulse is split in two so energy only
--- comes from the player's MOTION, never from a still body:
+-- Bias a contact normal upward so a clean bump tends to arc the ball up and over: clamp its vertical
+-- component to at least minLift, keeping it unit length. Mirrors the old HitResolver bias.
+local function liftNormal(n: Vector3): Vector3
+	if n.Y >= G.minLift then return n.Unit end
+	local h = Vector3.new(n.X, 0, n.Z)
+	h = (h.Magnitude > 1e-3) and h.Unit or Vector3.zero
+	return (h * math.sqrt(1 - G.minLift * G.minLift) + Vector3.new(0, G.minLift, 0)).Unit
+end
+
+-- The outgoing ball velocity from a contact along the line of centres `n`. The impulse is split in two
+-- so energy only comes from the player's MOTION, never from a still body:
 --   * passive rebound -- the ball's own incoming velocity reflects off the player with ballRestitution
 --     (<= 1), so a motionless player behaves like a surface and the ball leaves SLOWER than it arrived.
 --   * active power     -- the player's approach speed toward the ball (its component along n) adds
 --     hitGain * that speed along n, so a faster drive hits harder (a still player adds nothing).
 -- hitMinPop floors the outgoing speed only for an intentional strike (approach > strikeMoveThreshold),
 -- so a clean drive always stays in play while a passive/glancing contact just bounces naturally.
-function BallController:strike(point: Vector3, n: Vector3, playerVel: Vector3)
-	local vBall = self:currentVelocity()
+local function strikeVelocity(vBall: Vector3, n: Vector3, playerVel: Vector3): Vector3
 	local ballPart = vBall - (1 + G.ballRestitution) * (vBall:Dot(n)) * n   -- passive: never gains energy
 	local into = math.max(0, playerVel:Dot(n))                              -- player's approach speed toward the ball
 	local vOut = ballPart + G.hitGain * into * n                            -- active power, proportional to motion
@@ -135,7 +140,7 @@ function BallController:strike(point: Vector3, n: Vector3, playerVel: Vector3)
 		local along = vOut:Dot(n)
 		if along < G.hitMinPop then vOut = vOut + (G.hitMinPop - along) * n end
 	end
-	self:launch(point, vOut)
+	return vOut
 end
 
 -- Every rigid surface the ball bounces off EXCEPT the floor (the floor is a robust ground plane in
@@ -182,18 +187,66 @@ function BallController:_collide(pos: Vector3, vel: Vector3): ({ pos: Vector3, v
 	return nil
 end
 
-function BallController:step()
-	if self.phase == "Live" then
-		self.ball.Position = self.restPoint
-		return
-	elseif self.phase ~= "Flight" and self.phase ~= "Settling" then
+-- A player's hit-sphere is a MOVING-sphere collider, resolved exactly like the rigid surfaces above:
+-- only when the ball is PENETRATING it (|ball-centre| < hitZoneRadius + ballRadius) AND APPROACHING it
+-- (the relative velocity along the contact normal is closing). If the two are separating -- e.g. a
+-- player descending over a rising/receding ball -- we do NOT resolve, so a descending player can never
+-- pull a rising ball down. On a hit the ball is repositioned onto the sphere surface (so the same
+-- approach can't re-trigger next frame -> exactly one hit per approach) and the outgoing velocity is
+-- the same velocity-proportional strike used everywhere else (still player adds no energy). First hit
+-- wins. `vel` is the ball's current velocity; returns the resolved pos/vel (+ player) or nil.
+function BallController:_collidePlayers(pos: Vector3, vel: Vector3, colliders: { PlayerCollider }?): ({ pos: Vector3, vel: Vector3, player: Player })?
+	if not colliders then return nil end
+	local r = G.ballRadius
+	for _, col in ipairs(colliders) do
+		local sum = col.radius + r
+		local d = pos - col.center
+		local dist = d.Magnitude
+		if dist < sum and dist > 1e-4 then
+			local n = d.Unit
+			-- approaching only: relative velocity along the line of centres must be closing
+			if (vel - col.vel):Dot(n) < 0 then
+				local nUp = liftNormal(n)                 -- bias the rebound upward for a clean arc
+				local vOut = strikeVelocity(vel, nUp, col.vel)
+				return { pos = col.center + n * (sum + 0.05), vel = vOut, player = col.player }
+			end
+		end
+	end
+	return nil
+end
+
+function BallController:step(playerColliders: { PlayerCollider }?)
+	-- Parked phases (Live hover, Rest): the ball is stationary, but a player can still drive into it.
+	-- Run the same moving-sphere collision against the parked position; a hit serves (Live -> Flight) or
+	-- bats the dead ball (Rest -> Settling). No hit -> sit still.
+	if self.phase == "Live" or self.phase == "Rest" then
+		local parked = (self.phase == "Live") and self.restPoint or self.ball.Position
+		local h = self:_collidePlayers(parked, Vector3.zero, playerColliders)
+		if h then
+			self.ball.Position = h.pos
+			self.phase = (self.phase == "Live") and "Flight" or "Settling"
+			self:launch(h.pos, h.vel)
+			return
+		end
+		if self.phase == "Live" then self.ball.Position = self.restPoint end
 		return                                    -- Rest: sit still until re-served or struck
+	elseif self.phase ~= "Flight" and self.phase ~= "Settling" then
+		return
 	end
 	local now = workspace:GetServerTimeNow()
 	local t = now - self.startT
 	local g = self.gravity
 	local vel = self.v0 + Vector3.new(0, -g * t, 0)
 	local pos = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
+
+	-- a player's hit-sphere is resolved first, as a moving-sphere collision (penetrate + approach +
+	-- reposition + velocity-proportional rebound) -- same resolve-style as the rigid surfaces below.
+	local hp = self:_collidePlayers(pos, vel, playerColliders)
+	if hp then
+		self.ball.Position = hp.pos
+		self:launch(hp.pos, hp.vel)   -- Flight stays Flight, Settling stays Settling (re-predicts land cell in Flight)
+		return
+	end
 
 	-- bounce off the rigid surfaces (frame pipes, walls, ceiling, hoops) -- in flight AND while settling
 	local c = self:_collide(pos, vel)
