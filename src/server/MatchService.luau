@@ -57,11 +57,13 @@ function MatchService.buildArena(origin: Vector3)
 	for _, d in ipairs(workspace:GetDescendants()) do
 		if d:IsA("SpawnLocation") then d.Enabled = false end
 	end
+	-- invisible, non-colliding spawn marker: you spawn at center and land on the center floor,
+	-- with no visible platform and nothing to occlude the ball's floor shadow.
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "CourtSpawn"; spawn.Anchored = true; spawn.Neutral = true; spawn.Enabled = true
-	spawn.Size = Vector3.new(6, 0.4, 6)
-	spawn.Position = G.cellCenter("C") + Vector3.new(0, 0.2, 0)
-	spawn.Color = Color3.fromRGB(120, 170, 255); spawn.Material = Enum.Material.SmoothPlastic
+	spawn.Size = Vector3.new(6, 1, 6)
+	spawn.Position = G.cellCenter("C") + Vector3.new(0, 0.5, 0)
+	spawn.Transparency = 1; spawn.CanCollide = false
 	spawn.Parent = root
 	return root
 end
