@@ -68,12 +68,28 @@ local function placeHumanAtAssignedCell(cell: string)
 	end
 end
 local rotation = RotationService.new(placeHumanAtAssignedCell)
+-- M3 step 4: replicate the human's current rank to every player (server-authoritative). The single
+-- human shares one rank in M3, so we mirror it onto all players' "Rank" attribute; the client HUD
+-- (RankHud) observes the attribute and shows "Rank N" / "KING". (M4's real bots get per-player ranks.)
+rotation._setHumanRank = function(rank: number)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		plr:SetAttribute("Rank", rank)
+	end
+end
 rotation:placeAll()
 print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotation:humanCell()) .. ", dummies ranks 1..8)")
 
--- M3 step 2 dethrone hook. Step 4 adds emphasis/VFX; for now a print confirms it fires.
+-- M3 step 4 -- the dethrone moment: when the King (rank 1) faults, the rank-2 occupant takes the
+-- throne. Make it unmistakable: flash the King square (C), play a distinct chime, and log who's King.
+-- (Full banner/VFX is M6; this is the M3-legibility stub.)
+local function playDethrone()
+	local s = Instance.new("Sound"); s.SoundId = "rbxasset://sounds/electronicpingshort.wav"
+	s.Volume = 1.2; s.Parent = bc.ball; s:Play(); Debris:AddItem(s, 3)
+end
 rotation.onDethrone = function(newKing)
-	print("[NineSquare] onDethrone fired -> new King: " .. newKing.id)
+	print("[NineSquare] DETHRONED -- " .. newKing.id .. " takes the throne (rank 1 / C)")
+	MatchService.flashCell("C")
+	playDethrone()
 end
 
 -- ============================================================================================
@@ -205,6 +221,9 @@ local function placeAtCourtAndSync(char: Model)
 	task.delay(1, function() bc:resync() end)
 end
 local function hook(plr: Player)
+	-- Seed the rank attribute immediately so a (re)joining player's HUD shows their current rank, even
+	-- before the next rotation pushes it. _syncHumanRank also re-asserts it on placeHuman/placeAll.
+	plr:SetAttribute("Rank", rotation:humanRank())
 	if plr.Character then placeAtCourtAndSync(plr.Character) end
 	plr.CharacterAdded:Connect(placeAtCourtAndSync)
 end

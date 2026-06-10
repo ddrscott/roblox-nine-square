@@ -109,3 +109,25 @@ Then the normal rally proceeds: the ball arcs to a square; that square's occupan
 The rotation loop runs solo (human + 8 dummies): the King serves, faults rotate everyone correctly per
 PRD §4.3, the human can climb to King, and a King fault is a dethrone. Deterministic, server-authoritative,
 tunable in `GridConfig`. Then **M4** replaces the dummies with bots that actually serve/volley.
+
+## M3 Acceptance
+**Date:** 2026-06-10 · **Status:** PASS (all §1 criteria) · **Verified in:** Studio Play, place "9 Square Beta"
+(server-authoritative; build steps 1–4 deployed via the robloxstudio MCP).
+
+Pass/fail against §1 "M3 is done when":
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | All 9 squares owned at a rank; rank→cell map is a `GridConfig` table | PASS | `GridConfig.rankCells`; `RotationService.byRank` holds 9 occupants (1 human + 8 dummies). Console: `rotation occupancy ready (human rank 9 / NW, dummies ranks 1..8)`. |
+| 2 | King's square serves each rally (human physical / dummy auto-serve) | PASS | Dummy King auto-serves: `dummy-King auto-serve C -> NE`. Human-King hover-serve branch in `serveNextRally` (`isHumanKing`). |
+| 3 | Fault attributes per PRD §6 + rotates per §4.3 | PASS | `FAULT (floor / unreturned) cell=NE` → `attributing fault: cell=NE rank=3 occupant=dummy3` → `rotateOnFault(3): dummy3 -> rank 9; ranks 4..9 advanced toward King`. |
+| 4 | Human climbs to King; **King fault fires a dethrone** (emphasis hook) | PASS | Human climbed NW(9)→W(8)→…→Rank 4 across rotations. King fault: `FAULT … cell=C` → `rotateOnFault(1)` → `DETHRONE: new King is dummy2` → emphasis `DETHRONED -- dummy2 takes the throne (rank 1 / C)` (`MatchService.flashCell("C")` + distinct chime). |
+| 5 | Local player's rank + King square indicated (minimal HUD/highlight) | PASS | `RankHud` LocalScript: top-centre pill shows live `Rank N` / `KING` from the replicated `Rank` attribute; gold `SelectionBox` on `Floor_C` marks the throne. Client verify: `attr=7 hudText=Rank 7 kingBoxAdornee=Workspace.NineSquare.Floors.Floor_C`. Screenshot confirms "Rank 4" + gold King box on C. |
+| 6 | Deterministic + server-authoritative; numbers in `GridConfig` | PASS | Rank owned server-side (`RotationService` → `plr:SetAttribute("Rank", …)`); client only reads/displays. Serve/rotation/fault decided on the server; clients send no rotation input. Tunables (`serveDelay`, `serveArcApex`, `rankCells`, dummy look) in `GridConfig`. |
+
+**Step 4 changes (this commit):** `RotationService` sets the human's `Rank` attribute on every rank change
+(injected `_setHumanRank`, called from `placeAll` / `placeHuman` / `rotateOnFault`; added `humanRank()`).
+`NineSquareServer` wires the rank replication + the dethrone emphasis (`flashCell("C")` + chime + console
+line) and seeds `Rank` on (re)join. New client `RankHud.client.luau` renders the rank pill + King-square box.
+
+**M3 COMPLETE.** Next: **M4** replaces the 8 static dummies with bots that actually serve and volley.

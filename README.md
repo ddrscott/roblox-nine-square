@@ -6,17 +6,21 @@ server** (`StudioMCP`, which ships inside Roblox Studio).
 
 ## Status
 
-**Milestone M1 (greybox) — complete** (accepted 2026-06-10, tagged `m1-greybox`). **M2 folded into the M1 contact model — M3 (full grid + rotation + dethrone) is next.**
-Playable single-player loop in the place **"9 Square Beta"**: enclosed gymnasium scene, 3×3 court,
-physical serve + contact volley, self-square / out-of-bounds faults, soft ball shadow, fixed court
-camera. Acceptance results + final tuned values are in the M1 design spec (§ "M1 Acceptance").
+**Milestone M3 (full grid + rotation + dethrone) — complete** (accepted 2026-06-10). M1 greybox is
+tagged `m1-greybox`; M2 folded into the M1 contact model. **M4 (bots fill the empty squares) is next.**
+The full **king-of-the-hill loop** now runs solo in the place **"9 Square Beta"**: 9 ranked squares
+(1 human + 8 static dummies), the King serves (human physical / dummy auto-serve), a fault attributes
+per PRD §6 and **rotates** everyone one step toward the throne, the human climbs and can become King,
+and a King fault is a **dethrone** (King-square flash + chime + console line). A minimal HUD shows the
+local **rank** ("Rank N" / "KING", server-replicated via a player attribute) and a gold box marks the
+King square. Acceptance results are in the M3 design spec (§ "M3 Acceptance"); M1 results in the M1 spec.
 
 ## Docs
 
 - Master PRD: [`docs/9-square-prd.md`](docs/9-square-prd.md)
 - M1 design spec: [`docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md`](docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md)
 - M1 plan: [`docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md`](docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md)
-- **M3 design spec** (current): [`docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md)
+- **M3 design spec** (done): [`docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md)
 
 ## Build milestones (PRD §15)
 
@@ -26,8 +30,8 @@ camera. Acceptance results + final tuned values are in the M1 design spec (§ "M
    velocity, dash-jump momentum) already makes timing + positioning matter continuously, which is
    what discrete tiers were a proxy for. **Scatter dropped** to keep contact deterministic + skill-
    expressive (revisit only if play ever feels too predictable).
-3. **M3** — Full grid + rotation + dethrone.  ← *current*
-4. **M4** — Bots fill empty squares; solo play fully functional.
+3. **M3** — Full grid + rotation + dethrone.  ✅ *done (accepted 2026-06-10)*
+4. **M4** — Bots fill empty squares; solo play fully functional.  ← *current*
 5. **M5** — Networking hardening / anti-cheat.
 6. **M6** — Progression, leaderboard, audio/VFX, mobile tuning.
 

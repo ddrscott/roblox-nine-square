@@ -25,6 +25,7 @@ export type RotationService = typeof(setmetatable(
 		byRank: { [number]: Occupant },
 		_dummyParts: { [string]: BasePart },   -- id -> the dummy's part (human has none)
 		_placeHuman: (cell: string) -> (),     -- injected: teleport the human's HRP to a cell
+		_setHumanRank: ((rank: number) -> ())?,  -- injected: replicate the human's current rank (player attribute)
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
 	},
 	RotationService
@@ -99,12 +100,26 @@ function RotationService._placeOccupant(self: RotationService, occ: Occupant)
 	end
 end
 
+-- Replicate the human's CURRENT rank to their client (server-authoritative; the client only displays).
+-- Finds the human occupant and pushes its rank via the injected setter (a player attribute in the server).
+function RotationService._syncHumanRank(self: RotationService)
+	if not self._setHumanRank then return end
+	for rank = 1, RANKS do
+		local occ = self.byRank[rank]
+		if occ and not occ.isDummy then
+			self._setHumanRank(occ.rank)
+			return
+		end
+	end
+end
+
 -- Put every occupant at cellForRank(rank). Re-placeable (M3 step 2 rotation re-calls this).
 function RotationService.placeAll(self: RotationService)
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
 		if occ then self:_placeOccupant(occ) end
 	end
+	self:_syncHumanRank()
 end
 
 -- Rotate the queue after a fault (PRD §4.3 / M3 design §4). The occupant who faulted at `faultRank`
@@ -148,6 +163,7 @@ function RotationService.placeHuman(self: RotationService)
 		local occ = self.byRank[rank]
 		if occ and not occ.isDummy then
 			self:_placeOccupant(occ)
+			self:_syncHumanRank()
 			return
 		end
 	end
@@ -160,6 +176,15 @@ function RotationService.humanCell(self: RotationService): string?
 		if occ and not occ.isDummy then return G.cellForRank(occ.rank) end
 	end
 	return nil
+end
+
+-- The human's current rank (1..9), or 9 if somehow absent. Used to seed a (re)joining player's HUD.
+function RotationService.humanRank(self: RotationService): number
+	for rank = 1, RANKS do
+		local occ = self.byRank[rank]
+		if occ and not occ.isDummy then return occ.rank end
+	end
+	return RANKS
 end
 
 -- The current King (rank 1 / C). Always present (fixed 9 occupants). Used by the serve branch.
