@@ -90,12 +90,22 @@ GridConfig.outerCells = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 -- change this table and placement follows (cellForRank just indexes it).
 GridConfig.rankCells = { "C", "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
--- Dummy occupant look (M3 placeholders for the 8 non-human squares). Cosmetic + non-colliding so they
--- never touch the ball; clearly-non-player coloured capsules standing in their cell.
-GridConfig.dummyHeight = 5          -- cylinder height (studs)
-GridConfig.dummyRadius = 1.3        -- cylinder radius (studs)
-GridConfig.dummyColor = Color3.fromRGB(120, 90, 210)   -- a clearly-non-player violet
+-- Bot occupant look (M4: the 8 non-human squares). A cheap STYLISED humanoid body (anchored stacked
+-- parts: torso + head + two arms), NOT a physics Humanoid -- so it stays server-authoritative,
+-- non-colliding (CanCollide=false, out of BallController._surfaces), and we can tween it for the hop.
+GridConfig.dummyHeight = 5          -- (legacy cylinder height; retained for back-compat references)
+GridConfig.dummyRadius = 1.3        -- (legacy cylinder radius)
+GridConfig.dummyColor = Color3.fromRGB(120, 90, 210)   -- a clearly-non-player violet (bot body)
 GridConfig.dummyKingColor = Color3.fromRGB(225, 185, 60) -- the King (rank 1 / C) stands out gold
+GridConfig.botBodyColor = Color3.fromRGB(120, 90, 210)   -- bot torso/limb colour (alias of dummyColor)
+GridConfig.botKingColor = Color3.fromRGB(225, 185, 60)   -- King bot colour
+GridConfig.botSkinColor = Color3.fromRGB(245, 222, 179)  -- head colour (reads as a face)
+GridConfig.botTorsoSize = Vector3.new(2.2, 2.6, 1.2)     -- torso block
+GridConfig.botHeadSize = 1.4                              -- head cube edge
+GridConfig.botArmSize = Vector3.new(0.7, 2.4, 0.7)       -- a side arm
+GridConfig.botHopHeight = 2.6        -- studs the bot pops upward on a volley (juice; tweened up then back)
+GridConfig.botHopUpTime = 0.10       -- seconds for the up-leg of the hop tween
+GridConfig.botHopDownTime = 0.22     -- seconds for the down-leg (settle back into the square)
 
 -- Serve flow (M3 step 3). A rally is always served by the King (rank 1 / C). A human King hovers the
 -- ball at C and jump-strikes it (M1 physical serve); a dummy King auto-serves after `serveDelay` --
@@ -106,7 +116,11 @@ GridConfig.serveArcApex = 6          -- extra studs the auto-serve arc peaks ABO
 -- Bot volley (M4 step 1). Each Heartbeat BotController intercepts a DESCENDING Flight ball over a bot
 -- square within `botContactBand` of frameHeight and either volleys it toward the aim target (outer->C /
 -- King->random outer) reusing the serve arc, or MISSES (prob botMissChance) -> floor fault -> rotation.
-GridConfig.botMissChance = 0.25      -- chance a bot fails to return the ball (-> fault -> grid rotates); tuned in step 2
+GridConfig.botMissChance = 0.18      -- chance a bot fails to return the ball (-> fault -> grid rotates).
+                                     --   Tuned in step 2: 0.25 ended rallies too fast (most descents faulted);
+                                     --   0.18 keeps a steady rotation cadence (~1 fault every few exchanges)
+                                     --   while letting bot->C->bot rallies actually happen, so the human can
+                                     --   ride a clean rally upward and realistically climb to King.
 GridConfig.botContactBand = 3        -- studs around frameHeight that count as the bot's contact window (descending)
 
 function GridConfig.cellForRank(rank: number): string

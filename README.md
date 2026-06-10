@@ -6,14 +6,17 @@ server** (`StudioMCP`, which ships inside Roblox Studio).
 
 ## Status
 
-**Milestone M3 (full grid + rotation + dethrone) — complete** (accepted 2026-06-10). M1 greybox is
-tagged `m1-greybox`; M2 folded into the M1 contact model. **M4 (bots fill the empty squares) is next.**
-The full **king-of-the-hill loop** now runs solo in the place **"9 Square Beta"**: 9 ranked squares
-(1 human + 8 static dummies), the King serves (human physical / dummy auto-serve), a fault attributes
-per PRD §6 and **rotates** everyone one step toward the throne, the human climbs and can become King,
-and a King fault is a **dethrone** (King-square flash + chime + console line). A minimal HUD shows the
-local **rank** ("Rank N" / "KING", server-replicated via a player attribute) and a gold box marks the
-King square. Acceptance results are in the M3 design spec (§ "M3 Acceptance"); M1 results in the M1 spec.
+**Milestone M4 (bots fill the empty squares; solo play fully functional) — complete** (accepted
+2026-06-10). M1 greybox is tagged `m1-greybox`; M2 folded into the M1 contact model; M3 built the
+grid + rotation + dethrone. **M5 (networking hardening / anti-cheat) is next.** Solo play in the place
+**"9 Square Beta"** is now a full game: the 8 non-human squares are **bots** that serve (when King) and
+**volley** incoming balls with a simple aim rule (outer → center C; King → a random outer square),
+**missing** at a tuned rate (`botMissChance = 0.18`) so faults rotate the grid. Bots have cheap
+**stylised humanoid bodies** (torso + head + arms) that **hop** on a volley and recolour gold when they
+hold the throne — kept `CanCollide = false` and out of `BallController._surfaces`, so the hit stays
+server-resolved. Real rallies happen (bot ↔ center ↔ bot), the human climbs the ranks and can reach
+**King**, and a bot-King fault fires the **dethrone**. The M1 physical volley + M3 loop / rank HUD /
+camera are unchanged. Acceptance results are in the M4 design spec (§ "M4 Acceptance"); M3/M1 in theirs.
 
 ## Docs
 
@@ -32,8 +35,8 @@ King square. Acceptance results are in the M3 design spec (§ "M3 Acceptance"); 
    what discrete tiers were a proxy for. **Scatter dropped** to keep contact deterministic + skill-
    expressive (revisit only if play ever feels too predictable).
 3. **M3** — Full grid + rotation + dethrone.  ✅ *done (accepted 2026-06-10)*
-4. **M4** — Bots fill empty squares; solo play fully functional.  ← *current*
-5. **M5** — Networking hardening / anti-cheat.
+4. **M4** — Bots fill empty squares; solo play fully functional.  ✅ *done (accepted 2026-06-10)*
+5. **M5** — Networking hardening / anti-cheat.  ← *current*
 6. **M6** — Progression, leaderboard, audio/VFX, mobile tuning.
 
 ## Key design decisions (evolutions from the PRD)
@@ -73,7 +76,9 @@ King square. Acceptance results are in the M3 design spec (§ "M3 Acceptance"); 
 
 - `src/shared/GridConfig.luau` — dimensions + pure grid/contact math (all tunables).
 - `src/server/` — `BallController` (ball physics/arcs/collision), `MatchService` (builds gym + court,
-  player-cell lookup), `HitResolver` (contact normal), `NineSquareServer` (bootstrap + Heartbeat).
+  player-cell lookup), `HitResolver` (contact normal), `RotationService` (9-rank occupancy + bot bodies
+  + rotation/dethrone), `BotController` (per-Heartbeat bot volley/miss with the aim rule),
+  `NineSquareServer` (bootstrap + Heartbeat + the king-of-the-hill loop).
 - `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera.
 - `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side).
 - `docs/` — PRD, specs, plans.

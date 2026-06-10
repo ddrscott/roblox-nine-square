@@ -1,14 +1,16 @@
 --!strict
 -- ServerScriptService.NineSquare.RotationService
--- M3 step 1 (FOUNDATION ONLY): the 9-rank occupancy model + dummy occupants + placeAll.
--- Holds byRank[rank] = { id, isDummy, rank } for exactly 9 occupants (1 human + 8 dummies), builds the
--- 8 cosmetic dummy parts, and places everyone at cellForRank(rank). NO rotation / serve / fault wiring
--- here yet -- rotateOnFault and the serve branch are later M3 steps.
+-- M3 step 1 / M4 step 2: the 9-rank occupancy model + BOT bodies + placeAll (and rotateOnFault).
+-- Holds byRank[rank] = { id, isDummy, rank } for exactly 9 occupants (1 human + 8 bots), builds the
+-- 8 stylised bot bodies, and places everyone at cellForRank(rank).
 --
--- The dummies are deliberately cosmetic + CanCollide=false and live in their OWN "Dummies" folder under
--- workspace.NineSquare (NOT under NineSquare.Frame), so BallController:_surfaces() never picks them up and
--- the ball physics is unchanged.
+-- M4 step 2: the bot occupants are now cheap STYLISED HUMANOID bodies (a Model: anchored torso + head +
+-- arms with a PrimaryPart), not cylinders -- so they read as players and can HOP on a volley
+-- (hopOccupant pivots the Model up + back down). They are deliberately cosmetic + CanCollide=false and
+-- live in their OWN "Dummies" folder under workspace.NineSquare (NOT under NineSquare.Frame), so
+-- BallController:_surfaces() never picks them up and the ball physics / contact stays server-resolved.
 local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local G = require(RS.GridConfig)
 
 export type Occupant = {
@@ -23,7 +25,7 @@ RotationService.__index = RotationService
 export type RotationService = typeof(setmetatable(
 	{} :: {
 		byRank: { [number]: Occupant },
-		_dummyParts: { [string]: BasePart },   -- id -> the dummy's part (human has none)
+		_dummyParts: { [string]: Model },       -- id -> the bot's body Model (human has none)
 		_placeHuman: (cell: string) -> (),     -- injected: teleport the human's HRP to a cell
 		_setHumanRank: ((rank: number) -> ())?,  -- injected: replicate the human's current rank (player attribute)
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
@@ -55,11 +57,49 @@ function RotationService.new(placeHuman: (cell: string) -> ()): RotationService
 	return self
 end
 
--- Owns the 8 dummy parts in a dedicated Dummies folder (rebuilt fresh each call, like the arena builders).
+-- Build one stylised bot body: a small Model (anchored torso + head + two arms) with the torso as the
+-- PrimaryPart so the whole body can be CFramed/tweened as a unit. All parts CanCollide=false + Anchored
+-- and live OUTSIDE NineSquare.Frame, so the ball never collides with a bot (the hit stays server-resolved).
+-- The body is built around a local origin (torso centre at y=0); _placeOccupant CFrames the PrimaryPart so
+-- the FEET sit on the floor of the cell.
+local function buildBotBody(name: string, bodyColor: Color3): Model
+	local model = Instance.new("Model"); model.Name = name
+	local function part(pname: string, size: Vector3, offset: Vector3, color: Color3, shape: Enum.PartType?)
+		local p = Instance.new("Part")
+		p.Name = pname
+		if shape then p.Shape = shape end
+		p.Anchored = true
+		p.CanCollide = false
+		p.CastShadow = true
+		p.Size = size
+		p.Color = color
+		p.Material = Enum.Material.SmoothPlastic
+		p.CFrame = CFrame.new(offset)   -- relative to the torso centre (set absolutely in _placeOccupant)
+		p.Parent = model
+		return p
+	end
+	local torso = part("Torso", G.botTorsoSize, Vector3.new(0, 0, 0), bodyColor)
+	local headOff = G.botTorsoSize.Y / 2 + G.botHeadSize / 2 + 0.15
+	part("Head", Vector3.new(G.botHeadSize, G.botHeadSize, G.botHeadSize), Vector3.new(0, headOff, 0), G.botSkinColor)
+	local armX = G.botTorsoSize.X / 2 + G.botArmSize.X / 2 + 0.1
+	local armY = G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2
+	part("ArmL", G.botArmSize, Vector3.new(-armX, armY, 0), bodyColor)
+	part("ArmR", G.botArmSize, Vector3.new(armX, armY, 0), bodyColor)
+	model.PrimaryPart = torso
+	return model
+end
+
+-- The y-offset (from the cell floor up to the torso centre) that puts a bot's feet on the floor.
+local function botTorsoY(): number
+	local armBottom = (G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2) - G.botArmSize.Y / 2  -- lowest point (arm tip)
+	return -armBottom
+end
+
+-- Owns the 8 bot bodies in a dedicated Dummies folder (rebuilt fresh each call, like the arena builders).
 function RotationService._buildDummies(self: RotationService)
 	local ns = workspace:FindFirstChild("NineSquare")
 	if not ns then
-		warn("[Rotation] no workspace.NineSquare folder; build the arena before dummies")
+		warn("[Rotation] no workspace.NineSquare folder; build the arena before bot bodies")
 		return
 	end
 	local old = ns:FindFirstChild("Dummies"); if old then old:Destroy() end
@@ -69,35 +109,66 @@ function RotationService._buildDummies(self: RotationService)
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
 		if occ and occ.isDummy then
-			local d = Instance.new("Part")
-			d.Name = "Dummy_rank" .. rank
-			d.Shape = Enum.PartType.Cylinder
-			d.Anchored = true
-			d.CanCollide = false       -- never blocks the ball or players
-			d.CastShadow = true
-			-- Cylinder's length runs along its local X; rotate so it stands upright (length -> world Y).
-			d.Size = Vector3.new(G.dummyHeight, G.dummyRadius * 2, G.dummyRadius * 2)
-			d.Color = (rank == 1) and G.dummyKingColor or G.dummyColor
-			d.Material = Enum.Material.SmoothPlastic
-			d.Parent = folder
-			self._dummyParts[occ.id] = d
+			local color = (rank == 1) and G.botKingColor or G.botBodyColor
+			local body = buildBotBody("Bot_rank" .. rank, color)
+			body.Parent = folder
+			self._dummyParts[occ.id] = body
 		end
 	end
 end
 
--- Position one occupant (human or dummy) at the cell for its rank.
+-- Stand a bot body in the centre of its cell with the feet on the floor (re-colours by current rank so
+-- whoever holds rank 1 reads as the gold King). Returns the floor-standing torso CFrame.
+function RotationService._standBot(self: RotationService, body: Model, cell: string, rank: number): CFrame
+	local center = G.cellCenter(cell) + Vector3.new(0, botTorsoY(), 0)
+	local cf = CFrame.new(center)
+	if body.PrimaryPart then body:PivotTo(cf) end
+	-- Recolour torso + arms by rank (King = gold) so the body's colour tracks its rank after rotation.
+	local color = (rank == 1) and G.botKingColor or G.botBodyColor
+	for _, child in ipairs(body:GetChildren()) do
+		if child:IsA("BasePart") and child.Name ~= "Head" then
+			child.Color = color
+		end
+	end
+	return cf
+end
+
+-- Position one occupant (human or bot) at the cell for its rank.
 function RotationService._placeOccupant(self: RotationService, occ: Occupant)
 	local cell = G.cellForRank(occ.rank)
 	if occ.isDummy then
-		local part = self._dummyParts[occ.id]
-		if part then
-			-- Stand the cylinder upright in the cell, base on the floor (y=0).
-			local center = G.cellCenter(cell) + Vector3.new(0, G.dummyHeight / 2, 0)
-			part.CFrame = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
-		end
+		local body = self._dummyParts[occ.id]
+		if body then self:_standBot(body, cell, occ.rank) end
 	else
 		self._placeHuman(cell)
 	end
+end
+
+-- Juice: pop a bot up and settle it back down so a volley reads visually. Server-driven (called by
+-- BotController on a hit). The bot body is a Model of separate anchored parts (no Motor6D), so we can't
+-- hand it to TweenService directly -- we drive the whole-Model pivot on Heartbeat (cheap: <=8 bots, and a
+-- hop fires only on a volley). Always hops from the bot's CURRENT standing pose so it never drifts, and
+-- snaps exactly back to rest at the end. CanCollide stays false; purely cosmetic.
+function RotationService.hopOccupant(self: RotationService, id: string)
+	local body = self._dummyParts[id]
+	if not body or not body.PrimaryPart then return end
+	local rest = body:GetPivot()
+	local peak = rest + Vector3.new(0, G.botHopHeight, 0)
+	local upDur, downDur = G.botHopUpTime, G.botHopDownTime
+	local t0 = os.clock()
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		if not body.Parent then conn:Disconnect(); return end
+		local elapsed = os.clock() - t0
+		if elapsed < upDur then
+			body:PivotTo(rest:Lerp(peak, elapsed / upDur))                  -- rise
+		elseif elapsed < upDur + downDur then
+			body:PivotTo(peak:Lerp(rest, (elapsed - upDur) / downDur))      -- settle
+		else
+			body:PivotTo(rest)                                              -- snap home
+			conn:Disconnect()
+		end
+	end)
 end
 
 -- Replicate the human's CURRENT rank to their client (server-authoritative; the client only displays).

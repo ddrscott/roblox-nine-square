@@ -2,7 +2,7 @@
 title: "9 Square in the Air — Milestone 4: Bots"
 type: design-spec
 parent_prd: "9 Square in the Air - Roblox PRD (v0.1)"
-status: draft
+status: accepted
 version: 0.1
 platform: Roblox (Luau)
 author: Scott Pierce
@@ -99,3 +99,43 @@ random outer square) — that auto-serve IS the King bot's "hit toward the outsi
 Solo play is a full game: bots serve + volley with the simple aim, miss at a tuned rate, rallies happen,
 the human climbs and can become King, and a bot King can be dethroned — all server-authoritative and
 tunable. Then **M5** hardens networking/anti-cheat and **M6** adds progression + polish.
+
+## M4 Acceptance
+
+**Date:** 2026-06-10 · **Result: PASS** (verified solo in the place "9 Square Beta" over MCP — a Play
+session of the full loop, plus an isolated RotationService check). Step 1 (BotController volley + aim +
+miss) shipped earlier; step 2 added bot bodies, tuned the miss rate, and closed out the milestone.
+
+### §1 success criteria
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Ball descending into a bot square is **volleyed** toward its aim (outer→C / King→outer), not an auto-fault | ✅ PASS | Console: `[Bot] dummy6 VOLLEY SE -> C`, `[Bot] dummy2 VOLLEY C -> S`, `[Bot] dummy3 VOLLEY C -> E` … — outer bots aim C, the King (C) aims a random outer square. |
+| 2 | Bots **miss** at a tunable rate → fault → rotation | ✅ PASS | Console: `[Bot] dummy3 MISS in C -> floor fault` → `FAULT (floor / unreturned) cell=C` → `rotateOnFault(1)`. Misses occur ~1 per several exchanges at `botMissChance = 0.18`. |
+| 3 | Real **rallies** occur; the human can climb + reach **King**; a bot-King fault fires the dethrone | ✅ PASS | Rallies of up to ~9 exchanges (`C↔SE`, `C↔N`, `C↔E` …) before a miss. HUD showed the human climbing 9→8→7. Bot-King faults fired `DETHRONE` (dummy1→dummy2→dummy3→dummy4 took the throne). Isolated check (human seeded at rank 2, rank-1 bot faults): `human_after = 1`, `humanCell = "C"`, `isHumanKing = true`, `dethroned_to = "human"` — the human **can** reach King and the serve branch flips to the human's physical hover-serve. |
+| 4 | Bot behaviour **server-authoritative + deterministic**; all params in `GridConfig` | ✅ PASS | `BotController.resolve` runs each Heartbeat after `bc:step`; the hit is a computed `bc:launch`, never a physical collision. Tunables (`botMissChance`, `botContactBand`, `botVolley`/serve arc, body + hop sizes) live in `GridConfig`. |
+| 5 | Human's physical-contact volley (M1) unchanged + coexists | ✅ PASS | `BotController` only resolves `.isDummy` squares; the human's square is left to the M1 swept-sphere collision. The M1/M3 loop (serve, fault attribution, rotation, HUD, camera) is untouched. |
+
+### Bot bodies (§4)
+- The 8 bot occupants are cheap **stylised humanoid bodies** — a `Model` of anchored parts (torso + cube
+  head + two arms) with the torso as `PrimaryPart`, built in `RotationService.buildBotBody`. Verified in
+  Play: **8 models / 32 parts, all `CanCollide = false`, none under `NineSquare.Frame`** (so they are
+  excluded from `BallController:_surfaces`, which only gathers from `Frame` + `Gym`). They re-place + the
+  rank-1 holder recolours **gold** on every `placeAll` (rotation), so the King body always reads gold in C.
+- On a volley, `BotController` calls `RotationService:hopOccupant(id)`, which **pivots the whole body up
+  and back down** (Heartbeat-driven, `botHopHeight`/`botHopUpTime`/`botHopDownTime`) so the hit reads
+  visually. Cosmetic only — `CanCollide` stays false; the ball never touches a bot.
+- Screenshots: top-down Play view shows 8 bodies one-per-square with the gold King bot in C inside the
+  gold King box, the human (green) in a side square, and the ball in flight.
+
+### Final tuned values (`GridConfig`)
+- `botMissChance = 0.18` (was 0.25). 0.25 ended rallies too fast (most descents faulted); 0.18 gives a
+  steady rotation cadence (~1 fault every few exchanges) while letting bot↔C↔bot rallies actually happen,
+  so the human can ride a clean rally upward and realistically climb to King.
+- `botContactBand = 3`, serve/volley arc reused from M3 (`serveArcApex = 6`) — unchanged; bot↔center↔bot
+  rallies read well and are returnable.
+- Bot body/hop: `botTorsoSize = (2.2, 2.6, 1.2)`, `botHeadSize = 1.4`, `botArmSize = (0.7, 2.4, 0.7)`,
+  `botBodyColor` violet / `botKingColor` gold / `botSkinColor` tan; `botHopHeight = 2.6`,
+  `botHopUpTime = 0.10`, `botHopDownTime = 0.22`.
+
+**M4 is complete.** Next: **M5** — networking hardening / anti-cheat.

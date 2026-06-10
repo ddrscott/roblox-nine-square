@@ -91,6 +91,8 @@ function BotController.resolve(self): boolean
 	-- Hit: aim outer -> center; King (C) -> a random outer square. Launch from the live contact point.
 	local aimCell = (cell == "C") and G.outerCells[math.random(1, #G.outerCells)] or "C"
 	self:_volley(ballPos, aimCell)
+	-- Juice: pop the bot's body so the hit reads visually (cosmetic; CanCollide stays false).
+	self._rotation:hopOccupant(occ.id)
 	print(("[Bot] %s VOLLEY %s -> %s"):format(occ.id, cell, aimCell))
 	return true
 end
