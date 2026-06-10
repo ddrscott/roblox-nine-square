@@ -85,6 +85,24 @@ GridConfig.cells = {
 }
 GridConfig.outerCells = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
+-- Rank -> cell (PRD §4.2 / M3 design §3): index = rank (1..9). King = rank 1 = "C", then the
+-- clockwise ring outward. The human enters at rank 9 (NW); dummies hold ranks 1..8. Config-driven:
+-- change this table and placement follows (cellForRank just indexes it).
+GridConfig.rankCells = { "C", "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+
+-- Dummy occupant look (M3 placeholders for the 8 non-human squares). Cosmetic + non-colliding so they
+-- never touch the ball; clearly-non-player coloured capsules standing in their cell.
+GridConfig.dummyHeight = 5          -- cylinder height (studs)
+GridConfig.dummyRadius = 1.3        -- cylinder radius (studs)
+GridConfig.dummyColor = Color3.fromRGB(120, 90, 210)   -- a clearly-non-player violet
+GridConfig.dummyKingColor = Color3.fromRGB(225, 185, 60) -- the King (rank 1 / C) stands out gold
+
+function GridConfig.cellForRank(rank: number): string
+	local cell = GridConfig.rankCells[rank]
+	assert(cell, "no cell for rank " .. tostring(rank))
+	return cell
+end
+
 function GridConfig.cellCenter(cell: string): Vector3
 	local c = GridConfig.cells[cell]
 	assert(c, "unknown cell " .. tostring(cell))
