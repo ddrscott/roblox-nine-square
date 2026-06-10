@@ -16,6 +16,7 @@ camera. Acceptance results + final tuned values are in the M1 design spec (§ "M
 - Master PRD: [`docs/9-square-prd.md`](docs/9-square-prd.md)
 - M1 design spec: [`docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md`](docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md)
 - M1 plan: [`docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md`](docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md)
+- **M3 design spec** (current): [`docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md)
 
 ## Build milestones (PRD §15)
 
