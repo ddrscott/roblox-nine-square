@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Stop the player tripping on dash/flip (disable trip states + land flip upright) — see [stop-player-tripping.md](stop-player-tripping.md)
 - [x] Tune movement: dash 2× distance (GridConfig.dashSpeed 20→40) + halve double-jump height (flipUpVelocity 75→~38)
 - [x] Reset players to the serve spot when the ball re-serves — see [reset-players-on-serve.md](reset-players-on-serve.md)
 - [x] Add legs at the 4 grid corners (frame stands on something) — see [frame-legs.md](frame-legs.md)
