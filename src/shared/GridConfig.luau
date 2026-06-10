@@ -50,6 +50,15 @@ GridConfig.staminaRegen = 28        -- energy regained per second while not spen
 GridConfig.dashCost = 30            -- energy spent per dash (must have >= this to dash)
 GridConfig.flipCost = 35            -- energy spent per double-jump flip (must have >= this to flip)
 
+-- Court camera: a fixed high view the player can zoom with the mouse wheel. Zoom lerps between the
+-- "out" and "in" offsets below (relative to the court origin); zooming IN also raises the look target
+-- so the pitch flattens and you see less floor. zoom 0 = full out (default), 1 = full in.
+GridConfig.camZoomStep = 0.12       -- zoom change per mouse-wheel notch
+GridConfig.camFarEye = Vector3.new(0, 42, 38)   -- camera offset when zoomed OUT (the default view)
+GridConfig.camFarLook = Vector3.new(0, 7, 0)    -- look-at offset when zoomed out (steeper, more floor)
+GridConfig.camNearEye = Vector3.new(0, 24, 24)  -- camera offset when zoomed IN (closer + lower)
+GridConfig.camNearLook = Vector3.new(0, 15, 0)  -- look-at offset when zoomed in (raised -> pitch up, less floor)
+
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
 

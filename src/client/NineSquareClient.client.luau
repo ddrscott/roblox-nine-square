@@ -5,6 +5,7 @@
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local G = require(RS.GridConfig)
 local Remotes = RS:WaitForChild("NineSquareRemotes")
 local BallSync = Remotes:WaitForChild("BallSync")
@@ -42,12 +43,24 @@ highlight.LineThickness = 0.08; highlight.Color3 = Color3.fromRGB(255, 210, 80);
 local state: any = nil
 BallSync.OnClientEvent:Connect(function(data) state = data end)
 
--- Clear fixed court camera: high and behind (south), looking down at the grid.
+-- Mouse-wheel zoom: 0 = zoomed out (default high view), 1 = zoomed in. Scroll up to zoom in.
+local zoom = 0
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseWheel then
+		zoom = math.clamp(zoom + input.Position.Z * G.camZoomStep, 0, 1)
+	end
+end)
+
+-- Court camera: high and behind (south), looking down at the grid. The mouse wheel zooms between the
+-- far (out) and near (in) offsets; zooming in raises the look target so the view pitches up and shows
+-- less floor. Stays inside the gym, below the ceiling.
 local function updateCamera()
 	local o = courtOrigin()
 	cam.CameraType = Enum.CameraType.Scriptable
 	cam.FieldOfView = 58
-	cam.CFrame = CFrame.lookAt(o + Vector3.new(0, 42, 38), o + Vector3.new(0, 7, 0))  -- inside the gym, below the ceiling
+	local eye = o + G.camFarEye:Lerp(G.camNearEye, zoom)
+	local look = o + G.camFarLook:Lerp(G.camNearLook, zoom)
+	cam.CFrame = CFrame.lookAt(eye, look)
 end
 
 RunService.RenderStepped:Connect(function()
