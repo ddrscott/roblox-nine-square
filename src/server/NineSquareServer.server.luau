@@ -55,9 +55,35 @@ bc.onLand = function(landed, struck)
 	end
 end
 
+-- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.
+-- Place a character at the center square (C) so they start/serve under the hovering ball.
+local function placeAtCourt(char: Model)
+	local hrp = char:WaitForChild("HumanoidRootPart", 5)
+	if hrp then
+		hrp.CFrame = CFrame.new(G.cellCenter("C") + Vector3.new(0, 5, 0))
+		print(("[NineSquare] placed %s at %s"):format(char.Name, tostring(hrp.Position)))
+	else
+		warn("[NineSquare] no HumanoidRootPart to place: " .. char.Name)
+	end
+end
+
+-- Snap every present player back to the serve square. M1 is single-square; later rotation
+-- milestones (M3) can extend this to place players at their assigned square.
+local function placeAllAtCourt()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.Character then placeAtCourt(plr.Character) end
+	end
+end
+
 -- Ball has bounced out its energy and stopped: re-serve after a beat (unless it's batted back into play).
+-- On re-serve, snap players back to the centre so they don't have to walk back to serve.
 bc.onRest = function()
-	task.delay(0.6, function() if bc.phase == "Rest" then bc:resetToServe() end end)
+	task.delay(0.6, function()
+		if bc.phase == "Rest" then
+			bc:resetToServe()
+			placeAllAtCourt()
+		end
+	end)
 end
 
 -- Physical contact is now a real collision inside the ball's step: each Heartbeat we gather the
@@ -68,21 +94,14 @@ RunService.Heartbeat:Connect(function(dt)
 	bc:step(dt, HitResolver.playerColliders())
 end)
 
--- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.
--- Place each spawning character at the center square (C) so they start under the served ball.
-local function placeAtCourt(char: Model)
-	local hrp = char:WaitForChild("HumanoidRootPart", 5)
-	if hrp then
-		hrp.CFrame = CFrame.new(G.cellCenter("C") + Vector3.new(0, 5, 0))
-		print(("[NineSquare] placed %s at %s"):format(char.Name, tostring(hrp.Position)))
-		task.delay(1, function() bc:resync() end)  -- make sure the late-loading client gets ball state
-	else
-		warn("[NineSquare] no HumanoidRootPart to place: " .. char.Name)
-	end
+-- Spawn placement: same court placement plus a resync so the late-loading client gets ball state.
+local function placeAtCourtAndSync(char: Model)
+	placeAtCourt(char)
+	task.delay(1, function() bc:resync() end)
 end
 local function hook(plr: Player)
-	if plr.Character then placeAtCourt(plr.Character) end
-	plr.CharacterAdded:Connect(placeAtCourt)
+	if plr.Character then placeAtCourtAndSync(plr.Character) end
+	plr.CharacterAdded:Connect(placeAtCourtAndSync)
 end
 Players.PlayerAdded:Connect(hook)
 for _, plr in ipairs(Players:GetPlayers()) do hook(plr) end
