@@ -14,10 +14,13 @@ GridConfig.serveTravel = 1.1        -- (legacy)
 GridConfig.descentWindow = 0.8      -- (legacy)
 GridConfig.hitZoneRadius = 2.5      -- avatar hit-zone sphere radius
 GridConfig.hitZoneYOffset = 2.0     -- hit-zone center above HumanoidRootPart (hands/head)
-GridConfig.hitSpeedH = 22           -- horizontal launch speed (direction/reach; scales with off-centeredness)
-GridConfig.hitSpeedV = 72           -- vertical launch speed (height + hang time so the ball is returnable)
+GridConfig.hitRestitution = 1.5     -- player-strike bounciness: outgoing speed along the contact normal
+                                    --   ~ (1 + this) * the player's velocity toward the ball (sphere bounce)
+GridConfig.hitMinPop = 55           -- floor on that outgoing speed so a clean contact always stays in play
+GridConfig.hitSpeedH = 22           -- (legacy) fixed horizontal launch speed; superseded by the velocity-proportional strike
+GridConfig.hitSpeedV = 72           -- (legacy) fixed vertical launch speed; superseded by the velocity-proportional strike
 GridConfig.hitCooldown = 0.30       -- min seconds between contacts (debounce one jump)
-GridConfig.minLift = 0.30           -- floor on the contact normal's vertical part (caps horizontal reach)
+GridConfig.minLift = 0.30           -- floor on the contact normal's vertical part (biases a clean bump upward)
 GridConfig.floorRestitution = 0.55  -- ground bounciness: fraction of vertical speed kept per floor bounce
 GridConfig.floorFriction = 0.72     -- horizontal speed kept per floor bounce (so it rolls to a stop)
 GridConfig.restSpeedV = 8           -- settle once a floor bounce would rise slower than this (studs/s)

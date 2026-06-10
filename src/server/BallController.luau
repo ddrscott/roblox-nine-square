@@ -110,6 +110,27 @@ function BallController:isHittable(now: number): boolean
 	return (now - self.lastHitT) >= G.hitCooldown
 end
 
+-- The ball's instantaneous velocity right now (zero unless it's in motion).
+function BallController:currentVelocity(): Vector3
+	if self.phase == "Flight" or self.phase == "Settling" then
+		return self.v0 + Vector3.new(0, -self.gravity * (workspace:GetServerTimeNow() - self.startT), 0)
+	end
+	return Vector3.zero
+end
+
+-- A player strikes the ball: model the player as a sphere moving at `playerVel` hitting the ball
+-- sphere, and transfer momentum along the line of centres `n` (a simple frictionless sphere bounce).
+-- The impact is therefore proportional to the player's velocity TOWARD the ball; hitMinPop floors the
+-- outgoing speed so a clean contact (even at the near-motionless jump apex) always stays in play.
+function BallController:strike(point: Vector3, n: Vector3, playerVel: Vector3)
+	local vBall = self:currentVelocity()
+	local closing = (vBall - playerVel):Dot(n)
+	local vOut = vBall - (1 + G.hitRestitution) * closing * n
+	local along = vOut:Dot(n)
+	if along < G.hitMinPop then vOut = vOut + (G.hitMinPop - along) * n end
+	self:launch(point, vOut)
+end
+
 -- Every rigid surface the ball bounces off EXCEPT the floor (the floor is a robust ground plane in
 -- step() -- a thin floor box would let a fast-descending ball tunnel straight through). Includes the
 -- frame pipes + the gym's rigid parts (ceiling, walls, backboards, rims); glass + neon pass through.

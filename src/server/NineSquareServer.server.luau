@@ -66,12 +66,10 @@ RunService.Heartbeat:Connect(function()
 	if bc:isHittable(now) then
 		local res = HitResolver.checkContact(bc.ball.Position)
 		if res.contact then
-			-- horizontal direction/reach comes from the contact normal; vertical is a fixed pop for hang time
-			local n = res.normal
-			local v0 = Vector3.new(n.X, 0, n.Z) * G.hitSpeedH + Vector3.new(0, G.hitSpeedV, 0)
-			bc:launch(res.point, v0)
-			print(("[NineSquare] hit by %s  n=%s  -> %s"):format(
-				res.player and res.player.Name or "?", tostring(res.normal), tostring(bc.targetCell)))
+			-- impact is a simple sphere bounce: proportional to the player's velocity toward the ball
+			bc:strike(res.point, res.normal, res.playerVel)
+			print(("[NineSquare] hit by %s  vPlayer=%s  -> %s"):format(
+				res.player and res.player.Name or "?", tostring(res.playerVel), tostring(bc.targetCell)))
 		end
 	end
 end)
