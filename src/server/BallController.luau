@@ -13,7 +13,7 @@ local BallSync = RS.NineSquareRemotes.BallSync
 local BallController = {}
 BallController.__index = BallController
 
-local FRAME_RESTITUTION = 0.6   -- bounciness when the ball strikes a frame pipe
+local FRAME_RESTITUTION = 0.6   -- bounciness when the ball strikes a frame pipe or a gym wall/ceiling
 
 function BallController.new()
 	local self = setmetatable({}, BallController)
@@ -82,27 +82,40 @@ function BallController:isHittable(now: number): boolean
 	return (self.phase == "Live" or self.phase == "Flight") and (now - self.lastHitT) >= G.hitCooldown
 end
 
--- Sphere-vs-frame-pipe test. If the ball penetrates a (axis-aligned) frame bar while moving into it,
--- returns (true, correctedPos, reflectedVel); otherwise false.
-function BallController:_collideFrame(pos: Vector3, vel: Vector3)
+-- Barrier parts the ball bounces off: the overhead frame pipes + the gym walls and ceiling.
+function BallController:_barriers(): { BasePart }
+	local list = {}
 	local frame = self.ball.Parent and self.ball.Parent:FindFirstChild("Frame")
-	if not frame then return false end
+	if frame then
+		for _, b in ipairs(frame:GetChildren()) do if b:IsA("BasePart") then table.insert(list, b) end end
+	end
+	local gym = workspace:FindFirstChild("Gym")
+	if gym then
+		for _, nm in ipairs({ "WallE", "WallW", "WallN", "WallS", "Ceiling" }) do
+			local p = gym:FindFirstChild(nm)
+			if p and p:IsA("BasePart") then table.insert(list, p) end
+		end
+	end
+	return list
+end
+
+-- Sphere-vs-(axis-aligned)-box test against every barrier. If the ball penetrates one while moving
+-- into it, returns (true, correctedPos, reflectedVel); otherwise false.
+function BallController:_collide(pos: Vector3, vel: Vector3)
 	local r = G.ballRadius
-	for _, beam in ipairs(frame:GetChildren()) do
-		if beam:IsA("BasePart") then
-			local c, h = beam.Position, beam.Size / 2
-			local closest = Vector3.new(
-				math.clamp(pos.X, c.X - h.X, c.X + h.X),
-				math.clamp(pos.Y, c.Y - h.Y, c.Y + h.Y),
-				math.clamp(pos.Z, c.Z - h.Z, c.Z + h.Z))
-			local delta = pos - closest
-			local dist = delta.Magnitude
-			if dist < r and dist > 1e-4 and vel:Dot(delta.Unit) < 0 then
-				local n = delta.Unit
-				local newVel = vel - (1 + FRAME_RESTITUTION) * vel:Dot(n) * n
-				local newPos = closest + n * (r + 0.05)
-				return true, newPos, newVel
-			end
+	for _, part in ipairs(self:_barriers()) do
+		local c, h = part.Position, part.Size / 2
+		local closest = Vector3.new(
+			math.clamp(pos.X, c.X - h.X, c.X + h.X),
+			math.clamp(pos.Y, c.Y - h.Y, c.Y + h.Y),
+			math.clamp(pos.Z, c.Z - h.Z, c.Z + h.Z))
+		local delta = pos - closest
+		local dist = delta.Magnitude
+		if dist < r and dist > 1e-4 and vel:Dot(delta.Unit) < 0 then
+			local n = delta.Unit
+			local newVel = vel - (1 + FRAME_RESTITUTION) * vel:Dot(n) * n
+			local newPos = closest + n * (r + 0.05)
+			return true, newPos, newVel
 		end
 	end
 	return false
@@ -152,8 +165,8 @@ function BallController:step()
 		local g = self.gravity
 		local vel = self.v0 + Vector3.new(0, -g * t, 0)
 		local pos = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
-		-- bounce off the overhead frame pipes
-		local hit, newPos, newVel = self:_collideFrame(pos, vel)
+		-- bounce off the frame pipes and the gym walls/ceiling
+		local hit, newPos, newVel = self:_collide(pos, vel)
 		if hit then
 			self.p0 = newPos; self.v0 = newVel; self.startT = now
 			self.ball.Position = newPos
