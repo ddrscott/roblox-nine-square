@@ -41,7 +41,9 @@ function MatchService.buildArena(origin: Vector3)
 	-- Painted grid lines on the floor: a renderer-independent "shadow" of the frame, so the grid
 	-- reads on the floor in Play mode too (dynamic shadows often don't draw in Studio Play / low quality).
 	local lines = Instance.new("Folder"); lines.Name = "GridLines"; lines.Parent = root
-	local lineW = 0.6
+	-- Tuned to read as a soft SHADOW of the overhead frame, not bold paint: a slightly warm dark-grey
+	-- on the warm tan WoodPlanks, held mostly-transparent + narrow so it's just a hint of the grid.
+	local lineW = 0.5
 	for _, m in ipairs({ -1.5, -0.5, 0.5, 1.5 }) do
 		local offs = m * G.squareSize
 		local strips = {
@@ -52,7 +54,7 @@ function MatchService.buildArena(origin: Vector3)
 			local s = Instance.new("Part"); s.Anchored = true; s.CanCollide = false; s.CastShadow = false
 			s.Size = ln[1]
 			s.Position = G.origin + ln[2] + Vector3.new(0, 0.06, 0)
-			s.Color = Color3.fromRGB(45, 45, 55); s.Material = Enum.Material.SmoothPlastic; s.Transparency = 0.1
+			s.Color = Color3.fromRGB(64, 52, 40); s.Material = Enum.Material.SmoothPlastic; s.Transparency = 0.66
 			s.Parent = lines
 		end
 	end
