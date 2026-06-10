@@ -6,7 +6,7 @@ server** (`StudioMCP`, which ships inside Roblox Studio).
 
 ## Status
 
-**Milestone M1 (greybox) — complete** (accepted 2026-06-10, tagged `m1-greybox`). **M2 is next.**
+**Milestone M1 (greybox) — complete** (accepted 2026-06-10, tagged `m1-greybox`). **M2 folded into the M1 contact model — M3 (full grid + rotation + dethrone) is next.**
 Playable single-player loop in the place **"9 Square Beta"**: enclosed gymnasium scene, 3×3 court,
 physical serve + contact volley, self-square / out-of-bounds faults, soft ball shadow, fixed court
 camera. Acceptance results + final tuned values are in the M1 design spec (§ "M1 Acceptance").
@@ -20,8 +20,12 @@ camera. Acceptance results + final tuned values are in the M1 design spec (§ "M
 ## Build milestones (PRD §15)
 
 1. **M1** — Greybox arena + readability + physical contact volley.  ✅ *done (`m1-greybox`)*
-2. **M2** — Hit resolver: timing tiers + scatter on the same contact.  ← *current*
-3. **M3** — Full grid + rotation + dethrone.
+2. **M2** — Hit resolver: timing tiers + scatter.  *folded into the M1 contact model* — the
+   velocity-proportional, contact-geometry strike (direction from where you hit it, power from your
+   velocity, dash-jump momentum) already makes timing + positioning matter continuously, which is
+   what discrete tiers were a proxy for. **Scatter dropped** to keep contact deterministic + skill-
+   expressive (revisit only if play ever feels too predictable).
+3. **M3** — Full grid + rotation + dethrone.  ← *current*
 4. **M4** — Bots fill empty squares; solo play fully functional.
 5. **M5** — Networking hardening / anti-cheat.
 6. **M6** — Progression, leaderboard, audio/VFX, mobile tuning.
