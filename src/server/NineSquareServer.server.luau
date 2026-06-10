@@ -32,7 +32,9 @@ RunService.Heartbeat:Connect(function()
 	if bc:isHittable(now) then
 		local res = HitResolver.checkContact(bc.ball.Position)
 		if res.contact then
-			local v0 = res.normal * G.hitSpeed   -- radial impulse along the contact normal
+			-- horizontal direction/reach comes from the contact normal; vertical is a fixed pop for hang time
+			local n = res.normal
+			local v0 = Vector3.new(n.X, 0, n.Z) * G.hitSpeedH + Vector3.new(0, G.hitSpeedV, 0)
 			bc:launch(res.point, v0)
 			print(("[NineSquare] hit by %s  n=%s  -> %s"):format(
 				res.player and res.player.Name or "?", tostring(res.normal), tostring(bc.targetCell)))
