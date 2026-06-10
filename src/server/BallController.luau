@@ -20,7 +20,8 @@ function BallController.new()
 	local ball = Instance.new("Part")
 	ball.Name = "Ball"; ball.Shape = Enum.PartType.Ball; ball.Anchored = true; ball.CanCollide = false
 	ball.Size = Vector3.new(G.ballRadius*2, G.ballRadius*2, G.ballRadius*2)
-	ball.Color = Color3.fromRGB(255, 220, 60); ball.Material = Enum.Material.SmoothPlastic
+	-- matte coral: a near-white color (old 255,220,60) trips the Lighting Bloom and glows like a light source
+	ball.Color = Color3.fromRGB(235, 92, 74); ball.Material = Enum.Material.Plastic
 	ball.Parent = workspace:WaitForChild("NineSquare")
 	self.ball = ball
 	self.gravity = workspace.Gravity
@@ -71,15 +72,22 @@ end
 function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self.p0 = fromPoint; self.v0 = v0
 	self.startT = workspace:GetServerTimeNow(); self.lastHitT = self.startT
-	self.phase = "Flight"
 	self.struckCell = G.cellAtPosition(fromPoint)
-	self.targetCell = self:_predictLandCell()
+	if self.phase == "Settling" or self.phase == "Dead" then
+		-- the rally is already scored: a hit on the dead ball just bats it around (no re-score), and
+		-- moving it out of Dead cancels the pending reset. Keep it in Settling so it never re-resolves.
+		self.phase = "Settling"
+	else
+		self.phase = "Flight"
+		self.targetCell = self:_predictLandCell()
+	end
 	self:resync()
 end
 
--- A served/flying ball can be struck, after a short cooldown so one jump fires once.
+-- The ball can be struck in ANY phase (you can keep batting a dead ball around for fun); the
+-- cooldown just debounces one jump into a single hit.
 function BallController:isHittable(now: number): boolean
-	return (self.phase == "Live" or self.phase == "Flight") and (now - self.lastHitT) >= G.hitCooldown
+	return (now - self.lastHitT) >= G.hitCooldown
 end
 
 -- Barrier parts the ball bounces off: the overhead frame pipes + the gym walls and ceiling.
@@ -139,52 +147,65 @@ function BallController:_faultSound()
 	Debris:AddItem(s, 3)
 end
 
-function BallController:_fault(cell: string?, kind: string)
-	self.phase = "Dead"; self.targetCell = cell
+-- First floor contact ends the rally and decides the square: legal land elsewhere, self-square fault,
+-- or out-of-bounds. The flash + oof sound fire now -- but the ball is NOT frozen; it drops into
+-- Settling and keeps bouncing/interacting until it comes to rest (see step()).
+function BallController:_resolve(cell: string?)
+	self.phase = "Settling"; self.targetCell = cell
+	if cell == nil then
+		print("[NineSquare] FAULT (out-of-bounds) struck=" .. tostring(self.struckCell))
+		self:_flash(self.struckCell); self:_faultSound()
+	elseif cell == self.struckCell then
+		print("[NineSquare] FAULT (self-square) cell=" .. cell)
+		self:_flash(cell); self:_faultSound()
+	else
+		print("[NineSquare] ball landed in " .. cell .. " (unreturned)")
+	end
 	self:resync()
-	print(("[NineSquare] FAULT (%s) cell=%s"):format(kind, tostring(cell)))
-	self:_flash(cell)
-	self:_faultSound()
-	task.delay(0.9, function() if self.phase == "Dead" then self:resetToServe() end end)
 end
 
--- Legal landing in another square that nobody returned: rally ends, re-serve from center.
-function BallController:_land(cell: string)
-	self.phase = "Dead"; self.targetCell = cell
+-- The ball has bounced out its energy and come to rest: hold a beat, then re-serve from center.
+function BallController:_rest()
+	self.phase = "Dead"
 	self:resync()
-	print("[NineSquare] ball landed in " .. cell .. " (unreturned)")
-	task.delay(0.7, function() if self.phase == "Dead" then self:resetToServe() end end)
+	task.delay(0.6, function() if self.phase == "Dead" then self:resetToServe() end end)
 end
 
 function BallController:step()
 	if self.phase == "Live" then
 		self.ball.Position = self.restPoint
 		return
-	elseif self.phase == "Flight" then
+	elseif self.phase == "Flight" or self.phase == "Settling" then
 		local now = workspace:GetServerTimeNow()
 		local t = now - self.startT
 		local g = self.gravity
 		local vel = self.v0 + Vector3.new(0, -g * t, 0)
 		local pos = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
-		-- bounce off the frame pipes and the gym walls/ceiling
+		-- bounce off the frame pipes and the gym walls/ceiling (in flight AND while settling)
 		local hit, newPos, newVel = self:_collide(pos, vel)
 		if hit then
 			self.p0 = newPos; self.v0 = newVel; self.startT = now
 			self.ball.Position = newPos
-			self.targetCell = self:_predictLandCell()
+			if self.phase == "Flight" then self.targetCell = self:_predictLandCell() end
 			self:resync()
 			return
 		end
 		if pos.Y <= G.ballRadius then
-			pos = Vector3.new(pos.X, G.ballRadius, pos.Z)
-			self.ball.Position = pos
-			local cell = G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z))
-			if cell == nil then
-				self:_fault(self.struckCell, "out-of-bounds")
-			elseif cell == self.struckCell then
-				self:_fault(cell, "self-square")
+			-- first floor contact decides the rally (sound + red flash); thereafter the ball just bounces
+			if self.phase == "Flight" then
+				self:_resolve(G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z)))
+			end
+			-- bounce off the floor: keep some vertical (restitution) + shed horizontal (friction)
+			local up = -vel.Y * G.floorRestitution
+			local horiz = Vector3.new(vel.X, 0, vel.Z) * G.floorFriction
+			self.ball.Position = Vector3.new(pos.X, G.ballRadius, pos.Z)
+			if up < G.restSpeedV and horiz.Magnitude < G.restSpeedH then
+				self:_rest()                       -- come to rest -> re-serve after a beat
 			else
-				self:_land(cell)
+				self.p0 = self.ball.Position
+				self.v0 = Vector3.new(horiz.X, up, horiz.Z)
+				self.startT = now
+				self:resync()
 			end
 		else
 			self.ball.Position = pos
