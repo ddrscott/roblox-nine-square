@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Make bot contact read — leap to the ball on a volley (not a robotic floor hop) — see [m4-fix-bot-contact-visual.md](m4-fix-bot-contact-visual.md)
 - [x] M4 step 1: BotController — volley + aim (outer→center / King→outside) + miss, wired into the loop — see [m4-step1-bot-volley.md](m4-step1-bot-volley.md)
 - [x] M4 step 2: bot bodies + difficulty tune + acceptance (close out M4) — see [m4-step2-bot-bodies-acceptance.md](m4-step2-bot-bodies-acceptance.md)
 - [x] M3 step 2: rotation-on-fault (the rotation mechanism) — see [m3-step2-rotation.md](m3-step2-rotation.md)
