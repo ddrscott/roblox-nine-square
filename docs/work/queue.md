@@ -1,7 +1,7 @@
 # Work Queue
 
 - [x] M4 step 1: BotController — volley + aim (outer→center / King→outside) + miss, wired into the loop — see [m4-step1-bot-volley.md](m4-step1-bot-volley.md)
-- [ ] M4 step 2: bot bodies + difficulty tune + acceptance (close out M4) — see [m4-step2-bot-bodies-acceptance.md](m4-step2-bot-bodies-acceptance.md)
+- [-] M4 step 2: bot bodies + difficulty tune + acceptance (close out M4) — see [m4-step2-bot-bodies-acceptance.md](m4-step2-bot-bodies-acceptance.md)
 - [x] M3 step 2: rotation-on-fault (the rotation mechanism) — see [m3-step2-rotation.md](m3-step2-rotation.md)
 - [x] M3 step 3: King serve + fault→rotation wiring (the live loop) — see [m3-step3-serve-fault-loop.md](m3-step3-serve-fault-loop.md)
 - [x] M3 step 4: dethrone emphasis + minimal rank/King HUD — see [m3-step4-dethrone-hud.md](m3-step4-dethrone-hud.md)
