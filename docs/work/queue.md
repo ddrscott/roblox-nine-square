@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] FIX (severe): attribute faults by over-the-pipe crossings, not the landing XZ (wrong knock-outs on low deflects) — see [pipe-crossing-fault-attribution.md](pipe-crossing-fault-attribution.md)
 - [x] Defer rotation until the ball is at rest (keep red fault panel at landing) — see [defer-rotation-until-rest.md](defer-rotation-until-rest.md)
 - [x] Highlight the grid pipes of the last saved ball — see [save-pipe-highlight.md](save-pipe-highlight.md)
 - [x] Make bot contact read — leap to the ball on a volley (not a robotic floor hop) — see [m4-fix-bot-contact-visual.md](m4-fix-bot-contact-visual.md)
