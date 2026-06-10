@@ -32,8 +32,16 @@ camera. Acceptance results + final tuned values are in the M1 design spec (§ "M
 - The hit is a **physical contact volley**: get under the ball and jump; you must *reach* the frame
   plane (jump apex) **and** *touch* the ball. **Serving is physical too** (no button) — the ball
   hovers at center and you strike it.
-- **Contact-aim**: outgoing horizontal direction comes from the contact geometry (radial impulse /
-  reflection). Vertical pop is a fixed `hitSpeedV` for hang time. Supersedes the PRD aim-assist (§5.4).
+- **Velocity-proportional strike**: the server reads the player's replicated HumanoidRootPart
+  velocity at contact and models a sphere bounce (`BallController:strike`), so harder/faster motion
+  into the ball produces a harder/steeper send. `hitMinPop` floors the outgoing speed so a clean
+  contact always stays in play. Supersedes the PRD aim-assist (§5.4) and the old fixed `hitSpeed*`.
+- **Movement skill moves (client-side)**: double-tap W/A/S/D to **dash** (a brief camera-relative
+  horizontal burst) and double-tap Space mid-air for a **double-jump flip** (one extra air-jump with
+  a cosmetic spin + upward velocity). Both are gated/costed by a **stamina** pool shown on a HUD bar.
+  They feed the velocity-proportional strike directly (no special-casing): a dash into the ball is a
+  hard directional drive, a flip meets the ball higher and spikes. Client-authoritative for now
+  (anti-cheat is M5); all tunables live in `GridConfig`.
 - **Faults**: a ball that returns to the square it was struck from is a *self-fault*; landing outside
   the 9 squares is *out-of-bounds*. Both flash the square + play the oof sound, then re-serve.
 - **Scene**: an enclosed gym (`MatchService.buildGym`, build-once) with painted floor grid lines so
@@ -57,6 +65,7 @@ camera. Acceptance results + final tuned values are in the M1 design spec (§ "M
 - `src/server/` — `BallController` (ball physics/arcs/collision), `MatchService` (builds gym + court,
   player-cell lookup), `HitResolver` (contact normal), `NineSquareServer` (bootstrap + Heartbeat).
 - `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera.
+- `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side).
 - `docs/` — PRD, specs, plans.
 
 ## Continuing on another machine (e.g. Mac)

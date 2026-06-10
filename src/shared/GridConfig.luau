@@ -29,6 +29,19 @@ GridConfig.steerConeDeg = 15        -- (legacy)
 GridConfig.lobTravel = 1.0          -- (legacy)
 GridConfig.lobDistance = 14         -- (legacy)
 
+-- Movement skill moves (client-side; M1 reads replicated HRP velocity, so these velocities feed the
+-- velocity-proportional strike directly -- no strike-formula change). All tunable.
+GridConfig.doubleTapWindow = 0.25   -- max seconds between two taps to count as a double-tap (dash & flip)
+GridConfig.dashSpeed = 80           -- horizontal burst speed applied to the character during a dash (studs/s)
+GridConfig.dashDuration = 0.18      -- how long the dash burst is held before control returns (s)
+GridConfig.flipUpVelocity = 75      -- upward velocity set on the double-jump flip (studs/s) -> reach higher + spike
+GridConfig.flipForwardBoost = 26    -- horizontal velocity added in the facing direction on the flip (studs/s)
+GridConfig.flipSpinTime = 0.45      -- duration of the cosmetic forward-flip rotation (s)
+GridConfig.staminaMax = 100         -- energy pool ceiling
+GridConfig.staminaRegen = 28        -- energy regained per second while not spending
+GridConfig.dashCost = 30            -- energy spent per dash (must have >= this to dash)
+GridConfig.flipCost = 35            -- energy spent per double-jump flip (must have >= this to flip)
+
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
 
