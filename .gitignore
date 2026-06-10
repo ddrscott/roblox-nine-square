@@ -1,0 +1,15 @@
+# Roblox / Rojo build artifacts
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+/build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+
+# Node (MCP tooling is installed globally; ignore any local installs)
+node_modules/
