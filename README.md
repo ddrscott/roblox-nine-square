@@ -1,7 +1,8 @@
 # 9 Square in the Air (Roblox)
 
 A multiplayer king-of-the-hill volley game for Roblox, based on the playground game
-*9 Square in the Air*. Built live in Roblox Studio via the `robloxstudio-mcp` integration.
+*9 Square in the Air*. Built live in Roblox Studio via the official **Roblox Studio MCP
+server** (`StudioMCP`, which ships inside Roblox Studio).
 
 ## Status
 
@@ -63,10 +64,47 @@ The git repo is the **source of truth for code**; the Roblox **place** ("9 Squar
 the Roblox account (open it from Studio on the Mac).
 
 1. `git clone` this repo on the Mac.
-2. Install Node + the `robloxstudio-mcp` server, and the Studio companion plugin (see the MCP setup).
-3. Open the "9 Square Beta" place in Studio (Edit mode).
-4. Deploy `src/*.luau` into Studio via the MCP `set_script_source` onto the fixed instance paths
-   (mapping table at the top of the M1 plan). The server bootstrap rebuilds the court/gym on Play.
+2. The MCP server is the **official Roblox one built into Studio** — nothing to `npm install`
+   and no companion plugin. The repo's `.mcp.json` already points Claude Code at the binary:
+   ```json
+   { "mcpServers": { "robloxstudio": {
+       "command": "/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP" } } }
+   ```
+   On first run, approve the project-scoped server when Claude Code prompts
+   (`claude mcp list` should then show it ✔ Connected). Studio must be open with the place loaded.
 
-**Note:** the `robloxstudio-mcp` plugin only operates in Studio **Edit mode** — all MCP calls time
-out during Play/Test. Verify logic in Edit; play-test by hand.
+   **Critical — enable Studio as an MCP server, or the client connects but shows _no tools_.**
+   The binary is only a bridge; Studio has to opt in to serving tools. In Studio: open the
+   **Assistant** panel → **…** → **Manage MCP Servers** → turn on **"Enable Studio as MCP server."**
+   Enable this *before* the client connects (Studio must be serving first), then restart/reconnect
+   Claude Code so it re-fetches the tool list. Requires the latest Roblox Studio.
+3. Open the "9 Square Beta" place in Studio.
+4. Deploy `src/*.luau` into Studio with the `multi_edit` tool onto the fixed instance paths
+   (mapping table at the top of the M1 plan); `multi_edit` creates a script if the path doesn't
+   exist yet. Use `script_read` / `script_grep` to inspect, and `execute_luau` for one-off setup.
+   The server bootstrap rebuilds the court/gym on Play.
+
+**Note:** unlike the old community plugin, the official server **also works during Play/Test** —
+`start_stop_play`, `console_output`, `screen_capture`, and `playtest_subagent` let you launch and
+observe a play session over MCP, so gameplay can be verified without doing it all by hand.
+
+### MCP tool reference (`StudioMCP`)
+
+Tools surface in Claude Code as `mcp__robloxstudio__<tool>`. The ones this project uses:
+
+| Tool | Use for |
+| --- | --- |
+| `multi_edit` | Deploy/edit a script at a dot-notation path; **creates** it if missing. |
+| `script_read` | Read a script (whole or line-range). |
+| `script_search` / `script_grep` | Fuzzy-find scripts by name / pattern-search across all scripts. |
+| `search_game_tree` | Dump the instance hierarchy as JSON (filter by path/type/keyword). |
+| `inspect_instance` | Properties + attributes of an instance. |
+| `execute_luau` | Run arbitrary Luau (one-off setup, building instances, assertions). |
+| `start_stop_play` | Start/stop a play session. |
+| `console_output` / `screen_capture` | Read gameplay logs / capture the viewport during Play. |
+| `playtest_subagent` | Spawn test characters for gameplay scenarios. |
+| `character_navigation`, `keyboard_input`, `mouse_input` | Simulate player input during Play. |
+| `list_roblox_studios` / `set_active_studio` | List connected Studio instances / pick the active one. |
+
+Asset generation (`generate_mesh`, `generate_material`, `generate_procedural_model`,
+`insert_from_creator_store`) is available but unused — this game is built from primitives in code.
