@@ -10,6 +10,7 @@ local G = require(RS.GridConfig)
 local Remotes = RS:WaitForChild("NineSquareRemotes")
 local BallSync = Remotes:WaitForChild("BallSync")
 local cam = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
 local function courtOrigin(): Vector3
 	local ns = workspace:FindFirstChild("NineSquare")
@@ -40,6 +41,15 @@ ring.Image = "rbxassetid://5028857084"; ring.ImageColor3 = Color3.fromRGB(255, 8
 local highlight = Instance.new("SelectionBox")
 highlight.LineThickness = 0.08; highlight.Color3 = Color3.fromRGB(255, 210, 80); highlight.Parent = workspace
 
+-- Player ground shadow: a soft dark disc under the local player so you can read your position on the
+-- floor relative to the ball's shadow. It grows + fades with jump height (also a jump-height cue).
+local playerShadow = Instance.new("Part")
+playerShadow.Name = "PlayerShadow"; playerShadow.Anchored = true; playerShadow.CanCollide = false
+playerShadow.CanQuery = false; playerShadow.CastShadow = false
+playerShadow.Shape = Enum.PartType.Cylinder; playerShadow.Orientation = Vector3.new(0, 0, 90)
+playerShadow.Color = Color3.new(0, 0, 0); playerShadow.Material = Enum.Material.SmoothPlastic; playerShadow.Transparency = 1
+playerShadow.Parent = shadowFolder
+
 local state: any = nil
 BallSync.OnClientEvent:Connect(function(data) state = data end)
 
@@ -51,20 +61,54 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 end)
 
--- Court camera: high and behind (south), looking down at the grid. The mouse wheel zooms between the
--- far (out) and near (in) offsets; zooming in raises the look target so the view pitches up and shows
--- less floor. Stays inside the gym, below the ceiling.
+-- Shift toggles FOLLOW mode: the camera tracks the local player (keeps them centred) instead of the
+-- fixed court overview. Tap LeftShift / RightShift to toggle.
+local followMode = false
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+		followMode = not followMode
+	end
+end)
+
+-- Court camera: high and behind (south), looking down at the grid. The mouse wheel zooms between each
+-- mode's far (out) and near (in) offsets; zooming in raises the look target so the view pitches up and
+-- shows less floor. In follow mode the offsets are tighter (gym-safe) and centred on the player. The
+-- focus point eases (camFollowSmooth) so toggling modes / following glides smoothly.
+local currentFocus: Vector3? = nil
 local function updateCamera()
-	local o = courtOrigin()
 	cam.CameraType = Enum.CameraType.Scriptable
 	cam.FieldOfView = 58
-	local eye = o + G.camFarEye:Lerp(G.camNearEye, zoom)
-	local look = o + G.camFarLook:Lerp(G.camNearLook, zoom)
-	cam.CFrame = CFrame.lookAt(eye, look)
+	local target, farEye, farLook, nearEye, nearLook
+	local char = LocalPlayer.Character
+	local hrp = followMode and char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		target = Vector3.new(hrp.Position.X, courtOrigin().Y, hrp.Position.Z)
+		farEye, farLook, nearEye, nearLook = G.camFollowFarEye, G.camFollowFarLook, G.camFollowNearEye, G.camFollowNearLook
+	else
+		target = courtOrigin()
+		farEye, farLook, nearEye, nearLook = G.camFarEye, G.camFarLook, G.camNearEye, G.camNearLook
+	end
+	currentFocus = currentFocus and currentFocus:Lerp(target, G.camFollowSmooth) or target
+	local focus = currentFocus :: Vector3
+	cam.CFrame = CFrame.lookAt(focus + farEye:Lerp(nearEye, zoom), focus + farLook:Lerp(nearLook, zoom))
 end
 
 RunService.RenderStepped:Connect(function()
 	updateCamera()
+	-- player ground shadow: tracks the local player's XZ; grows + fades with jump height
+	local pchar = LocalPlayer.Character
+	local phrp = pchar and pchar:FindFirstChild("HumanoidRootPart")
+	if phrp then
+		local po = courtOrigin()
+		local ph = math.max(0, (phrp.Position.Y - 2.5) - po.Y)   -- feet height above the floor
+		local pgrow = 1 + math.clamp(ph / 16, 0, 1.5) * 0.7
+		playerShadow.Size = Vector3.new(0.1, 5 * pgrow, 5 * pgrow)
+		playerShadow.Position = Vector3.new(phrp.Position.X, po.Y + 0.04, phrp.Position.Z)
+		playerShadow.Transparency = math.clamp(0.55 + ph / 30, 0, 0.92)
+	else
+		playerShadow.Transparency = 1
+	end
 	local ns = workspace:FindFirstChild("NineSquare")
 	local ball = ns and ns:FindFirstChild("Ball")
 	if ball then

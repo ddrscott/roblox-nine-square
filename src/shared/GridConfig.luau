@@ -58,6 +58,13 @@ GridConfig.camFarEye = Vector3.new(0, 42, 38)   -- camera offset when zoomed OUT
 GridConfig.camFarLook = Vector3.new(0, 7, 0)    -- look-at offset when zoomed out (steeper, more floor)
 GridConfig.camNearEye = Vector3.new(0, 24, 24)  -- camera offset when zoomed IN (closer + lower)
 GridConfig.camNearLook = Vector3.new(0, 15, 0)  -- look-at offset when zoomed in (raised -> pitch up, less floor)
+-- Shift toggles FOLLOW mode: the camera centres on the player instead of the court. Tighter, gym-safe
+-- offsets (so it doesn't clip the walls when following an edge square), zoom-lerped like the court cam.
+GridConfig.camFollowSmooth = 0.15   -- per-frame lerp toward the focus point (higher = snappier follow / toggle)
+GridConfig.camFollowFarEye = Vector3.new(0, 26, 22)   -- follow camera offset from the player, zoomed OUT
+GridConfig.camFollowFarLook = Vector3.new(0, 8, 0)
+GridConfig.camFollowNearEye = Vector3.new(0, 16, 14)  -- follow offset zoomed IN (closer + pitched up)
+GridConfig.camFollowNearLook = Vector3.new(0, 10, 0)
 
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
