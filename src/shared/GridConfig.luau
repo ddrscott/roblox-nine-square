@@ -6,7 +6,7 @@ local GridConfig = {}
 -- Dimensions (studs / seconds). All tunable; values are greybox starting points.
 GridConfig.squareSize = 14          -- one square edge
 GridConfig.floorThickness = 1
-GridConfig.frameHeight = 13         -- contact plane = measured jump reach (tuned in Task 2)
+GridConfig.frameHeight = 11         -- contact plane = measured jump reach (apex ~11.2; std-jump 7.2 + hit-zone ~4)
 GridConfig.beamThickness = 0.5
 GridConfig.ballRadius = 1
 GridConfig.apexHeight = 16          -- extra bulge above the serve chord midpoint
