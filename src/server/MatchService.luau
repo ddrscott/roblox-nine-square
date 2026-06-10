@@ -1,6 +1,6 @@
 --!strict
 -- ServerScriptService.NineSquare.MatchService
--- M1 stub: builds the arena and answers "which outer square is a player under?".
+-- M1 stub: builds the arena + gym and answers "which outer square is a player under?".
 local RS = game:GetService("ReplicatedStorage")
 local G = require(RS.GridConfig)
 
@@ -66,6 +66,48 @@ function MatchService.buildArena(origin: Vector3)
 	spawn.Transparency = 1; spawn.CanCollide = false
 	spawn.Parent = root
 	return root
+end
+
+-- A simple enclosed gymnasium around the court: wood floor, walls, ceiling, windows, hoops, lights.
+function MatchService.buildGym(origin: Vector3)
+	if workspace:FindFirstChild("Gym") then return workspace.Gym end  -- build once; preserve manual tweaks
+	local gym = Instance.new("Folder"); gym.Name = "Gym"; gym.Parent = workspace
+	local function block(name, size, pos, color, mat, transp)
+		local p = Instance.new("Part"); p.Anchored = true; p.Name = name
+		p.Size = size; p.Position = pos; p.Color = color; p.Material = mat
+		p.Transparency = transp or 0
+		p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Parent = gym
+		return p
+	end
+	local W, L, H = 70, 100, 50          -- interior width (x), length (z), height (ceiling clears the camera)
+	local hx, hz, wy = W/2, L/2, H/2
+	local wood = Color3.fromRGB(196, 152, 98)
+	local wall = Color3.fromRGB(224, 216, 196)
+	local ceil = Color3.fromRGB(150, 150, 162)
+	block("Floor", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, -0.7, 0), wood, Enum.Material.WoodPlanks)
+	block("Ceiling", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, H, 0), ceil, Enum.Material.SmoothPlastic)
+	block("WallE", Vector3.new(0.8, H, L), origin + Vector3.new(hx, wy, 0), wall, Enum.Material.SmoothPlastic)
+	block("WallW", Vector3.new(0.8, H, L), origin + Vector3.new(-hx, wy, 0), wall, Enum.Material.SmoothPlastic)
+	block("WallN", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, -hz), wall, Enum.Material.SmoothPlastic)
+	block("WallS", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, hz), wall, Enum.Material.SmoothPlastic)
+	-- cosmetic window strips on the side walls
+	local glass = Color3.fromRGB(170, 205, 230)
+	block("WindowE", Vector3.new(0.3, 7, L - 20), origin + Vector3.new(hx - 0.5, 30, 0), glass, Enum.Material.Glass, 0.5)
+	block("WindowW", Vector3.new(0.3, 7, L - 20), origin + Vector3.new(-hx + 0.5, 30, 0), glass, Enum.Material.Glass, 0.5)
+	-- two simple basketball hoops on the end walls
+	for _, zsign in ipairs({ -1, 1 }) do
+		block("Backboard", Vector3.new(7, 4, 0.4), origin + Vector3.new(0, 22, zsign * (hz - 0.7)), Color3.fromRGB(245, 245, 245), Enum.Material.SmoothPlastic)
+		block("Rim", Vector3.new(2.6, 0.3, 1.8), origin + Vector3.new(0, 20.4, zsign * (hz - 1.8)), Color3.fromRGB(235, 120, 40), Enum.Material.SmoothPlastic)
+	end
+	-- ceiling light fixtures
+	for _, dx in ipairs({ -1, 1 }) do
+		for _, dz in ipairs({ -1, 0, 1 }) do
+			local lp = block("Light", Vector3.new(8, 0.4, 8), origin + Vector3.new(dx * 18, H - 0.6, dz * 28), Color3.fromRGB(255, 255, 235), Enum.Material.Neon)
+			local pl = Instance.new("PointLight"); pl.Brightness = 4; pl.Range = 55; pl.Color = Color3.fromRGB(255, 250, 235); pl.Parent = lp
+		end
+	end
+	return gym
 end
 
 -- Outer square a player currently stands under, or nil.

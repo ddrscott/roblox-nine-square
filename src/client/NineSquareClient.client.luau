@@ -46,8 +46,8 @@ BallSync.OnClientEvent:Connect(function(data) state = data end)
 local function updateCamera()
 	local o = courtOrigin()
 	cam.CameraType = Enum.CameraType.Scriptable
-	cam.FieldOfView = 55
-	cam.CFrame = CFrame.lookAt(o + Vector3.new(0, 48, 36), o + Vector3.new(0, 7, 0))
+	cam.FieldOfView = 58
+	cam.CFrame = CFrame.lookAt(o + Vector3.new(0, 42, 38), o + Vector3.new(0, 7, 0))  -- inside the gym, below the ceiling
 end
 
 RunService.RenderStepped:Connect(function()

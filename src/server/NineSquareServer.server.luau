@@ -17,11 +17,15 @@ local function setupLighting()
 	L.GeographicLatitude = 23.5   -- cancels Roblox's ~23.5deg sun tilt: noon sun ends up at the zenith
 	L.ClockTime = 12
 	L.GlobalShadows = true
+	L.Brightness = 3
+	L.Ambient = Color3.fromRGB(150, 150, 160)        -- lift interior light (the gym ceiling blocks the sun)
+	L.OutdoorAmbient = Color3.fromRGB(150, 150, 160)
 	-- NOTE: Lighting.Technology (ShadowMap/Future) cannot be set by scripts; set it once in Studio Properties.
 end
 
 print("[NineSquare] server starting")
 setupLighting()
+MatchService.buildGym(Vector3.new(0, 0, 200))
 MatchService.buildArena(Vector3.new(0, 0, 200))
 local bc = BallController.new()
 print("[NineSquare] arena + ball ready")
