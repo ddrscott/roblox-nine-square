@@ -6,9 +6,10 @@ server** (`StudioMCP`, which ships inside Roblox Studio).
 
 ## Status
 
-**Milestone M1 (greybox) — in progress.** Playable single-player loop exists in the place
-**"9 Square Beta"**. Working: enclosed gymnasium scene, 3×3 court, physical serve + contact volley,
-self-square / out-of-bounds faults, soft ball shadow, fixed court camera.
+**Milestone M1 (greybox) — complete** (accepted 2026-06-10, tagged `m1-greybox`). **M2 is next.**
+Playable single-player loop in the place **"9 Square Beta"**: enclosed gymnasium scene, 3×3 court,
+physical serve + contact volley, self-square / out-of-bounds faults, soft ball shadow, fixed court
+camera. Acceptance results + final tuned values are in the M1 design spec (§ "M1 Acceptance").
 
 ## Docs
 
@@ -18,8 +19,8 @@ self-square / out-of-bounds faults, soft ball shadow, fixed court camera.
 
 ## Build milestones (PRD §15)
 
-1. **M1** — Greybox arena + readability + physical contact volley.  ← *current*
-2. **M2** — Hit resolver: timing tiers + scatter on the same contact.
+1. **M1** — Greybox arena + readability + physical contact volley.  ✅ *done (`m1-greybox`)*
+2. **M2** — Hit resolver: timing tiers + scatter on the same contact.  ← *current*
 3. **M3** — Full grid + rotation + dethrone.
 4. **M4** — Bots fill empty squares; solo play fully functional.
 5. **M5** — Networking hardening / anti-cheat.
