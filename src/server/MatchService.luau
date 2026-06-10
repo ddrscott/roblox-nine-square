@@ -38,6 +38,24 @@ function MatchService.buildArena(origin: Vector3)
 		end
 	end
 
+	-- Cosmetic corner support posts so the overhead frame "stands on" the court instead of hovering.
+	-- KEPT OUT of the Frame folder + CanCollide=false on purpose: BallController:_surfaces() collides the
+	-- ball against every BasePart under NineSquare.Frame, so these legs must NOT live there (ball feel
+	-- stays unchanged). Positions/size derive from GridConfig so they track tunable changes.
+	local legs = Instance.new("Folder"); legs.Name = "FrameLegs"; legs.Parent = root
+	local legOuter = 1.5 * G.squareSize  -- frame's outer corner offset on X and Z
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sz in ipairs({ -1, 1 }) do
+			local leg = Instance.new("Part")
+			leg.Anchored = true; leg.CanCollide = false; leg.CastShadow = true
+			leg.Size = Vector3.new(G.legThickness, G.frameHeight, G.legThickness)
+			leg.Position = G.origin + Vector3.new(sx * legOuter, G.frameHeight / 2, sz * legOuter)
+			leg.Color = Color3.fromRGB(40, 40, 45); leg.Material = Enum.Material.SmoothPlastic
+			leg.Name = "Leg_" .. (sx < 0 and "W" or "E") .. (sz < 0 and "N" or "S")
+			leg.Parent = legs
+		end
+	end
+
 	-- Painted grid lines on the floor: a renderer-independent "shadow" of the frame, so the grid
 	-- reads on the floor in Play mode too (dynamic shadows often don't draw in Studio Play / low quality).
 	local lines = Instance.new("Folder"); lines.Name = "GridLines"; lines.Parent = root

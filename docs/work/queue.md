@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Add legs at the 4 grid corners (frame stands on something) — see [frame-legs.md](frame-legs.md)
+- [x] Add legs at the 4 grid corners (frame stands on something) — see [frame-legs.md](frame-legs.md)
 - [x] Rework player contact as a proper moving-sphere collision (fix clip/pull-down bug) — see [player-collision-rework.md](player-collision-rework.md)
 - [x] Fade walls that obstruct the camera (camera occlusion) — see [camera-wall-fade.md](camera-wall-fade.md)
 - [x] Fix still-player bounce: a motionless player must not add ball energy — see [still-player-bounce.md](still-player-bounce.md)

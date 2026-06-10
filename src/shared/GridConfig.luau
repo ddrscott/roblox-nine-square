@@ -8,6 +8,7 @@ GridConfig.squareSize = 14          -- one square edge
 GridConfig.floorThickness = 1
 GridConfig.frameHeight = 11         -- contact plane = measured jump reach (apex ~11.2; std-jump 7.2 + hit-zone ~4)
 GridConfig.beamThickness = 0.5
+GridConfig.legThickness = 1.0       -- cosmetic corner support posts (floor->frame); a touch thicker than beamThickness
 GridConfig.ballRadius = 2           -- ball sphere radius (4-stud diameter)
 GridConfig.apexHeight = 16          -- (legacy) extra bulge for the old lerp-arc serve
 GridConfig.serveTravel = 1.1        -- (legacy)
