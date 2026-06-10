@@ -12,11 +12,11 @@ GridConfig.ballRadius = 2           -- ball sphere radius (4-stud diameter)
 GridConfig.apexHeight = 16          -- (legacy) extra bulge for the old lerp-arc serve
 GridConfig.serveTravel = 1.1        -- (legacy)
 GridConfig.descentWindow = 0.8      -- (legacy)
-GridConfig.hitZoneRadius = 1.6      -- avatar hit-zone sphere radius (upper-body sized; volley with head/shoulders/hands)
+GridConfig.hitZoneRadius = 1.6      -- contact sphere radius (covers the head; you volley with your head)
 GridConfig.showHitSphere = true     -- debug: render the local player's contact sphere (HitSphereView client) so you can see it
-GridConfig.hitZoneYOffset = 2.9     -- hit-zone center above HumanoidRootPart (raised to head/upper torso)
-                                    --   reach at std-jump apex = HRP_Y + yOffset + radius + ballRadius
-                                    --   = 7.2 + 2.9 + 1.6 + 2 = 13.7 >= frameHeight(11): frame plane stays hittable
+GridConfig.hitZoneYOffset = 0       -- contact sphere offset above the Head part (0 = centred on the head)
+                                    --   reach at std-jump apex ~= Head_Y + yOffset + radius + ballRadius
+                                    --   ~= (7.2 + ~1.5) + 0 + 1.6 + 2 ~= 12.3 >= frameHeight(11): still hittable
 GridConfig.ballRestitution = 0.6    -- PASSIVE bounce: how much of the ball's own incoming speed it keeps
                                     --   off a still player. <= 1 so a motionless player NEVER adds energy
                                     --   (the ball rebounds slower than it arrived, like any surface).

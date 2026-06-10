@@ -22,9 +22,11 @@ function HitResolver.playerColliders(): { PlayerCollider }
 	for _, plr in ipairs(Players:GetPlayers()) do
 		local char = plr.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if hrp and hrp:IsA("BasePart") then
+		local head = char and char:FindFirstChild("Head")
+		local base = (head and head:IsA("BasePart") and head) or hrp   -- centre the contact sphere on the head
+		if base and base:IsA("BasePart") and hrp and hrp:IsA("BasePart") then
 			table.insert(list, {
-				center = hrp.Position + Vector3.new(0, G.hitZoneYOffset, 0),
+				center = base.Position + Vector3.new(0, G.hitZoneYOffset, 0),
 				radius = G.hitZoneRadius,
 				vel = hrp.AssemblyLinearVelocity,
 				player = plr,

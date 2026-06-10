@@ -64,8 +64,8 @@ end
 -- players' moving hit-spheres and hand them to bc:step, which resolves a hit only on penetration +
 -- approach (so a descending player can't pull a rising ball down) and bounces the ball off the sphere
 -- exactly like it bounces off the pipes/walls/floor. No more proximity trigger or time cooldown.
-RunService.Heartbeat:Connect(function()
-	bc:step(HitResolver.playerColliders())
+RunService.Heartbeat:Connect(function(dt)
+	bc:step(dt, HitResolver.playerColliders())
 end)
 
 -- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.

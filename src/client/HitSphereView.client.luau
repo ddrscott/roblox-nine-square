@@ -25,10 +25,11 @@ orb.Parent = workspace
 
 RunService.RenderStepped:Connect(function()
 	local char = plr.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if hrp then
+	local head = char and char:FindFirstChild("Head")
+	local base = head or (char and char:FindFirstChild("HumanoidRootPart"))  -- centre on the head
+	if base then
 		orb.Size = Vector3.new(G.hitZoneRadius * 2, G.hitZoneRadius * 2, G.hitZoneRadius * 2)  -- live-tunable
-		orb.Position = hrp.Position + Vector3.new(0, G.hitZoneYOffset, 0)
+		orb.Position = base.Position + Vector3.new(0, G.hitZoneYOffset, 0)
 		orb.Transparency = 0.5
 	else
 		orb.Transparency = 1

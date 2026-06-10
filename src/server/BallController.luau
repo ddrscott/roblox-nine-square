@@ -187,41 +187,61 @@ function BallController:_collide(pos: Vector3, vel: Vector3): ({ pos: Vector3, v
 	return nil
 end
 
--- A player's hit-sphere is a MOVING-sphere collider, resolved exactly like the rigid surfaces above:
--- only when the ball is PENETRATING it (|ball-centre| < hitZoneRadius + ballRadius) AND APPROACHING it
--- (the relative velocity along the contact normal is closing). If the two are separating -- e.g. a
--- player descending over a rising/receding ball -- we do NOT resolve, so a descending player can never
--- pull a rising ball down. On a hit the ball is repositioned onto the sphere surface (so the same
--- approach can't re-trigger next frame -> exactly one hit per approach) and the outgoing velocity is
--- the same velocity-proportional strike used everywhere else (still player adds no energy). First hit
--- wins. `vel` is the ball's current velocity; returns the resolved pos/vel (+ player) or nil.
-function BallController:_collidePlayers(pos: Vector3, vel: Vector3, colliders: { PlayerCollider }?): ({ pos: Vector3, vel: Vector3, player: Player })?
+-- A player's hit-sphere is a MOVING-sphere collider, resolved by a SWEPT (continuous) test so a fast
+-- ball -- or a fast jump into the ball -- can't tunnel through it between frames (point sampling only
+-- the frame's end position misses fast/glancing passes). We sweep the ball's path this frame (A -> B)
+-- against the sphere's path (relative motion over `dt`) and resolve at the EARLIEST entry point, but
+-- ONLY when the two are approaching along the contact normal (a descending player over a rising/
+-- receding ball does NOT resolve -> it can never pull the ball down). On a hit the ball is repositioned
+-- onto the sphere surface (one hit per approach) and gets the velocity-proportional rebound (a still
+-- player adds no energy). Earliest contact across players wins.
+function BallController:_collidePlayers(A: Vector3, B: Vector3, vel: Vector3, dt: number, colliders: { PlayerCollider }?): ({ pos: Vector3, vel: Vector3, player: Player })?
 	if not colliders then return nil end
 	local r = G.ballRadius
+	local best: ({ pos: Vector3, vel: Vector3, player: Player })? = nil
+	local bestTau = math.huge
 	for _, col in ipairs(colliders) do
 		local sum = col.radius + r
-		local d = pos - col.center
-		local dist = d.Magnitude
-		if dist < sum and dist > 1e-4 then
-			local n = d.Unit
-			-- approaching only: relative velocity along the line of centres must be closing
-			if (vel - col.vel):Dot(n) < 0 then
-				local nUp = liftNormal(n)                 -- bias the rebound upward for a clean arc
-				local vOut = strikeVelocity(vel, nUp, col.vel)
-				return { pos = col.center + n * (sum + 0.05), vel = vOut, player = col.player }
+		local sphereDelta = col.vel * dt                  -- the sphere moves this frame too
+		local r0 = (A - col.center) + sphereDelta          -- relative position at the start of the frame
+		local rd = (B - A) - sphereDelta                   -- relative displacement over the frame
+		local a = rd:Dot(rd)
+		local c = r0:Dot(r0) - sum * sum
+		local tau: number? = nil
+		if a < 1e-8 then
+			if c < 0 then tau = 0 end                      -- already overlapping, negligible relative motion
+		else
+			local b = 2 * r0:Dot(rd)
+			local disc = b * b - 4 * a * c
+			if disc >= 0 then
+				local sq = math.sqrt(disc)
+				local t0 = (-b - sq) / (2 * a)             -- entry
+				local t1 = (-b + sq) / (2 * a)             -- exit
+				if t1 >= 0 and t0 <= 1 then tau = math.max(t0, 0) end
+			end
+		end
+		if tau and tau < bestTau then
+			local ballAt = A + (B - A) * tau
+			local sphereAt = (col.center - sphereDelta) + sphereDelta * tau
+			local d = ballAt - sphereAt
+			local n = (d.Magnitude > 1e-4) and d.Unit or Vector3.new(0, 1, 0)
+			if (vel - col.vel):Dot(n) < 0 then             -- approaching only -> never pulls the ball down
+				bestTau = tau
+				best = { pos = col.center + n * (sum + 0.05), vel = strikeVelocity(vel, liftNormal(n), col.vel), player = col.player }
 			end
 		end
 	end
-	return nil
+	return best
 end
 
-function BallController:step(playerColliders: { PlayerCollider }?)
+function BallController:step(dt: number, playerColliders: { PlayerCollider }?)
 	-- Parked phases (Live hover, Rest): the ball is stationary, but a player can still drive into it.
-	-- Run the same moving-sphere collision against the parked position; a hit serves (Live -> Flight) or
-	-- bats the dead ball (Rest -> Settling). No hit -> sit still.
+	-- Run the same swept moving-sphere collision against the parked position (the sphere's own motion is
+	-- swept, so a fast jump into the ball is caught); a hit serves (Live -> Flight) or bats the dead ball
+	-- (Rest -> Settling). No hit -> sit still.
 	if self.phase == "Live" or self.phase == "Rest" then
 		local parked = (self.phase == "Live") and self.restPoint or self.ball.Position
-		local h = self:_collidePlayers(parked, Vector3.zero, playerColliders)
+		local h = self:_collidePlayers(parked, parked, Vector3.zero, dt, playerColliders)
 		if h then
 			self.ball.Position = h.pos
 			self.phase = (self.phase == "Live") and "Flight" or "Settling"
@@ -239,9 +259,9 @@ function BallController:step(playerColliders: { PlayerCollider }?)
 	local vel = self.v0 + Vector3.new(0, -g * t, 0)
 	local pos = self.p0 + self.v0 * t + Vector3.new(0, -0.5 * g * t * t, 0)
 
-	-- a player's hit-sphere is resolved first, as a moving-sphere collision (penetrate + approach +
-	-- reposition + velocity-proportional rebound) -- same resolve-style as the rigid surfaces below.
-	local hp = self:_collidePlayers(pos, vel, playerColliders)
+	-- a player's hit-sphere is resolved first, as a SWEPT moving-sphere collision over this frame's path
+	-- (self.ball.Position -> pos) so a fast ball can't tunnel through it -- same resolve-style as below.
+	local hp = self:_collidePlayers(self.ball.Position, pos, vel, dt, playerColliders)
 	if hp then
 		self.ball.Position = hp.pos
 		self:launch(hp.pos, hp.vel)   -- Flight stays Flight, Settling stays Settling (re-predicts land cell in Flight)
