@@ -20,6 +20,11 @@ local function setupLighting()
 	L.Brightness = 3
 	L.Ambient = Color3.fromRGB(150, 150, 160)        -- lift interior light (the gym ceiling blocks the sun)
 	L.OutdoorAmbient = Color3.fromRGB(150, 150, 160)
+	-- Raise the Bloom threshold so only true light sources (the Neon ceiling fixtures) bloom.
+	-- At the default Threshold = 2 the lit ball exceeded it and rendered as a glowing white halo.
+	-- Self-heals on a fresh place: set it if a Bloom child exists.
+	local bloom = L:FindFirstChildWhichIsA("BloomEffect")
+	if bloom then bloom.Threshold = 3.5 end
 	-- NOTE: Lighting.Technology (ShadowMap/Future) cannot be set by scripts; set it once in Studio Properties.
 end
 

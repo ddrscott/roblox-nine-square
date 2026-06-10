@@ -117,7 +117,9 @@ function MatchService.buildGym(origin: Vector3)
 	for _, dx in ipairs({ -1, 1 }) do
 		for _, dz in ipairs({ -1, 0, 1 }) do
 			local lp = block("Light", Vector3.new(8, 0.4, 8), origin + Vector3.new(dx * 18, H - 0.6, dz * 28), Color3.fromRGB(255, 255, 235), Enum.Material.Neon)
-			local pl = Instance.new("PointLight"); pl.Brightness = 4; pl.Range = 55; pl.Color = Color3.fromRGB(255, 250, 235); pl.Parent = lp
+			-- Brightness/Range kept modest: at 4/55 these 6 lights over-exposed the ball at court
+			-- center, blowing its highlight to white and tripping the scene Bloom into a glow halo.
+			local pl = Instance.new("PointLight"); pl.Brightness = 1.8; pl.Range = 45; pl.Color = Color3.fromRGB(255, 250, 235); pl.Parent = lp
 		end
 	end
 	return gym
