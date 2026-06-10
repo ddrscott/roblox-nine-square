@@ -33,6 +33,36 @@ function MatchService.buildArena(origin: Vector3)
 			b.Color = Color3.fromRGB(40,40,45); b.Material = Enum.Material.Neon; b.Parent = frame
 		end
 	end
+
+	-- Painted grid lines on the floor: a renderer-independent "shadow" of the frame, so the grid
+	-- reads on the floor in Play mode too (dynamic shadows often don't draw in Studio Play / low quality).
+	local lines = Instance.new("Folder"); lines.Name = "GridLines"; lines.Parent = root
+	local lineW = 0.6
+	for _, m in ipairs({ -1.5, -0.5, 0.5, 1.5 }) do
+		local offs = m * G.squareSize
+		local strips = {
+			{ Vector3.new(span, 0.1, lineW), Vector3.new(0, 0, offs) },   -- E-W line
+			{ Vector3.new(lineW, 0.1, span), Vector3.new(offs, 0, 0) },   -- N-S line
+		}
+		for _, ln in ipairs(strips) do
+			local s = Instance.new("Part"); s.Anchored = true; s.CanCollide = false; s.CastShadow = false
+			s.Size = ln[1]
+			s.Position = G.origin + ln[2] + Vector3.new(0, 0.06, 0)
+			s.Color = Color3.fromRGB(45, 45, 55); s.Material = Enum.Material.SmoothPlastic; s.Transparency = 0.1
+			s.Parent = lines
+		end
+	end
+
+	-- Spawn pad at the center square, and disable any far/legacy spawns so players start in the court.
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("SpawnLocation") then d.Enabled = false end
+	end
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "CourtSpawn"; spawn.Anchored = true; spawn.Neutral = true; spawn.Enabled = true
+	spawn.Size = Vector3.new(6, 0.4, 6)
+	spawn.Position = G.cellCenter("C") + Vector3.new(0, 0.2, 0)
+	spawn.Color = Color3.fromRGB(120, 170, 255); spawn.Material = Enum.Material.SmoothPlastic
+	spawn.Parent = root
 	return root
 end
 
