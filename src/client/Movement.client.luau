@@ -79,9 +79,18 @@ local humanoid: Humanoid? = nil
 local usedAirJump = false       -- one extra air-jump per airtime
 local dashUntil = 0             -- while > now, the dash burst is being held
 
+-- keep the local avatar upright through dash bursts and flip landings: the sharp velocity changes
+-- here (and finishing a flip mid-rotation) otherwise stumble the Humanoid into its trip/ragdoll states.
+-- States reset per character, so this is re-applied on every CharacterAdded via bindCharacter.
+local function disableTripStates(h: Humanoid)
+	h:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+end
+
 local function bindCharacter(char: Model)
 	hrp = char:WaitForChild("HumanoidRootPart") :: BasePart
 	humanoid = char:WaitForChild("Humanoid") :: Humanoid
+	disableTripStates(humanoid)
 	usedAirJump = false
 	dashUntil = 0
 	-- reset the extra jump whenever we touch ground
@@ -152,7 +161,16 @@ local function flipSpin()
 	conn = RunService.RenderStepped:Connect(function()
 		if not h.Parent then conn:Disconnect(); return end
 		local a = (os.clock() - t0) / G.flipSpinTime
-		if a >= 1 then conn:Disconnect(); return end
+		if a >= 1 then
+			conn:Disconnect()
+			-- land UPRIGHT: keep current position + facing yaw, zero pitch/roll so the spin never
+			-- finishes tilted (which would stumble the avatar). Re-flatten the look vector to a yaw.
+			local look = h.CFrame.LookVector
+			local flat = Vector3.new(look.X, 0, look.Z)
+			flat = (flat.Magnitude > 1e-3) and flat.Unit or Vector3.new(0, 0, -1)
+			h.CFrame = CFrame.lookAt(h.Position, h.Position + flat)
+			return
+		end
 		-- offset is cosmetic on top of wherever the character now is; rebuild from current position
 		local ang = a * math.pi * 2
 		h.CFrame = CFrame.new(h.Position) * CFrame.fromAxisAngle(axis, ang) * (startCF - startCF.Position)
