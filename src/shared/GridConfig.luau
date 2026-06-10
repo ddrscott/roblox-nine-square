@@ -97,6 +97,12 @@ GridConfig.dummyRadius = 1.3        -- cylinder radius (studs)
 GridConfig.dummyColor = Color3.fromRGB(120, 90, 210)   -- a clearly-non-player violet
 GridConfig.dummyKingColor = Color3.fromRGB(225, 185, 60) -- the King (rank 1 / C) stands out gold
 
+-- Serve flow (M3 step 3). A rally is always served by the King (rank 1 / C). A human King hovers the
+-- ball at C and jump-strikes it (M1 physical serve); a dummy King auto-serves after `serveDelay` --
+-- the server launches a deterministic arc from C's frame point to a random outer square's frame point.
+GridConfig.serveDelay = 1.2          -- seconds the dummy King "winds up" before auto-serving (also the beat after a fault)
+GridConfig.serveArcApex = 6          -- extra studs the auto-serve arc peaks ABOVE the higher of its two frame endpoints
+
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]
 	assert(cell, "no cell for rank " .. tostring(rank))

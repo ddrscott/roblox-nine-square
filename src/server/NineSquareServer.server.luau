@@ -43,18 +43,8 @@ local function playOof()
 	s.Parent = bc.ball; s:Play(); Debris:AddItem(s, 3)
 end
 
--- First floor contact of a rally: legal land elsewhere, self-square fault, or out-of-bounds.
-bc.onLand = function(landed, struck)
-	if landed == nil then
-		print("[NineSquare] FAULT (out-of-bounds) struck=" .. tostring(struck))
-		MatchService.flashCell(struck); playOof()
-	elseif landed == struck then
-		print("[NineSquare] FAULT (self-square) cell=" .. landed)
-		MatchService.flashCell(landed); playOof()
-	else
-		print("[NineSquare] ball landed in " .. landed .. " (unreturned)")
-	end
-end
+-- NOTE: the rally loop (onLand -> fault attribution -> rotation -> next King serve, and onRest -> serve)
+-- is wired below, AFTER the RotationService exists -- it needs `rotation` and `serveNextRally`.
 
 -- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.
 -- Teleport a character's HRP to a given cell (M3 generalizes the old always-centre placement so the
@@ -86,29 +76,107 @@ rotation.onDethrone = function(newKing)
 	print("[NineSquare] onDethrone fired -> new King: " .. newKing.id)
 end
 
--- TEMPORARY (M3 step 2) verification trigger. Real fault/serve wiring is step 3, so for now expose a
--- callable so the rotation can be eyeballed in Play (no auto-loop):
---   in the Server-context command bar: _G.NineSquareDebugRotate(R)
--- It rotates rank R, then prints the resulting rank order so the shift is visible alongside placement.
-_G.NineSquareDebugRotate = function(faultRank: number)
-	rotation:rotateOnFault(faultRank or 9)
-	local order = {}
-	for r = 1, 9 do order[r] = "r" .. r .. "=" .. rotation.byRank[r].id end
-	print("[NineSquare] rank order: " .. table.concat(order, " "))
+-- ============================================================================================
+-- M3 step 3 -- the live king-of-the-hill loop: King serve -> rally -> fault attribution -> rotation
+-- -> the new King serves. Server-authoritative; clients send no fault/rotation/serve decisions.
+-- ============================================================================================
+
+-- One rally is "in flight" at a time. `rallyArmed` is true once a serve puts the ball into play and
+-- guards the loop so each rally faults + rotates EXACTLY once (onLand fires once per rally; onRest may
+-- also fire, and a dead ball can be batted around -- none of that should re-fault or double-serve).
+local rallyArmed = false
+
+-- Auto-serve: launch the ball from the King square (C) frame point so it ARCS DOWN INTO the target
+-- square and lands on its floor (where onLand will report `targetCell` -> that dummy faults). The arc
+-- peaks `serveArcApex` above the launch height, then falls to the target square's floor (y = ballRadius).
+-- Reuses bc:launch (M1 physics unchanged) -- we only compute the v0 that produces the arc.
+local function serveToTarget(targetCell: string)
+	local from = G.cellFramePoint("C")
+	local landCenter = G.cellCenter(targetCell)
+	local to = Vector3.new(landCenter.X, G.ballRadius, landCenter.Z)  -- the floor-resting point in the target square
+	local g = workspace.Gravity
+	-- Peak height above the launch point so the ball clearly arcs up over the frame and drops in.
+	local peakY = from.Y + G.serveArcApex
+	local rise = math.max(peakY - from.Y, 1)
+	local vy = math.sqrt(2 * g * rise)                 -- vertical speed to reach `rise` above the launch point
+	-- Flight time: up to the apex, then down to the (lower) floor target. Solve the fall from apex to to.Y.
+	local tUp = vy / g
+	local tDown = math.sqrt(2 * math.max(peakY - to.Y, 0) / g)
+	local tTotal = math.max(tUp + tDown, 0.1)
+	local horiz = Vector3.new(to.X - from.X, 0, to.Z - from.Z) / tTotal
+	local v0 = Vector3.new(horiz.X, vy, horiz.Z)
+	bc:launch(from, v0)
+	print(("[NineSquare] dummy-King auto-serve C -> %s (v0=%s)"):format(targetCell, tostring(v0)))
 end
 
--- Snap every present human back to their assigned square (e.g. on re-serve). Dummies are static and stay.
-local function placeAllAtCourt()
-	rotation:placeAll()
+-- Serve the next rally for the CURRENT King (rank 1 / C). Human King -> hover at C for a physical M1
+-- jump-strike (rally arms on first contact, in bc:step). Dummy King -> auto-serve after serveDelay to a
+-- random outer square. Idempotent-ish: we only serve when the ball is idle (Rest/Live), not mid-rally.
+local function serveNextRally()
+	rallyArmed = false
+	if rotation:isHumanKing() then
+		-- Human serves physically: park the ball hovering at C. rallyArmed flips true when they strike it.
+		bc:resetToServe()
+		print("[NineSquare] human is King -- hover-serve at C (jump-strike to serve)")
+	else
+		-- Dummy King: wind up, then auto-serve to a random outer square.
+		local target = G.outerCells[math.random(1, #G.outerCells)]
+		bc:resetToServe()                       -- park at C so it visibly sits at the throne during wind-up
+		print(("[NineSquare] dummy King winds up -- auto-serving to %s in %.1fs"):format(target, G.serveDelay))
+		task.delay(G.serveDelay, function()
+			-- Only serve if nothing else has put the ball in play in the meantime.
+			if not rallyArmed and (bc.phase == "Live" or bc.phase == "Rest") then
+				rallyArmed = true
+				serveToTarget(target)
+			end
+		end)
+	end
 end
 
--- Ball has bounced out its energy and stopped: re-serve after a beat (unless it's batted back into play).
--- On re-serve, snap players back to the centre so they don't have to walk back to serve.
+-- First floor contact of a rally: attribute the fault per PRD §6, rotate everyone toward the King, then
+-- the new King serves the next rally. struck = square the ball was last struck/served from; landed =
+-- square the ball first hit the floor in (nil = out of bounds).
+bc.onLand = function(landed, struck)
+	if not rallyArmed then return end          -- a stray landing outside an armed rally -> ignore
+	rallyArmed = false
+
+	-- Which square owns the fault (PRD §6)?
+	local faultCell: string?
+	if landed == nil then
+		-- Out of bounds: the hitter (occupant of the struck square) faulted.
+		faultCell = struck
+		print("[NineSquare] FAULT (out-of-bounds) struck=" .. tostring(struck))
+		MatchService.flashCell(struck); playOof()
+	elseif landed == struck then
+		-- Self-square: the hitter failed to clear their own square.
+		faultCell = struck
+		print("[NineSquare] FAULT (self-square) cell=" .. landed)
+		MatchService.flashCell(landed); playOof()
+	else
+		-- Floor fault: the occupant of the landing square failed to return it (a dummy square always lands here).
+		faultCell = landed
+		print("[NineSquare] FAULT (floor / unreturned) cell=" .. landed)
+		MatchService.flashCell(landed); playOof()
+	end
+
+	local faultRank = faultCell and G.rankForCell(faultCell)
+	if faultRank then
+		local occ = rotation:occupantAtCell(faultCell)
+		print(("[NineSquare] attributing fault: cell=%s rank=%d occupant=%s")
+			:format(tostring(faultCell), faultRank, occ and occ.id or "?"))
+		rotation:rotateOnFault(faultRank)
+	else
+		warn("[NineSquare] could not attribute fault (no rank for cell " .. tostring(faultCell) .. ")")
+	end
+end
+
+-- Ball has bounced out its energy and stopped. The rally already faulted + rotated on the landing
+-- (onLand); now, after a beat, the new King serves the next rally. (Rotation already re-placed everyone
+-- via placeAll -- this REPLACES the old M1 "reset players to centre + re-serve at centre" path.)
 bc.onRest = function()
-	task.delay(0.6, function()
-		if bc.phase == "Rest" then
-			bc:resetToServe()
-			placeAllAtCourt()
+	task.delay(G.serveDelay, function()
+		if bc.phase == "Rest" and not rallyArmed then
+			serveNextRally()
 		end
 	end)
 end
@@ -119,7 +187,15 @@ end
 -- exactly like it bounces off the pipes/walls/floor. No more proximity trigger or time cooldown.
 RunService.Heartbeat:Connect(function(dt)
 	bc:step(dt, HitResolver.playerColliders())
+	-- Arm the rally the instant the ball enters Flight (a human King's physical jump-serve, or any volley):
+	-- onLand only scores when a rally is armed. The dummy-King auto-serve arms itself in serveNextRally.
+	if bc.phase == "Flight" and not rallyArmed then
+		rallyArmed = true
+	end
 end)
+
+-- Kick off the live loop: the starting King (a dummy at rank 1) serves the first rally.
+serveNextRally()
 
 -- Spawn placement: stand the human in their assigned ranked square (rank 9 = NW) plus a resync so the
 -- late-loading client gets ball state.

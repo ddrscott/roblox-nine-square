@@ -162,4 +162,23 @@ function RotationService.humanCell(self: RotationService): string?
 	return nil
 end
 
+-- The current King (rank 1 / C). Always present (fixed 9 occupants). Used by the serve branch.
+function RotationService.kingOccupant(self: RotationService): Occupant
+	return self.byRank[1]
+end
+
+-- Is the human currently King (rank 1)? Decides physical serve (human) vs auto-serve (dummy).
+function RotationService.isHumanKing(self: RotationService): boolean
+	return not self.byRank[1].isDummy
+end
+
+-- The occupant whose square is `cell` right now (reverse of placement). Used for fault attribution:
+-- the ball landed in/was struck from `cell` -> who owns that square -> which rank faulted. nil if the
+-- cell isn't a known rank cell (shouldn't happen for the 9 court squares).
+function RotationService.occupantAtCell(self: RotationService, cell: string): Occupant?
+	local rank = G.rankForCell(cell)
+	if rank == nil then return nil end
+	return self.byRank[rank]
+end
+
 return RotationService
