@@ -126,9 +126,10 @@ function BallController:_flash(cell: string?)
 	local floors = self.ball.Parent and self.ball.Parent:FindFirstChild("Floors")
 	local f = floors and floors:FindFirstChild("Floor_" .. cell)
 	if not f then return end
-	local orig = f.Color
+	-- markers are invisible by default; flash one briefly visible-red on the faulted square
 	f.Color = Color3.fromRGB(205, 45, 45)
-	task.delay(0.6, function() if f and f.Parent then f.Color = orig end end)
+	f.Transparency = 0.3
+	task.delay(0.6, function() if f and f.Parent then f.Transparency = 1 end end)
 end
 
 function BallController:_faultSound()

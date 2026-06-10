@@ -10,12 +10,16 @@ function MatchService.buildArena(origin: Vector3)
 	G.origin = origin
 	local old = workspace:FindFirstChild("NineSquare"); if old then old:Destroy() end
 	local root = Instance.new("Folder"); root.Name = "NineSquare"; root.Parent = workspace
+	-- Per-cell markers: invisible, non-colliding, thin. The gym's WoodPlanks floor is the ONE visible
+	-- floor; these only exist as the landing-highlight adornee + fault-flash target (BallController
+	-- toggles them briefly visible). Sat just above the wood so a flash never z-fights the floor.
 	local floors = Instance.new("Folder"); floors.Name = "Floors"; floors.Parent = root
 	for name in pairs(G.cells) do
 		local p = Instance.new("Part")
-		p.Anchored = true; p.Size = Vector3.new(G.squareSize - 0.5, G.floorThickness, G.squareSize - 0.5)
-		p.Position = G.cellCenter(name) - Vector3.new(0, G.floorThickness/2, 0)
-		p.Color = (name == "C") and Color3.fromRGB(70,70,80) or Color3.fromRGB(150,150,160)
+		p.Anchored = true; p.CanCollide = false; p.CastShadow = false
+		p.Size = Vector3.new(G.squareSize - 0.5, 0.1, G.squareSize - 0.5)
+		p.Position = G.cellCenter(name) + Vector3.new(0, 0.06, 0)
+		p.Transparency = 1; p.Color = Color3.fromRGB(205, 45, 45)  -- only seen during a fault flash
 		p.Material = Enum.Material.SmoothPlastic; p.Name = "Floor_" .. name; p.Parent = floors
 	end
 	local frame = Instance.new("Folder"); frame.Name = "Frame"; frame.Parent = root
@@ -53,6 +57,14 @@ function MatchService.buildArena(origin: Vector3)
 		end
 	end
 
+	-- The default Baseplate's top sits at y=0, coplanar with the gym floor -> z-fighting + a gray
+	-- 2048-stud plane poking past the court. Drop it far below (out of view); the enclosed gym is
+	-- the real floor. Done here (buildArena runs every Play) so it self-heals on a fresh place.
+	local baseplate = workspace:FindFirstChild("Baseplate")
+	if baseplate and baseplate:IsA("BasePart") then
+		baseplate.Position = Vector3.new(baseplate.Position.X, -100, baseplate.Position.Z)
+	end
+
 	-- Spawn pad at the center square, and disable any far/legacy spawns so players start in the court.
 	for _, d in ipairs(workspace:GetDescendants()) do
 		if d:IsA("SpawnLocation") then d.Enabled = false end
@@ -85,7 +97,8 @@ function MatchService.buildGym(origin: Vector3)
 	local wood = Color3.fromRGB(196, 152, 98)
 	local wall = Color3.fromRGB(224, 216, 196)
 	local ceil = Color3.fromRGB(150, 150, 162)
-	block("Floor", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, -0.7, 0), wood, Enum.Material.WoodPlanks)
+	-- the single visible floor: top flush at the logical floor (y=0), where the ball lands + players stand
+	block("Floor", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, -0.5, 0), wood, Enum.Material.WoodPlanks)
 	block("Ceiling", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, H, 0), ceil, Enum.Material.SmoothPlastic)
 	block("WallE", Vector3.new(0.8, H, L), origin + Vector3.new(hx, wy, 0), wall, Enum.Material.SmoothPlastic)
 	block("WallW", Vector3.new(0.8, H, L), origin + Vector3.new(-hx, wy, 0), wall, Enum.Material.SmoothPlastic)
