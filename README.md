@@ -21,6 +21,7 @@ King square. Acceptance results are in the M3 design spec (§ "M3 Acceptance"); 
 - M1 design spec: [`docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md`](docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md)
 - M1 plan: [`docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md`](docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md)
 - **M3 design spec** (done): [`docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md)
+- **M4 design spec** (current): [`docs/superpowers/specs/2026-06-10-nine-square-m4-bots-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m4-bots-design.md)
 
 ## Build milestones (PRD §15)
 
