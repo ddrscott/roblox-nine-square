@@ -1,6 +1,7 @@
 --!strict
 -- ServerScriptService.NineSquareServer
--- Wires the arena, ball, serve handling, contact detection, the Heartbeat loop, and court spawn.
+-- Wires the arena, ball, physical contact detection, the Heartbeat loop, and court spawn.
+-- Serving is physical: the ball hovers at center; a player gets under it and jumps to strike it.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -9,44 +10,34 @@ local ns = game.ServerScriptService:WaitForChild("NineSquare")
 local BallController = require(ns.BallController)
 local MatchService = require(ns.MatchService)
 local HitResolver = require(ns.HitResolver)
-local Serve = RS.NineSquareRemotes.Serve
 
 print("[NineSquare] server starting")
 MatchService.buildArena(Vector3.new(0, 0, 200))
 local bc = BallController.new()
 print("[NineSquare] arena + ball ready")
 
--- Whiff or volley-landing: reset the ball shortly after the arc resolves.
-bc.onArrive = function(_arc)
-	task.delay(0.4, function() if bc.phase == "Resolved" then bc:reset() end end)
-end
-
-Serve.OnServerEvent:Connect(function(plr)
-	if bc.phase ~= "Idle" then return end
-	local cell = MatchService.playerCell(plr)
-	if cell then bc:serve(cell) end
-end)
-
 RunService.Heartbeat:Connect(function()
 	bc:step()
-	-- Physical contact: while a served ball descends/hovers over a square, a player who jumps
-	-- into it volleys it back up. Direction comes from where they strike it (reflection) + steer.
-	if bc.arc and bc.arc.kind == "serve" and (bc.phase == "Descending" or bc.phase == "Hover") then
+	local now = workspace:GetServerTimeNow()
+	if bc:isHittable(now) then
 		local res = HitResolver.checkContact(bc.ball.Position)
 		if res.contact then
-			print(("[NineSquare] contact by %s dir=%s"):format(res.player and res.player.Name or "?", tostring(res.dir)))
-			bc:volley(res.point, res.dir)
+			local v0 = res.normal * G.hitSpeed   -- radial impulse along the contact normal
+			bc:launch(res.point, v0)
+			print(("[NineSquare] hit by %s  n=%s  -> %s"):format(
+				res.player and res.player.Name or "?", tostring(res.normal), tostring(bc.targetCell)))
 		end
 	end
 end)
 
 -- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.
--- Place each spawning character at the center square (C) so they start in play position.
+-- Place each spawning character at the center square (C) so they start under the served ball.
 local function placeAtCourt(char: Model)
 	local hrp = char:WaitForChild("HumanoidRootPart", 5)
 	if hrp then
 		hrp.CFrame = CFrame.new(G.cellCenter("C") + Vector3.new(0, 5, 0))
 		print(("[NineSquare] placed %s at %s"):format(char.Name, tostring(hrp.Position)))
+		task.delay(1, function() bc:resync() end)  -- make sure the late-loading client gets ball state
 	else
 		warn("[NineSquare] no HumanoidRootPart to place: " .. char.Name)
 	end

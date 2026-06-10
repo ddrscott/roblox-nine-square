@@ -1,7 +1,9 @@
 --!strict
 -- ServerScriptService.NineSquare.BallController
--- Owns the single anchored ball. Computes deterministic arcs, advances them each tick,
--- and broadcasts arc params to clients for telegraph rendering.
+-- Owns the single anchored ball. The ball hovers at a serve point (Live) until a player gets
+-- under it and strikes it. The strike imparts a radial-impulse velocity (see HitResolver/Server)
+-- and the ball follows a TRUE projectile arc (Flight) under gravity until it lands. Direction is
+-- governed purely by the contact geometry; this controller just simulates the resulting physics.
 local RS = game:GetService("ReplicatedStorage")
 local G = require(RS.GridConfig)
 local BallSync = RS.NineSquareRemotes.BallSync
@@ -9,98 +11,83 @@ local BallSync = RS.NineSquareRemotes.BallSync
 local BallController = {}
 BallController.__index = BallController
 
-export type Arc = {
-	origin: Vector3, target: Vector3, apex: number,
-	startT: number, travel: number, kind: string, targetCell: string,
-}
-
 function BallController.new()
 	local self = setmetatable({}, BallController)
 	local ball = Instance.new("Part")
-	ball.Name = "Ball"; ball.Shape = Enum.PartType.Ball; ball.Anchored = true
+	ball.Name = "Ball"; ball.Shape = Enum.PartType.Ball; ball.Anchored = true; ball.CanCollide = false
 	ball.Size = Vector3.new(G.ballRadius*2, G.ballRadius*2, G.ballRadius*2)
 	ball.Color = Color3.fromRGB(255, 220, 60); ball.Material = Enum.Material.SmoothPlastic
 	ball.Parent = workspace:WaitForChild("NineSquare")
 	self.ball = ball
-	self.arc = nil :: Arc?
-	self.phase = "Idle"      -- Idle | InFlight | Descending | Hover | Resolved
-	self.hoverStart = 0
-	self.onArrive = nil :: ((Arc) -> ())?
-	ball.Position = G.cellFramePoint("C")
+	self.gravity = workspace.Gravity
+	self.phase = "Live"                 -- Live (hover) | Flight | Dead
+	self.restPoint = G.cellFramePoint("C")
+	self.p0 = self.restPoint
+	self.v0 = Vector3.zero
+	self.startT = 0
+	self.lastHitT = -1
+	self.targetCell = G.cellAtPosition(self.restPoint) or "C"
+	ball.Position = self.restPoint
 	return self
 end
 
--- y along a parabola: endpoints lerp + 4*apex*u*(1-u) bulge.
-local function arcPos(arc: Arc, now: number): (Vector3, number)
-	local u = math.clamp((now - arc.startT) / arc.travel, 0, 1)
-	local flat = arc.origin:Lerp(arc.target, u)
-	local y = arc.origin.Y + (arc.target.Y - arc.origin.Y) * u + 4 * arc.apex * u * (1 - u)
-	return Vector3.new(flat.X, y, flat.Z), u
+local function kindForPhase(phase: string): string
+	if phase == "Live" then return "live"
+	elseif phase == "Flight" then return "flight"
+	else return "idle" end
 end
 
-function BallController:_broadcast()
-	local a = self.arc
-	if not a then return end
-	BallSync:FireAllClients({
-		origin = a.origin, target = a.target, apex = a.apex,
-		startT = a.startT, travel = a.travel, kind = a.kind, targetCell = a.targetCell,
-		descentWindow = G.descentWindow,
-	})
+function BallController:resync()
+	BallSync:FireAllClients({ kind = kindForPhase(self.phase), targetCell = self.targetCell, frameHeight = G.frameHeight })
 end
 
--- Launch a serve arc from center to a target cell's frame point.
-function BallController:serve(targetCell: string)
-	local arc: Arc = {
-		origin = G.cellFramePoint("C"), target = G.cellFramePoint(targetCell),
-		apex = G.apexHeight, startT = workspace:GetServerTimeNow(),
-		travel = G.serveTravel, kind = "serve", targetCell = targetCell,
-	}
-	self.arc = arc; self.phase = "InFlight"
-	self:_broadcast()
+function BallController:hoverAt(point: Vector3)
+	self.phase = "Live"; self.restPoint = point; self.v0 = Vector3.zero
+	self.ball.Position = point
+	self.targetCell = G.cellAtPosition(point) or "C"
+	self:resync()
 end
 
--- Launch a volley lob from a contact point along a horizontal direction (M1: lands, no occupant).
-function BallController:volley(fromPoint: Vector3, horizDir: Vector3)
-	local dir = horizDir.Magnitude > 1e-3 and horizDir.Unit or Vector3.zero
-	local target = fromPoint + dir * G.lobDistance
-	target = Vector3.new(target.X, G.cellFramePoint("C").Y, target.Z)
-	local landCell = G.cellAtPosition(target) or "C"
-	local arc: Arc = {
-		origin = fromPoint, target = target, apex = G.apexHeight * 0.6,
-		startT = workspace:GetServerTimeNow(), travel = G.lobTravel,
-		kind = "volley", targetCell = landCell,
-	}
-	self.arc = arc; self.phase = "InFlight"
-	self:_broadcast()
+function BallController:resetToServe()
+	self:hoverAt(G.cellFramePoint("C"))
 end
 
-function BallController:reset()
-	self.arc = nil; self.phase = "Idle"
-	self.ball.Position = G.cellFramePoint("C")
-	BallSync:FireAllClients({ kind = "idle" })
+-- Strike: launch from a contact point with an initial velocity (radial impulse from the hit).
+function BallController:launch(fromPoint: Vector3, v0: Vector3)
+	self.p0 = fromPoint; self.v0 = v0
+	self.startT = workspace:GetServerTimeNow(); self.lastHitT = self.startT
+	self.phase = "Flight"
+	-- predict where it crosses the floor (y = ballRadius) for the highlight + fault check
+	local g = self.gravity
+	local A, B, C = -0.5*g, v0.Y, fromPoint.Y - G.ballRadius
+	local disc = B*B - 4*A*C
+	local tland = (disc >= 0) and math.max((-B + math.sqrt(disc))/(2*A), (-B - math.sqrt(disc))/(2*A)) or 0
+	local land = fromPoint + v0*tland
+	self.targetCell = G.cellAtPosition(Vector3.new(land.X, 0, land.Z))
+	self:resync()
 end
 
--- Called every Heartbeat. Moves the ball; fires onArrive once when an arc resolves.
--- A serve hovers at its target for contactDwell seconds (fair contact window) before whiffing.
+-- A served/flying ball can be struck, after a short cooldown so one jump fires once.
+function BallController:isHittable(now: number): boolean
+	return (self.phase == "Live" or self.phase == "Flight") and (now - self.lastHitT) >= G.hitCooldown
+end
+
 function BallController:step()
-	local a = self.arc
-	if not a then return end
-	local now = workspace:GetServerTimeNow()
-	local pos, u = arcPos(a, now)
-	self.ball.Position = pos
-	if self.phase == "InFlight" and (now - a.startT) >= (a.travel - G.descentWindow) then
-		self.phase = "Descending"
-	end
-	if u >= 1 then
-		if a.kind == "serve" and self.phase ~= "Resolved" then
-			if self.phase ~= "Hover" then self.phase = "Hover"; self.hoverStart = now end
-			if (now - self.hoverStart) >= G.contactDwell then
-				self.phase = "Resolved"
-				if self.onArrive then self.onArrive(a) end
-			end
-		elseif a.kind ~= "serve" and self.phase ~= "Resolved" then
-			self.phase = "Resolved"
-			if self.onArrive then self.onArrive(a) end
+	if self.phase == "Live" then
+		self.ball.Position = self.restPoint
+	elseif self.phase == "Flight" then
+		local t = workspace:GetServerTimeNow() - self.startT
+		local g = self.gravity
+		local pos = self.p0 + self.v0*t + Vector3.new(0, -0.5*g*t*t, 0)
+		if pos.Y <= G.ballRadius then
+			pos = Vector3.new(pos.X, G.ballRadius, pos.Z)
+			self.ball.Position = pos
+			self.phase = "Dead"
+			self.targetCell = G.cellAtPosition(Vector3.new(pos.X, 0, pos.Z))
+			self:resync()
+			task.delay(0.6, function() if self.phase == "Dead" then self:resetToServe() end end)
+		else
+			self.ball.Position = pos
 		end
 	end
 end

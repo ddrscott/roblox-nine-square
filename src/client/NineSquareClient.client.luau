@@ -1,6 +1,7 @@
 --!strict
 -- StarterPlayer.StarterPlayerScripts.NineSquareClient
--- Renders the ball shadow, shrinking descent ring, target-square highlight, and locks an angled court camera.
+-- Renders the flat ball shadow, a height-based "strike" ring, the predicted-landing highlight,
+-- and locks an angled court camera. Serving is physical (no button) -- just get under the ball and jump.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -8,10 +9,9 @@ local G = require(RS.GridConfig)
 local Remotes = RS:WaitForChild("NineSquareRemotes")
 local BallSync = Remotes:WaitForChild("BallSync")
 
-local plr = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 
--- Sync the client's idea of origin with the server's by reading the built floor (C floor sits at origin).
+-- Court origin from the built C floor (sits at the court origin on the ground).
 local function courtOrigin(): Vector3
 	local ns = workspace:FindFirstChild("NineSquare")
 	local cFloor = ns and ns:FindFirstChild("Floors") and ns.Floors:FindFirstChild("Floor_C")
@@ -19,8 +19,8 @@ local function courtOrigin(): Vector3
 	return G.origin
 end
 
--- Flat shadow disc (created once). For a Cylinder, local X is the AXIS/length, so the thin
--- dimension goes on X and the circle (diameter) on Y/Z; rotating 90 deg about Z lays it flat.
+-- Flat shadow disc. For a Cylinder, local X is the AXIS/length, so the thin dimension goes on X
+-- and the circle (diameter) on Y/Z; rotating 90deg about Z lays it flat on the floor.
 local shadow = Instance.new("Part")
 shadow.Name = "BallShadow"; shadow.Anchored = true; shadow.CanCollide = false; shadow.CastShadow = false
 shadow.Shape = Enum.PartType.Cylinder
@@ -29,7 +29,7 @@ shadow.Orientation = Vector3.new(0, 0, 90)
 shadow.Color = Color3.new(0, 0, 0); shadow.Material = Enum.Material.SmoothPlastic; shadow.Transparency = 0.25
 shadow.Parent = workspace
 
--- Camera-facing timing ring, anchored over the shadow.
+-- Camera-facing "strike" ring over the shadow: small/green when the ball is at strike height.
 local ringGui = Instance.new("BillboardGui")
 ringGui.Size = UDim2.fromScale(6, 6); ringGui.AlwaysOnTop = false; ringGui.Parent = shadow
 local ring = Instance.new("ImageLabel")
@@ -55,7 +55,7 @@ RunService.RenderStepped:Connect(function()
 	updateCamera()
 	local ns = workspace:FindFirstChild("NineSquare")
 	local ball = ns and ns:FindFirstChild("Ball")
-	-- Shadow ALWAYS tracks the ball so you can read where you are under it.
+	-- Shadow ALWAYS tracks the ball so you can line yourself up under it.
 	if ball then
 		local o = courtOrigin()
 		shadow.Position = Vector3.new(ball.Position.X, o.Y + 0.06, ball.Position.Z)
@@ -63,34 +63,18 @@ RunService.RenderStepped:Connect(function()
 	else
 		shadow.Transparency = 1
 	end
-	-- Timing ring + target highlight only while a serve is live.
-	local active = state ~= nil and ball ~= nil and state.kind ~= "idle" and state.startT ~= nil
+	-- Strike ring (height cue) + predicted-landing highlight, while a ball is live.
+	local active = state ~= nil and ball ~= nil and state.kind ~= "idle"
 	if not active then
 		ring.ImageTransparency = 1; highlight.Adornee = nil; return
 	end
 	ring.ImageTransparency = 0
-	local now = workspace:GetServerTimeNow()
-	local tToArrive = (state.startT + state.travel) - now
-	local k = math.clamp(tToArrive / state.descentWindow, 0, 1)  -- 1 far out, 0 at arrival
-	local scale = 1.2 + 4.0 * k
-	ringGui.Size = UDim2.fromScale(scale, scale)
-	ring.ImageColor3 = (k < 0.12) and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(255, 80, 80)
-	local tfloor = ns:FindFirstChild("Floors") and ns.Floors:FindFirstChild("Floor_" .. tostring(state.targetCell))
+	local fh = state.frameHeight or G.frameHeight
+	local diff = math.abs(ball.Position.Y - fh)            -- 0 = ball is at your strike height
+	local k = math.clamp(diff / 8, 0, 1)
+	ringGui.Size = UDim2.fromScale(1.2 + 4.0 * k, 1.2 + 4.0 * k)
+	ring.ImageColor3 = (diff < 1.8) and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(255, 80, 80)
+	local tcell = state.targetCell
+	local tfloor = tcell and ns:FindFirstChild("Floors") and ns.Floors:FindFirstChild("Floor_" .. tostring(tcell))
 	highlight.Adornee = tfloor
 end)
-
--- Serve input: PC = E key / click, mobile = a button, console = ButtonY.
-local UIS = game:GetService("UserInputService")
-local Serve = Remotes:WaitForChild("Serve")
-local function tryServe() Serve:FireServer() end
-UIS.InputBegan:Connect(function(input, gp)
-	if gp then return end
-	if input.KeyCode == Enum.KeyCode.E or input.UserInputType == Enum.UserInputType.MouseButton1
-		or input.KeyCode == Enum.KeyCode.ButtonY then tryServe() end
-end)
-do
-	local hud = Instance.new("ScreenGui"); hud.Name = "NineSquareHUD"; hud.ResetOnSpawn = false; hud.Parent = plr:WaitForChild("PlayerGui")
-	local b = Instance.new("TextButton"); b.Size = UDim2.fromOffset(160, 64); b.Position = UDim2.new(0.5, -80, 1, -100)
-	b.Text = "SERVE"; b.TextScaled = true; b.Parent = hud
-	b.Activated:Connect(tryServe)
-end

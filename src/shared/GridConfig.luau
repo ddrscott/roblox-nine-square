@@ -9,15 +9,17 @@ GridConfig.floorThickness = 1
 GridConfig.frameHeight = 11         -- contact plane = measured jump reach (apex ~11.2; std-jump 7.2 + hit-zone ~4)
 GridConfig.beamThickness = 0.5
 GridConfig.ballRadius = 2           -- ball sphere radius (4-stud diameter)
-GridConfig.apexHeight = 16          -- extra bulge above the serve chord midpoint
-GridConfig.serveTravel = 1.1        -- seconds, center -> target square arrival
-GridConfig.descentWindow = 0.8      -- seconds before arrival that the ring actively shrinks
+GridConfig.apexHeight = 16          -- (legacy) extra bulge for the old lerp-arc serve
+GridConfig.serveTravel = 1.1        -- (legacy)
+GridConfig.descentWindow = 0.8      -- (legacy)
 GridConfig.hitZoneRadius = 2.5      -- avatar hit-zone sphere radius
 GridConfig.hitZoneYOffset = 2.0     -- hit-zone center above HumanoidRootPart (hands/head)
-GridConfig.contactDwell = 0.25      -- hover/contact window at the target before a whiff
-GridConfig.steerConeDeg = 15        -- max horizontal steer nudge
-GridConfig.lobTravel = 1.0          -- seconds for a volley lob arc
-GridConfig.lobDistance = 14         -- horizontal studs a centered volley travels
+GridConfig.hitSpeed = 48            -- launch speed imparted along the contact normal (studs/s)
+GridConfig.hitCooldown = 0.30       -- min seconds between contacts (debounce one jump)
+GridConfig.minLift = 0.30           -- floor on the launch normal's vertical component (always arcs over)
+GridConfig.steerConeDeg = 15        -- (legacy)
+GridConfig.lobTravel = 1.0          -- (legacy)
+GridConfig.lobDistance = 14         -- (legacy)
 
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
@@ -54,34 +56,6 @@ function GridConfig.cellAtPosition(pos: Vector3): string?
 		if c.dx == ix and c.dz == iz then return name end
 	end
 	return nil
-end
-
--- Base horizontal volley direction: ball deflects from contact toward ball center, i.e.
--- (ball - hitZoneCenter) flattened. Off-center contact => deflect that way; centered => zero.
-function GridConfig.reflectDir(ballPos: Vector3, hitZoneCenter: Vector3): Vector3
-	local d = ballPos - hitZoneCenter
-	local flat = Vector3.new(d.X, 0, d.Z)
-	if flat.Magnitude < 1e-3 then return Vector3.zero end
-	return flat.Unit
-end
-
--- Rotate baseDir toward steerDir by at most steerConeDeg (about Y). Centered base (zero) snaps to steer.
-function GridConfig.applySteer(baseDir: Vector3, steerDir: Vector3?): Vector3
-	local s = steerDir and Vector3.new(steerDir.X, 0, steerDir.Z) or Vector3.zero
-	if baseDir.Magnitude < 1e-3 then
-		return s.Magnitude < 1e-3 and Vector3.zero or s.Unit
-	end
-	local b = baseDir.Unit
-	if s.Magnitude < 1e-3 then return b end
-	s = s.Unit
-	local ang = math.acos(math.clamp(b:Dot(s), -1, 1))
-	local maxAng = math.rad(GridConfig.steerConeDeg)
-	if ang <= maxAng then return s end
-	-- rotate b toward s by maxAng; sign from the Y of (b x s)
-	local crossY = b.Z * s.X - b.X * s.Z
-	local theta = (crossY >= 0 and 1 or -1) * maxAng
-	local cosT, sinT = math.cos(theta), math.sin(theta)
-	return Vector3.new(b.X * cosT + b.Z * sinT, 0, -b.X * sinT + b.Z * cosT).Unit
 end
 
 return GridConfig
