@@ -103,9 +103,26 @@ GridConfig.botSkinColor = Color3.fromRGB(245, 222, 179)  -- head colour (reads a
 GridConfig.botTorsoSize = Vector3.new(2.2, 2.6, 1.2)     -- torso block
 GridConfig.botHeadSize = 1.4                              -- head cube edge
 GridConfig.botArmSize = Vector3.new(0.7, 2.4, 0.7)       -- a side arm
-GridConfig.botHopHeight = 2.6        -- studs the bot pops upward on a volley (juice; tweened up then back)
-GridConfig.botHopUpTime = 0.10       -- seconds for the up-leg of the hop tween
-GridConfig.botHopDownTime = 0.22     -- seconds for the down-leg (settle back into the square)
+GridConfig.botHopHeight = 2.6        -- (legacy) studs the bot popped upward on a volley before the leap rework
+GridConfig.botHopUpTime = 0.10       -- (legacy) up-leg of the old in-place hop
+GridConfig.botHopDownTime = 0.22     -- (legacy) down-leg of the old in-place hop
+
+-- Bot LEAP-TO-BALL (M4 visual fix). Instead of a small in-place floor hop, the bot body now LEAPS up
+-- toward the live contact point (~frameHeight at the ball's XZ) so it visibly meets + strikes the ball,
+-- then arcs back to its square. The leap is an eased arc: ease-out up to the apex (the strike, synced to
+-- bc:launch), a brief hold at contact, ease-in back down, then snap home. A raised near-arm + torso lean
+-- at the apex read it as a strike, not a jump. Purely cosmetic (CanCollide stays false, server-resolved).
+GridConfig.botLeapReachFrac = 0.9    -- 0..1: fraction of the way from the bot's rest pose toward the contact
+                                     --   point the apex reaches (1 = body centre at the ball; 0.9 leaves the
+                                     --   head/reach to close the last bit so it looks like a stretch to it)
+GridConfig.botLeapMaxLeanXZ = 2.2    -- studs: cap on horizontal lean toward the ball's XZ (so a contact near
+                                     --   the square edge doesn't fling the body way out of its square)
+GridConfig.botLeapUpTime = 0.13      -- seconds: ease-out rise from the floor to the apex (the strike)
+GridConfig.botLeapHoldTime = 0.05    -- seconds: brief hold at the apex (the moment of contact / follow-through)
+GridConfig.botLeapDownTime = 0.30    -- seconds: ease-in fall back down, then snap home to the rest pose
+GridConfig.botLeapTiltDeg = 18       -- degrees the torso pitches/leans toward the ball at the apex (lean-in)
+GridConfig.botLeapArmRaiseDeg = 150  -- degrees the near (strike) arm swings up overhead at the apex (the reach)
+GridConfig.botLeapSquashFrac = 0.12  -- a touch of stretch on the way up / squash on land for life (0 = off)
 
 -- Serve flow (M3 step 3). A rally is always served by the King (rank 1 / C). A human King hovers the
 -- ball at C and jump-strikes it (M1 physical serve); a dummy King auto-serves after `serveDelay` --

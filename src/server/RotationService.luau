@@ -144,29 +144,129 @@ function RotationService._placeOccupant(self: RotationService, occ: Occupant)
 	end
 end
 
--- Juice: pop a bot up and settle it back down so a volley reads visually. Server-driven (called by
--- BotController on a hit). The bot body is a Model of separate anchored parts (no Motor6D), so we can't
--- hand it to TweenService directly -- we drive the whole-Model pivot on Heartbeat (cheap: <=8 bots, and a
--- hop fires only on a volley). Always hops from the bot's CURRENT standing pose so it never drifts, and
--- snaps exactly back to rest at the end. CanCollide stays false; purely cosmetic.
-function RotationService.hopOccupant(self: RotationService, id: string)
+-- Cubic ease-out (fast start, soft stop) -- for the rise to the strike.
+local function easeOutCubic(t: number): number
+	local u = 1 - t
+	return 1 - u * u * u
+end
+-- Cubic ease-in (soft start, fast finish) -- for the fall back down.
+local function easeInCubic(t: number): number
+	return t * t * t
+end
+
+-- LEAP-TO-BALL juice (M4 visual fix). Server-driven, called by BotController the instant it resolves a
+-- volley (so the apex coincides with bc:launch). `contactPos` is the ball's world position at the strike
+-- (~frameHeight at the ball's XZ). The bot body LEAPS from its floor stand UP toward `contactPos` -- rising
+-- to ~the ball's height and leaning toward the ball's XZ (capped) -- so it visibly meets + strikes the ball,
+-- raises its near arm + tilts in at the apex (the reach), holds briefly, then arcs back down and snaps home.
+--
+-- The body is a Model of separate ANCHORED parts (no Motor6D), so we drive it on Heartbeat (cheap: <=8 bots,
+-- fires only on a volley): the whole-Model pivot carries position + lean; the near arm is re-CFramed each
+-- frame relative to the live torso for the overhead reach. Always leaps from the CURRENT rest pose so it
+-- never drifts, and snaps exactly back to rest (arms restored) at the end. CanCollide stays false; cosmetic.
+--
+-- `contactPos` is optional for back-compat: with no contact point it falls back to the legacy in-place hop.
+function RotationService.hopOccupant(self: RotationService, id: string, contactPos: Vector3?)
 	local body = self._dummyParts[id]
 	if not body or not body.PrimaryPart then return end
 	local rest = body:GetPivot()
-	local peak = rest + Vector3.new(0, G.botHopHeight, 0)
-	local upDur, downDur = G.botHopUpTime, G.botHopDownTime
+
+	-- Capture each arm's rest CFrame *relative to the torso* so we can swing one up and restore both exactly.
+	local armL = body:FindFirstChild("ArmL") :: BasePart?
+	local armR = body:FindFirstChild("ArmR") :: BasePart?
+	local restInv = rest:Inverse()
+	local armLLocal = armL and (restInv * armL.CFrame) or nil
+	local armRLocal = armR and (restInv * armR.CFrame) or nil
+
+	-- Restore arms + the model to rest in one place (used on land and on early-out).
+	local function snapHome()
+		body:PivotTo(rest)
+		if armL and armLLocal then armL.CFrame = rest * armLLocal end
+		if armR and armRLocal then armR.CFrame = rest * armRLocal end
+	end
+
+	-- No contact point -> legacy in-place hop (back-compat; keeps old callers working).
+	if not contactPos then
+		local peak = rest + Vector3.new(0, G.botHopHeight, 0)
+		local upDur, downDur = G.botHopUpTime, G.botHopDownTime
+		local t0 = os.clock()
+		local conn
+		conn = RunService.Heartbeat:Connect(function()
+			if not body.Parent then conn:Disconnect(); return end
+			local elapsed = os.clock() - t0
+			if elapsed < upDur then
+				body:PivotTo(rest:Lerp(peak, elapsed / upDur))
+			elseif elapsed < upDur + downDur then
+				body:PivotTo(peak:Lerp(rest, (elapsed - upDur) / downDur))
+			else
+				snapHome(); conn:Disconnect()
+			end
+		end)
+		return
+	end
+
+	-- Apex target: travel `botLeapReachFrac` of the way from the rest torso toward the contact point, with
+	-- the horizontal lean toward the ball's XZ capped (`botLeapMaxLeanXZ`) so an edge contact never flings
+	-- the body out of its square. Vertically we go (almost) all the way up so the body meets the ball.
+	local restPos = rest.Position
+	local frac = G.botLeapReachFrac
+	local riseY = (contactPos.Y - restPos.Y) * frac
+	local leanXZ = Vector3.new(contactPos.X - restPos.X, 0, contactPos.Z - restPos.Z) * frac
+	local leanMag = leanXZ.Magnitude
+	if leanMag > G.botLeapMaxLeanXZ then
+		leanXZ = leanXZ * (G.botLeapMaxLeanXZ / leanMag)
+	end
+	local apexPos = restPos + Vector3.new(leanXZ.X, math.max(riseY, 0), leanXZ.Z)
+
+	-- Lean direction (toward the ball, in XZ) -> pick the near arm + tilt axis for the strike.
+	local horiz = Vector3.new(contactPos.X - restPos.X, 0, contactPos.Z - restPos.Z)
+	local leanDir = (horiz.Magnitude > 1e-3) and horiz.Unit or Vector3.new(0, 0, -1)
+	-- Tilt axis = perpendicular to lean (so positive lean pitches the torso top toward the ball).
+	local tiltAxis = Vector3.new(0, 1, 0):Cross(leanDir)
+	if tiltAxis.Magnitude < 1e-3 then tiltAxis = Vector3.new(1, 0, 0) end
+	tiltAxis = tiltAxis.Unit
+	local tiltMax = math.rad(G.botLeapTiltDeg)
+	-- Near arm = the one on the side the body leans toward (its local +X is right). Default to right arm.
+	local nearArm, nearLocal = armR, armRLocal
+	if armL and armLLocal then
+		local rightDot = rest.RightVector:Dot(leanDir)
+		if rightDot < 0 then nearArm, nearLocal = armL, armLLocal end
+	end
+	local armRaiseMax = math.rad(G.botLeapArmRaiseDeg)
+
+	local upDur, holdDur, downDur = G.botLeapUpTime, G.botLeapHoldTime, G.botLeapDownTime
 	local t0 = os.clock()
 	local conn
 	conn = RunService.Heartbeat:Connect(function()
 		if not body.Parent then conn:Disconnect(); return end
 		local elapsed = os.clock() - t0
+
+		-- s = 0..1 leap progress (1 = fully extended at the strike); reach/tilt scale with s.
+		local s: number
+		local atApex = false
 		if elapsed < upDur then
-			body:PivotTo(rest:Lerp(peak, elapsed / upDur))                  -- rise
-		elseif elapsed < upDur + downDur then
-			body:PivotTo(peak:Lerp(rest, (elapsed - upDur) / downDur))      -- settle
+			s = easeOutCubic(elapsed / upDur)                         -- ease-out up to the strike
+		elseif elapsed < upDur + holdDur then
+			s = 1; atApex = true                                      -- brief hold at contact
+		elseif elapsed < upDur + holdDur + downDur then
+			s = 1 - easeInCubic((elapsed - upDur - holdDur) / downDur) -- ease-in back down
 		else
-			body:PivotTo(rest)                                              -- snap home
-			conn:Disconnect()
+			snapHome(); conn:Disconnect(); return
+		end
+
+		-- Position: rest -> apex by s, with a touch of upward stretch as it extends toward the strike
+		-- (squash-stretch: the body looks like it reaches a hair past the apex for the ball).
+		local stretchY = G.botLeapSquashFrac * (atApex and 1 or s * 0.6)
+		local pos = restPos:Lerp(apexPos, s) + Vector3.new(0, stretchY, 0)
+		-- Torso pitches toward the ball, peaking at the apex (the lean-in on the strike).
+		local cf = CFrame.new(pos) * CFrame.fromAxisAngle(tiltAxis, tiltMax * s)
+		body:PivotTo(cf)
+
+		-- The near arm swings up overhead (the reach), restoring on the way down. Swung about the shoulder
+		-- line (the arm's local X axis) off the LIVE torso CFrame so it tracks the lean + position.
+		if nearArm and nearLocal then
+			local swing = CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -armRaiseMax * s)
+			nearArm.CFrame = cf * (nearLocal * swing)
 		end
 	end)
 end
