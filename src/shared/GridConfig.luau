@@ -16,9 +16,14 @@ GridConfig.hitZoneRadius = 1.6      -- avatar hit-zone sphere radius (upper-body
 GridConfig.hitZoneYOffset = 2.9     -- hit-zone center above HumanoidRootPart (raised to head/upper torso)
                                     --   reach at std-jump apex = HRP_Y + yOffset + radius + ballRadius
                                     --   = 7.2 + 2.9 + 1.6 + 2 = 13.7 >= frameHeight(11): frame plane stays hittable
-GridConfig.hitRestitution = 1.5     -- player-strike bounciness: outgoing speed along the contact normal
-                                    --   ~ (1 + this) * the player's velocity toward the ball (sphere bounce)
-GridConfig.hitMinPop = 55           -- floor on that outgoing speed so a clean contact always stays in play
+GridConfig.ballRestitution = 0.6    -- PASSIVE bounce: how much of the ball's own incoming speed it keeps
+                                    --   off a still player. <= 1 so a motionless player NEVER adds energy
+                                    --   (the ball rebounds slower than it arrived, like any surface).
+GridConfig.hitGain = 2.5            -- ACTIVE power: outgoing speed added along the normal per stud/s of the
+                                    --   player's approach speed toward the ball -> faster hit = harder strike.
+GridConfig.strikeMoveThreshold = 8  -- min approach speed (studs/s) to count as an intentional strike; only
+                                    --   above this does hitMinPop apply (a still/glancing contact just bounces).
+GridConfig.hitMinPop = 55           -- floor on the outgoing speed of an ACTIVE strike so a clean drive stays in play
 GridConfig.hitSpeedH = 22           -- (legacy) fixed horizontal launch speed; superseded by the velocity-proportional strike
 GridConfig.hitSpeedV = 72           -- (legacy) fixed vertical launch speed; superseded by the velocity-proportional strike
 GridConfig.hitCooldown = 0.30       -- min seconds between contacts (debounce one jump)

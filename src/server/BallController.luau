@@ -118,16 +118,23 @@ function BallController:currentVelocity(): Vector3
 	return Vector3.zero
 end
 
--- A player strikes the ball: model the player as a sphere moving at `playerVel` hitting the ball
--- sphere, and transfer momentum along the line of centres `n` (a simple frictionless sphere bounce).
--- The impact is therefore proportional to the player's velocity TOWARD the ball; hitMinPop floors the
--- outgoing speed so a clean contact (even at the near-motionless jump apex) always stays in play.
+-- A player strikes the ball along the line of centres `n`. The impulse is split in two so energy only
+-- comes from the player's MOTION, never from a still body:
+--   * passive rebound -- the ball's own incoming velocity reflects off the player with ballRestitution
+--     (<= 1), so a motionless player behaves like a surface and the ball leaves SLOWER than it arrived.
+--   * active power     -- the player's approach speed toward the ball (its component along n) adds
+--     hitGain * that speed along n, so a faster drive hits harder (a still player adds nothing).
+-- hitMinPop floors the outgoing speed only for an intentional strike (approach > strikeMoveThreshold),
+-- so a clean drive always stays in play while a passive/glancing contact just bounces naturally.
 function BallController:strike(point: Vector3, n: Vector3, playerVel: Vector3)
 	local vBall = self:currentVelocity()
-	local closing = (vBall - playerVel):Dot(n)
-	local vOut = vBall - (1 + G.hitRestitution) * closing * n
-	local along = vOut:Dot(n)
-	if along < G.hitMinPop then vOut = vOut + (G.hitMinPop - along) * n end
+	local ballPart = vBall - (1 + G.ballRestitution) * (vBall:Dot(n)) * n   -- passive: never gains energy
+	local into = math.max(0, playerVel:Dot(n))                              -- player's approach speed toward the ball
+	local vOut = ballPart + G.hitGain * into * n                            -- active power, proportional to motion
+	if into > G.strikeMoveThreshold then                                    -- only an intentional strike gets the floor
+		local along = vOut:Dot(n)
+		if along < G.hitMinPop then vOut = vOut + (G.hitMinPop - along) * n end
+	end
 	self:launch(point, vOut)
 end
 
