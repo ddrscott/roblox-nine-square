@@ -105,6 +105,24 @@ M3 loop / rank HUD / camera are unchanged.
     and falls back to a code bench otherwise — so the build is robust whether or not the template ships in
     the place. To keep the nicer benches, that template must persist in `ReplicatedStorage`. The railing
     around the opening is code-built (deterministic fall-guard) rather than asset-based.
+- **Outdoor environment + clear-day sky**: `MatchService.buildOutdoors` (called from `buildGym`, build-once)
+  adds a backdrop so the side windows (`WindowE/W`) and the camera **wall-fade** (which makes a gym wall fully
+  transparent) reveal a **grassy park** instead of empty void / bare skybox. It builds a large grass ground
+  plane whose TOP sits just BELOW the gym floor (`y = -outdoorGroundDrop`, so the opaque wood floor still
+  covers the court and the grass never shows inside the play surface), gentle low rolling hills, and scattered
+  trees ringing the gym. The scatter is **deterministic** (fixed `GridConfig.outdoorScatterSeed`). Lighting is
+  a **clear day** — `setupLighting` sets a midday `ClockTime` (`outdoorClockTime`), a bright-blue `Sky`
+  (`ClearDaySky`, visible sun via `skySunAngularSize`, soft default clouds) + a subtle `Atmosphere` for horizon
+  depth — while the **interior gym lighting is unchanged** (same `Ambient` lift + Neon ceiling fixtures + Bloom
+  threshold). Everything outdoors is purely visual: every part is `CanCollide=false` + `CanQuery=false` and
+  lives in its OWN top-level `Workspace.Outdoors` folder (NOT under `NineSquare.Frame`), so it never enters the
+  ball (`BallController._surfaces`) or player collision sets and never intrudes on the court. All extents/counts
+  /positions + sky settings are `GridConfig` tunables (`outdoor*`, `sky*`, `atmosphere*`).
+  - **Asset persistence**: the ground/hills are code-built. The trees clone a creator-store model from
+    `ReplicatedStorage.OutdoorTreeTemplate` (inserted once via the Studio MCP, collision-stripped + given a
+    `PrimaryPart` so it grounds + scales cleanly). `buildOutdoors` falls back to a simple code tree (trunk +
+    foliage spheres) if the template is absent — so the build is robust either way. **To keep the nicer trees,
+    `ReplicatedStorage.OutdoorTreeTemplate` must persist in the place.**
 
 ## M5 — multiplayer + lobby
 

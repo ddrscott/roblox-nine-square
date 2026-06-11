@@ -186,6 +186,49 @@ GridConfig.ballSettleTimeout = 7    -- seconds a rally may run before the watchd
                                     --   long legit rally never false-triggers, but a ball that will NEVER
                                     --   settle (flung out of volume, stuck re-reflecting) is recovered fast.
 
+-- ============================================================================================
+-- OUTDOOR ENVIRONMENT (clear-day sky + grassy-park backdrop). Built ONCE by MatchService.buildOutdoors,
+-- alongside buildGym/buildGallery. The gym is enclosed, but the side windows (WindowE/W at y~30) and the
+-- camera WALL-FADE (a court camera that crosses a gym wall fades it fully transparent) used to expose empty
+-- void / bare skybox. This adds: (1) a clear-day Sky + midday lighting (set in NineSquareServer.setupLighting,
+-- keeping the existing interior gym lighting), and (2) a grassy ground plane + gentle low hills + scattered
+-- creator-store trees AROUND + BELOW the gym so there's depth to see. ALL of it is purely visual:
+--   * CanCollide = false + CanQuery = false on every outdoor part -> it is OUT of the PLAYER collision set.
+--   * It lives in its OWN Workspace.Outdoors folder (NOT under NineSquare.Frame) -> the ball never collides
+--     with it (BallController._surfaces only collides parts under NineSquare.Frame).
+--   * The ground TOP sits just BELOW the gym floor (y = -outdoorGroundDrop) and the gym floor (opaque wood)
+--     covers the court footprint, so the grass never shows inside the court / play surface.
+-- Tunables below so Scott can retheme/extend without hand-editing Studio.
+-- ============================================================================================
+GridConfig.outdoorGroundExtent = 1400  -- studs: half-edge of the square grass ground plane (so it reaches the
+                                       --   skybox horizon out the windows). Big + flat + non-colliding.
+GridConfig.outdoorGroundDrop = 0.6     -- studs the grass TOP sits BELOW the gym floor (y=0) so it never
+                                       --   z-fights the wood floor and stays out of the court interior.
+GridConfig.outdoorGroundThickness = 4  -- grass slab thickness (just enough to read as solid ground at the edges)
+GridConfig.outdoorGroundColor = Color3.fromRGB(110, 165, 78)  -- friendly park green
+GridConfig.outdoorHillCount = 7        -- number of gentle low hills scattered on the far ground for interest
+GridConfig.outdoorHillRingMin = 220    -- studs: nearest a hill centre may sit from the court origin (well clear of the gym)
+GridConfig.outdoorHillRingMax = 700    -- studs: farthest a hill centre may sit from the court origin
+GridConfig.outdoorHillRadiusMin = 80   -- studs: min hill (flattened sphere) radius
+GridConfig.outdoorHillRadiusMax = 180  -- studs: max hill radius
+GridConfig.outdoorHillFlatten = 0.16   -- 0..1: vertical scale of a hill vs its radius (low, rolling, not spiky)
+GridConfig.outdoorHillColor = Color3.fromRGB(96, 150, 70)  -- a touch deeper green than the flat ground
+GridConfig.outdoorTreeCount = 14       -- number of scattered trees (kept modest for perf; tweak freely)
+GridConfig.outdoorTreeRingMin = 75     -- studs: nearest a tree may sit from the court origin (just past the gym walls, ~hx=39)
+GridConfig.outdoorTreeRingMax = 320    -- studs: farthest a tree may sit from the court origin (still readable out the windows)
+GridConfig.outdoorTreeScaleMin = 0.8   -- min uniform scale applied to a cloned tree (variety)
+GridConfig.outdoorTreeScaleMax = 1.7   -- max uniform scale applied to a cloned tree
+GridConfig.outdoorScatterSeed = 91577  -- fixed RNG seed so the hill/tree scatter is DETERMINISTIC (same every build)
+GridConfig.outdoorTreeTemplateName = "OutdoorTreeTemplate"  -- name of a creator-store tree (Model/MeshPart)
+                                       --   under ReplicatedStorage; cloned per tree. If absent, a simple
+                                       --   code tree (trunk + foliage sphere) is built instead.
+-- Clear-day lighting + Sky (applied in NineSquareServer.setupLighting). ClockTime ~14 = early afternoon sun up.
+GridConfig.outdoorClockTime = 14       -- midday-ish: bright, sun well up
+GridConfig.skySunAngularSize = 21      -- visible sun disc size (degrees) -- a clear, present sun
+GridConfig.skyColorBottom = Color3.fromRGB(190, 220, 245) -- pale blue at the horizon -> Atmosphere.Color (clear-day tint)
+GridConfig.atmosphereDensity = 0.30    -- subtle horizon haze for depth (0 = none); kept light so the day stays clear
+GridConfig.atmosphereHaze = 1.4        -- atmosphere haze amount (soft horizon falloff)
+
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
 

@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Outdoor terrain + clear-day sky (backdrop out the windows / through clipped walls; grassy park vibe) — see [outdoor-terrain-and-sky.md](outdoor-terrain-and-sky.md)
+- [x] Outdoor terrain + clear-day sky (backdrop out the windows / through clipped walls; grassy park vibe) — see [outdoor-terrain-and-sky.md](outdoor-terrain-and-sky.md)
 - [x] Fix the OOB ball-escape wedge (ball rockets to huge Y, rotation never resolves) — see [oob-ball-escape-wedge-fix.md](oob-ball-escape-wedge-fix.md)
 - [x] Persistent player stats — best rank reached + turns held (DataStore) — see [persistent-player-stats.md](persistent-player-stats.md)
 - [x] Floor rank-number decals + on-player jersey labels (replace over-grid nameplates) — see [floor-rank-numbers-jerseys.md](floor-rank-numbers-jerseys.md)

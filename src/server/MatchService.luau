@@ -218,7 +218,121 @@ function MatchService.buildGym(origin: Vector3)
 	-- player's court camera or the wall-fade occlusion (those operate on the gym walls/ceiling below).
 	MatchService.buildGallery(origin, gym, W, L)
 
+	-- ---- OUTDOOR ENVIRONMENT (clear-day backdrop seen out the windows / through a faded wall) -------
+	-- A grassy ground plane + gentle hills + scattered trees AROUND + BELOW the gym, so the side windows
+	-- and the camera wall-fade reveal a park instead of void. Purely visual: every outdoor part is
+	-- CanCollide=false + CanQuery=false and lives in its OWN Workspace.Outdoors folder (NOT under
+	-- NineSquare.Frame), so it never enters the ball or player collision sets. Built once, alongside the gym.
+	MatchService.buildOutdoors(origin)
+
 	return gym
+end
+
+-- Build the grassy outdoor backdrop (ground + hills + trees) around/below the gym. Build-once. Everything is
+-- non-colliding, non-queryable, OUTSIDE NineSquare.Frame, and the ground sits just BELOW the gym floor so it
+-- never intrudes on the court/play surface. Scatter is DETERMINISTIC (fixed GridConfig.outdoorScatterSeed).
+function MatchService.buildOutdoors(origin: Vector3)
+	if workspace:FindFirstChild("Outdoors") then return workspace.Outdoors end  -- build once
+	local out = Instance.new("Folder"); out.Name = "Outdoors"; out.Parent = workspace
+
+	-- Visual-only part helper: anchored, NON-colliding, NON-queryable, no shadow cast (perf), under Outdoors.
+	local function vpart(name: string, size: Vector3, pos: Vector3, color: Color3, mat: Enum.Material): Part
+		local p = Instance.new("Part"); p.Anchored = true; p.Name = name
+		p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+		p.Size = size; p.Position = pos; p.Color = color; p.Material = mat
+		p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Parent = out
+		return p
+	end
+
+	-- Flat grass ground plane: a big square slab whose TOP sits just below the gym floor (y=0). The gym's
+	-- opaque wood floor covers the court footprint, so the grass is only ever seen OUTSIDE the gym.
+	local ext = G.outdoorGroundExtent
+	local gth = G.outdoorGroundThickness
+	local groundTop = -G.outdoorGroundDrop
+	vpart("Ground", Vector3.new(ext * 2, gth, ext * 2), origin + Vector3.new(0, groundTop - gth / 2, 0), G.outdoorGroundColor, Enum.Material.Grass)
+
+	-- Gentle low hills: flattened spheres scattered on a ring well clear of the gym. Deterministic scatter
+	-- (fixed seed) so the scene is stable across builds and Scott can predict tweaks.
+	local rng = Random.new(G.outdoorScatterSeed)
+	local hills = Instance.new("Folder"); hills.Name = "Hills"; hills.Parent = out
+	for i = 1, G.outdoorHillCount do
+		local ang = rng:NextNumber(0, 2 * math.pi)
+		local dist = rng:NextNumber(G.outdoorHillRingMin, G.outdoorHillRingMax)
+		local r = rng:NextNumber(G.outdoorHillRadiusMin, G.outdoorHillRadiusMax)
+		local hpos = origin + Vector3.new(math.cos(ang) * dist, groundTop, math.sin(ang) * dist)
+		-- a flattened sphere reading as a rolling rise; centre dropped so only the top dome shows above ground
+		local hsphere = Instance.new("Part"); hsphere.Shape = Enum.PartType.Ball
+		hsphere.Anchored = true; hsphere.CanCollide = false; hsphere.CanQuery = false; hsphere.CanTouch = false
+		hsphere.CastShadow = false; hsphere.Name = "Hill_" .. i
+		hsphere.Size = Vector3.new(r * 2, r * 2 * G.outdoorHillFlatten, r * 2)
+		hsphere.Position = hpos + Vector3.new(0, -r * G.outdoorHillFlatten * 0.4, 0)
+		hsphere.Color = G.outdoorHillColor; hsphere.Material = Enum.Material.Grass
+		hsphere.Parent = hills
+	end
+
+	-- Scattered trees on a ring around the gym. Clone a creator-store tree TEMPLATE from ReplicatedStorage
+	-- if present (OutdoorTreeTemplate); else build a simple code tree (trunk + foliage). Non-colliding decor.
+	local treeTemplate = RS:FindFirstChild(G.outdoorTreeTemplateName)
+	local trees = Instance.new("Folder"); trees.Name = "Trees"; trees.Parent = out
+	local function stripCollision(inst: Instance)
+		for _, d in ipairs(inst:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; d.CastShadow = false
+			end
+		end
+		if inst:IsA("BasePart") then
+			inst.Anchored = true; inst.CanCollide = false; inst.CanQuery = false; inst.CanTouch = false; inst.CastShadow = false
+		end
+	end
+	for i = 1, G.outdoorTreeCount do
+		local ang = rng:NextNumber(0, 2 * math.pi)
+		local dist = rng:NextNumber(G.outdoorTreeRingMin, G.outdoorTreeRingMax)
+		local scale = rng:NextNumber(G.outdoorTreeScaleMin, G.outdoorTreeScaleMax)
+		local yaw = rng:NextNumber(0, 2 * math.pi)
+		local base = origin + Vector3.new(math.cos(ang) * dist, groundTop, math.sin(ang) * dist)
+		if treeTemplate and (treeTemplate:IsA("Model") or treeTemplate:IsA("BasePart")) then
+			local t = treeTemplate:Clone(); t.Name = "Tree_" .. i
+			stripCollision(t)
+			if t:IsA("Model") then
+				if t.PrimaryPart or t:FindFirstChildWhichIsA("BasePart") then
+					-- normalize: drop the model's FEET (its bbox bottom) onto the ground, then yaw + scale.
+					local cf, sz = t:GetBoundingBox()
+					local footLift = sz.Y / 2  -- distance pivot is above the bbox bottom (assumes centred pivot)
+					t:ScaleTo(scale)
+					t:PivotTo(CFrame.new(base + Vector3.new(0, footLift * scale, 0)) * CFrame.Angles(0, yaw, 0))
+				end
+				t.Parent = trees
+			elseif t:IsA("BasePart") then
+				t.Size = t.Size * scale
+				t.CFrame = CFrame.new(base + Vector3.new(0, t.Size.Y / 2, 0)) * CFrame.Angles(0, yaw, 0)
+				t.Parent = trees
+			end
+		else
+			-- code tree: a brown trunk + two green foliage balls. Modest part count for perf.
+			local trunkH = 10 * scale
+			local model = Instance.new("Model"); model.Name = "Tree_" .. i; model.Parent = trees
+			local trunk = Instance.new("Part"); trunk.Shape = Enum.PartType.Cylinder
+			trunk.Anchored = true; trunk.CanCollide = false; trunk.CanQuery = false; trunk.CanTouch = false; trunk.CastShadow = false
+			trunk.Size = Vector3.new(trunkH, 2.2 * scale, 2.2 * scale)
+			-- cylinder's length runs along its local X; rotate so it stands upright
+			trunk.CFrame = CFrame.new(base + Vector3.new(0, trunkH / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2)
+			trunk.Color = Color3.fromRGB(110, 78, 50); trunk.Material = Enum.Material.Wood
+			trunk.Name = "Trunk"; trunk.Parent = model
+			local foliageColor = Color3.fromRGB(64, 132, 64)
+			for j, off in ipairs({ Vector3.new(0, trunkH + 4 * scale, 0), Vector3.new(2 * scale, trunkH + 1 * scale, 1 * scale) }) do
+				local fol = Instance.new("Part"); fol.Shape = Enum.PartType.Ball
+				fol.Anchored = true; fol.CanCollide = false; fol.CanQuery = false; fol.CanTouch = false; fol.CastShadow = false
+				fol.Size = Vector3.new(12 * scale - j * 2 * scale, 12 * scale - j * 2 * scale, 12 * scale - j * 2 * scale)
+				fol.Position = base + off
+				fol.Color = foliageColor; fol.Material = Enum.Material.Grass
+				fol.Name = "Foliage" .. j; fol.Parent = model
+			end
+			model.PrimaryPart = trunk
+		end
+	end
+
+	return out
 end
 
 -- Build the upper-floor spectator gallery into `gym`. Separated so the dimensions/positions read clearly

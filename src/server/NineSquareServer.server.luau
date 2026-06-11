@@ -15,11 +15,14 @@ local RotationService = require(ns.RotationService)
 local BotController = require(ns.BotController)
 local StatsService = require(ns.StatsService)
 
--- Overhead noon sun so the frame casts straight-down grid shadows on the floor.
+-- Clear-day midday sun. The gym is enclosed (interior lit by the Neon ceiling fixtures + Ambient), but the
+-- side windows + the camera wall-fade now reveal the outdoor park, so we set a bright clear-day Sky + a sun-up
+-- ClockTime here. Interior gym lighting is UNCHANGED (same Ambient lift + Bloom threshold that keep the gym
+-- readable and stop the lit ball blooming). Sky/Atmosphere live in GridConfig so they're tunable.
 local function setupLighting()
 	local L = game:GetService("Lighting")
-	L.GeographicLatitude = 23.5   -- cancels Roblox's ~23.5deg sun tilt: noon sun ends up at the zenith
-	L.ClockTime = 12
+	L.GeographicLatitude = 23.5   -- cancels Roblox's ~23.5deg sun tilt: noon sun ends up near the zenith
+	L.ClockTime = G.outdoorClockTime   -- midday-ish (~14): bright, sun well up for a clear day
 	L.GlobalShadows = true
 	L.Brightness = 3
 	L.Ambient = Color3.fromRGB(150, 150, 160)        -- lift interior light (the gym ceiling blocks the sun)
@@ -29,6 +32,28 @@ local function setupLighting()
 	-- Self-heals on a fresh place: set it if a Bloom child exists.
 	local bloom = L:FindFirstChildWhichIsA("BloomEffect")
 	if bloom then bloom.Threshold = 3.5 end
+
+	-- Clear-day Sky: bright blue gradient, a visible sun disc, soft default clouds. Replace any existing Sky
+	-- so a re-run self-heals to the clear-day look (idempotent). Roblox's default Sky textures give the soft
+	-- clouds; we tune the sky gradient + sun size for a bright, readable clear day.
+	local oldSky = L:FindFirstChildWhichIsA("Sky")
+	if oldSky then oldSky:Destroy() end
+	local sky = Instance.new("Sky")
+	sky.Name = "ClearDaySky"
+	sky.SunAngularSize = G.skySunAngularSize
+	sky.SkyboxOrientation = Vector3.new(0, 0, 0)
+	-- bright clear-day cloud/sky gradient (uses Roblox's built-in skybox faces -> always load, no asset perms)
+	sky.CelestialBodiesShown = true
+	sky.Parent = L
+
+	-- Subtle Atmosphere for horizon depth/haze so the distant ground/hills read as far away (kept light so the
+	-- day stays clear, not foggy). Idempotent: reuse an existing Atmosphere if present.
+	local atmos = L:FindFirstChildWhichIsA("Atmosphere")
+	if not atmos then atmos = Instance.new("Atmosphere"); atmos.Parent = L end
+	atmos.Density = G.atmosphereDensity
+	atmos.Haze = G.atmosphereHaze
+	atmos.Color = G.skyColorBottom
+	atmos.Decay = Color3.fromRGB(106, 112, 125)
 	-- NOTE: Lighting.Technology (ShadowMap/Future) cannot be set by scripts; set it once in Studio Properties.
 end
 
