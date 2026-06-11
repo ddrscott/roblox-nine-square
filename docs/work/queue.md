@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Play a squeak sound on every player jump (varied playback speed) — needs Scott's uploaded asset id in GridConfig.jumpSoundId — see [jump-squeak-sound.md](jump-squeak-sound.md)
 - [x] BUG: ball escapes the building (likely through the cut-out windows) + rally never resets — contain it + harden the watchdog — see [ball-escapes-building-rally-never-resets.md](ball-escapes-building-rally-never-resets.md)
 - [x] Move the stamina meter above the scoreboard + make it shorter — see [stamina-meter-above-scoreboard.md](stamina-meter-above-scoreboard.md)
 - [x] Move the rank pill + status/event feed from top-center to the LEFT (clear the play area) — see [move-rank-status-to-left.md](move-rank-status-to-left.md)
