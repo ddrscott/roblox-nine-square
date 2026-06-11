@@ -185,11 +185,11 @@ GridConfig.pipeClearHeight = GridConfig.frameHeight + GridConfig.ballRadius  -- 
 -- Bot volley (M4 step 1). Each Heartbeat BotController intercepts a DESCENDING Flight ball over a bot
 -- square within `botContactBand` of frameHeight and either volleys it toward the aim target (outer->C /
 -- King->random outer) reusing the serve arc, or MISSES (prob botMissChance) -> floor fault -> rotation.
-GridConfig.botMissChance = 0.18      -- chance a bot fails to return the ball (-> fault -> grid rotates).
-                                     --   Tuned in step 2: 0.25 ended rallies too fast (most descents faulted);
-                                     --   0.18 keeps a steady rotation cadence (~1 fault every few exchanges)
-                                     --   while letting bot->C->bot rallies actually happen, so the human can
-                                     --   ride a clean rally upward and realistically climb to King.
+GridConfig.botMissChance = 0.02      -- chance a bot fails to return the ball (-> fault -> grid rotates).
+                                     --   Driven near-zero (bots as RELIABLE as possible): rotation now comes
+                                     --   mainly from the HUMAN's own faults plus the rare unavoidable edge case.
+                                     --   The miss MECHANIC is kept (under-jump -> floor fault) so difficulty can
+                                     --   be re-added later by raising this. (Was 0.18; 0.25 ended rallies too fast.)
 GridConfig.botContactBand = 3        -- studs around frameHeight that count as the bot's contact window (descending)
 
 -- PHYSICAL bot hits (rework). Bots no longer artificially `bc:launch`; instead each bot that intercepts a
@@ -199,7 +199,7 @@ GridConfig.botContactBand = 3        -- studs around frameHeight that count as t
 -- human's, so the existing swept, velocity-proportional collision (`strikeVelocity`) resolves the bot hit.
 -- The aim emerges from the off-center contact: the bot stands on the FAR side of the ball from its aim cell
 -- so `n = unit(ball - center)` points toward the aim; the jump velocity supplies the force.
-GridConfig.botJumpVelocity = 20      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
+GridConfig.botJumpVelocity = 16      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
                                      --   contact -> the velocity-proportional strike (hitGain) turns this into
                                      --   outgoing ball speed (paired with the off-center normal for the aim).
                                      --   60 sprayed every return out of bounds; 28 kept the strike inside the
@@ -207,24 +207,59 @@ GridConfig.botJumpVelocity = 20      -- upward speed (studs/s) the bot drives it
                                      --   still clearing the pipe (a save). Higher = flatter/longer -> more OOB.
                                      --   NOTE: a brief +30% bump to 36.4 (mirroring the HUMAN jump boost) made the
                                      --   bot drive the ball nearly straight up at hitGain*36.4 ~= 91 studs/s -> it
-                                     --   cleared the gym ceiling (H=50) on every hit. Reverted to the tuned 28; the
-                                     --   +30% boost is human-only (the bot drives full velocity vertically, so it
-                                     --   doesn't need -- and can't afford -- the extra force).
-GridConfig.botOffCenterFrac = 0.55   -- 0..1: how far off-centre the bot stands, as a fraction of
+                                     --   cleared the gym ceiling (H=50) on every hit. The +30% boost is human-only.
+                                     --   Lowered 20 -> 16 for the in-bounds rework: the steeper in-bounds aim reflects
+                                     --   the ball's fast descent more vertically, and a bot<->bot rally settles into a
+                                     --   LIMIT CYCLE whose energy (peak height) is set by this drive + restitution. At
+                                     --   20 that cycle peaked ~47.5 (ball top ~49.5, grazing the ceiling); 16 drops the
+                                     --   cycle so the botLandPeakCap can hold the peak well under the ceiling while the
+                                     --   strike still clears the pipe + sustains the rally.
+GridConfig.botOffCenterFrac = 0.50   -- 0..1: how far off-centre the bot stands, as a fraction of
                                      --   (hitZoneRadius + ballRadius). The stand centre is offset this far on
                                      --   the FAR side of the ball from the aim, so contact is clearly off-centre
-                                     --   (steers the ball toward the aim) but the spheres still overlap to strike
+                                     --   (steers the ball toward the aim) but the spheres still overlap to strike.
+                                     --   This sets the line-of-centres TILT: SMALLER = steeper n (minLift biases
+                                     --   it up) -> a tighter arc that lands IN the aim cell; LARGER = flatter n ->
+                                     --   the hitMinPop(55) floor flings the ball horizontally -> OOB. Lowered from
+                                     --   0.55 to keep returns in-bounds (the landing-prediction loop steepens further
+                                     --   per-hit if a given contact would still sail out).
 GridConfig.botMoveSpeed = 34         -- studs/s the bot slides its feet/collider laterally to the launch point
                                      --   during the descent (visible repositioning before the drive)
-GridConfig.botStandoff = 3.0         -- studs the bot's drive STARTS behind its off-centre stand (further along
+GridConfig.botStandoff = 1.6         -- studs the bot's drive STARTS behind its off-centre stand (further along
                                      --   -aimDir): the collider sweeps launchPoint -> contactPoint, so colVel
                                      --   carries this much horizontal travel toward the aim -> the strike's
                                      --   line of centres tilts toward the aim cell (not a vertical-only pop).
-                                     --   Lower = steeper/shorter strike (lands nearer C); higher = flatter/longer
+                                     --   Lower = steeper/shorter strike (lands nearer C); higher = flatter/longer.
+                                     --   Lowered from 3.0: the long horizontal sweep drove the approach speed past
+                                     --   strikeMoveThreshold and added flat hitGain power -> overshoot/OOB. 1.6 keeps
+                                     --   enough lateral drive to steer toward the aim while landing inside the court.
 GridConfig.botJumpLeadTime = 0.0     -- seconds to begin the jump EARLY before the predicted contact time, so the
                                      --   collider is rising THROUGH the ball at contact (0 = reach contact exactly)
 GridConfig.botRestColliderY = 4.5    -- height (studs above the cell floor) of the bot's hit-sphere at rest /
                                      --   ground (its "head" height before the jump); the jump rises from here
+
+-- Bot AIM / LANDING-PREDICTION (keep returns in-bounds). The bot aims at its target cell's CENTRE pulled
+-- slightly toward the COURT centre (an in-bounds margin so a clean return has slack to the court edge), then
+-- BallController-mirroring math predicts where the resolved strike's arc returns to the floor. If that landing
+-- would be out of the court (or wouldn't clear the dividing pipe), the bot deterministically STEEPENS the
+-- contact (shrinks the off-centre stand + standoff) and re-predicts, up to botLandPredictIters times -- trading
+-- horizontal reach for a tighter arc that drops inside the aim cell. No Math.random: a fixed correction loop.
+GridConfig.botAimInsetFrac = 0.32    -- 0..1: pull the aim point this fraction of a half-square toward the COURT
+                                     --   centre from the aim cell's centre, so the predicted landing sits a margin
+                                     --   inside the court boundary (not on the far edge where a small error -> OOB)
+GridConfig.botLandMarginFrac = 0.30  -- 0..1: in-bounds safety margin as a fraction of a half-square. The landing
+                                     --   is "safe" only when |x|,|z| <= courtExtent - botLandMarginFrac*(squareSize/2),
+                                     --   where courtExtent = 1.5*squareSize (the outer court edge). Bigger = more slack.
+GridConfig.botLandPredictIters = 6   -- max correction passes per swing (peak-cap then in-bounds; see BotController)
+GridConfig.botLandSteepenStep = 0.78 -- per pass, multiply the off-centre offset + standoff by this to STEEPEN
+                                     --   (shorter, tighter arc); the loop DIVIDES standoff by it to FLATTEN
+                                     --   (lower, longer arc) when the forecast peak would near the ceiling
+GridConfig.botMinOffCenterFrac = 0.34 -- 0..1: FLOOR on the off-centre fraction the steepen pass may shrink to, so
+                                     --   the contact keeps enough lateral tilt to steer toward the aim cell
+GridConfig.botLandPeakCap = 40       -- studs: max ball-CENTRE peak height the forecast arc may reach before the
+                                     --   loop flattens the strike. The gym ceiling is at ~49.5; with ballRadius 2
+                                     --   the ball TOP peaks ~cap+2, so 40 leaves ~7.5 studs of clearance -- the
+                                     --   ceiling fix holds with real margin (the runaway used to graze it at 47.5).
 
 -- Lifelike bot idle motion (idle ready-stance + anticipatory ball tracking). Every bot that is NOT the
 -- active receiver (no live swing) gets a cheap, deterministic "alive" motion centred on its home stand:

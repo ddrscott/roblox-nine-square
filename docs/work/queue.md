@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Improve bot accuracy — keep returns in-bounds (stop spraying it out) + near-zero intentional miss — see [bot-accuracy-keep-in-bounds.md](bot-accuracy-keep-in-bounds.md)
+- [x] Improve bot accuracy — keep returns in-bounds (stop spraying it out) + near-zero intentional miss — see [bot-accuracy-keep-in-bounds.md](bot-accuracy-keep-in-bounds.md)
 - [x] Sound effect on any player impact (human + bot strikes) — see [player-impact-sound.md](player-impact-sound.md)
 - [x] Swap dummy bot bodies for animated R15 rigs (keep the deterministic collider) — see [r15-bot-rigs.md](r15-bot-rigs.md)
 - [x] Lifelike bot movement — idle ready-stance + anticipatory ball tracking (6/8 bots sit frozen) — see [lifelike-bot-movement.md](lifelike-bot-movement.md)

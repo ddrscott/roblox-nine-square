@@ -84,6 +84,68 @@ function BotController._ballPosAt(self, tAbs: number): Vector3
 	return bc.p0 + bc.v0 * t + Vector3.new(0, -0.5 * bc.gravity * t * t, 0)
 end
 
+-- DETERMINISTIC LANDING PREDICTION (server-authoritative; mirrors BallController, changes NO physics).
+-- Given an off-centre `offset` and a `standoff` for a planned contact, reproduce EXACTLY the velocity the
+-- existing swept collision (`strikeVelocity` + `liftNormal`) would impart, then ballistically solve where
+-- that arc returns to the floor. Returns the resolved outgoing velocity, the line-of-centres normal `n`,
+-- and the predicted floor-landing XZ -- so the caller can steepen the contact when the landing would be OOB.
+-- This does not touch the ball; it only forecasts what the real strike will do, so the actual hit is still
+-- resolved by bc:step's swept collision unchanged.
+
+-- liftNormal mirror (BallController.liftNormal): bias the normal up to at least minLift, unit length.
+local function liftNormal(n: Vector3): Vector3
+	if n.Y >= G.minLift then return n.Unit end
+	local h = Vector3.new(n.X, 0, n.Z)
+	h = (h.Magnitude > 1e-3) and h.Unit or Vector3.zero
+	return (h * math.sqrt(1 - G.minLift * G.minLift) + Vector3.new(0, G.minLift, 0)).Unit
+end
+
+-- strikeVelocity mirror (BallController.strikeVelocity): passive rebound + velocity-proportional active power.
+local function strikeVelocity(vBall: Vector3, n: Vector3, playerVel: Vector3): Vector3
+	local ballPart = vBall - (1 + G.ballRestitution) * (vBall:Dot(n)) * n
+	local into = math.max(0, playerVel:Dot(n))
+	local vOut = ballPart + G.hitGain * into * n
+	if into > G.strikeMoveThreshold then
+		local along = vOut:Dot(n)
+		if along < G.hitMinPop then vOut = vOut + (G.hitMinPop - along) * n end
+	end
+	return vOut
+end
+
+-- For a planned contact (ball at `contactPoint`, descending `vBall`, aim `aimDir`, a given `offset` +
+-- `standoff`), forecast the resolved strike velocity, the predicted floor-landing XZ, and the arc's PEAK
+-- height. The contact normal is taken along the COLLIDER's drive direction (colVel) -- this is what the real
+-- swept collision sees, because at contact the rising collider sits just behind/below the ball so
+-- n = unit(ball - colliderCentre) ~= unit(colVel). (A purely geometric horizontal stand normal badly
+-- under-predicts the vertical launch; this colVel normal matches reality, so the loop steers the TRUE arc.)
+function BotController._forecast(self, contactPoint: Vector3, vBall: Vector3, aimDir: Vector3, offset: number, standoff: number, restY: number, jumpDur: number): (Vector3, Vector3, number)
+	-- The collider velocity at contact = the straight sweep launchPoint -> contactPoint over jumpDur. The
+	-- launch point sits `offset+standoff` behind the contact along -aimDir at restY, so colVel is up + toward
+	-- the aim; its direction is the contact normal the swept collision resolves along.
+	local launchPoint = Vector3.new(
+		contactPoint.X - aimDir.X * (offset + standoff),
+		restY,
+		contactPoint.Z - aimDir.Z * (offset + standoff))
+	local colVel = (contactPoint - launchPoint) / math.max(jumpDur, 1e-3)
+	local n = (colVel.Magnitude > 1e-4) and liftNormal(colVel.Unit) or Vector3.new(0, 1, 0)
+
+	local vOut = strikeVelocity(vBall, n, colVel)
+
+	-- Ballistic arc from contactPoint with vOut: peak height + where it returns to the floor (y = ballRadius).
+	local g = self._bc.gravity
+	local peakY = contactPoint.Y + (vOut.Y > 0 and (vOut.Y * vOut.Y) / (2 * g) or 0)
+	local A, B, C = -0.5 * g, vOut.Y, contactPoint.Y - G.ballRadius
+	local landXZ = Vector3.new(contactPoint.X, 0, contactPoint.Z)
+	local disc = B * B - 4 * A * C
+	if disc >= 0 then
+		local t = math.max((-B + math.sqrt(disc)) / (2 * A), (-B - math.sqrt(disc)) / (2 * A))
+		if t > 0 then
+			landXZ = Vector3.new(contactPoint.X + vOut.X * t, 0, contactPoint.Z + vOut.Z * t)
+		end
+	end
+	return vOut, landXZ, peakY
+end
+
 -- Try to commit a NEW swing for this descent: the ball is in Flight, descending, predicted to land in a
 -- BOT square. We plan the contact point + the off-centre stand + the aim, then drive it over the descent.
 function BotController._tryCommit(self)
@@ -110,34 +172,66 @@ function BotController._tryCommit(self)
 	local contactPoint = self:_ballPosAt(tContact)
 	contactPoint = Vector3.new(contactPoint.X, contactY, contactPoint.Z)
 
-	-- Aim: outer bot -> centre (C); King bot (C) -> a random outer cell.
+	-- Aim: outer bot -> centre (C); King bot (C) -> a random outer cell. Aim at the cell CENTRE pulled an
+	-- in-bounds margin toward the COURT centre (botAimInsetFrac of a half-square), so a clean return lands a
+	-- margin INSIDE the court boundary rather than on the far edge where a small error sprays it OOB.
 	local aimCell = (cell == "C") and G.outerCells[math.random(1, #G.outerCells)] or "C"
-	local aimPoint = G.cellFramePoint(aimCell)
-	local aimFlat = Vector3.new(aimPoint.X - contactPoint.X, 0, aimPoint.Z - contactPoint.Z)
+	local aimCtr = G.cellCenter(aimCell)                                  -- XZ at the floor (cell centre)
+	local toCourt = Vector3.new(G.origin.X - aimCtr.X, 0, G.origin.Z - aimCtr.Z)
+	local inset = G.botAimInsetFrac * (G.squareSize / 2)
+	if toCourt.Magnitude > 1e-3 then aimCtr = aimCtr + toCourt.Unit * inset end
+	local aimFlat = Vector3.new(aimCtr.X - contactPoint.X, 0, aimCtr.Z - contactPoint.Z)
 	local aimDir = (aimFlat.Magnitude > 1e-3) and aimFlat.Unit or Vector3.new(0, 0, -1)
 
-	-- Off-centre stand: the bot's centre must be on the FAR side of the ball from the aim, so the line of
-	-- centres n = unit(ball - center) points toward the aim. offset is a fraction of (hitZoneRadius +
-	-- ballRadius) -- clearly off-centre yet still overlapping so the swept collision strikes.
+	local restY = G.cellCenter(cell).Y + G.botRestColliderY
+	local rise = math.max(contactPoint.Y - restY, 0.5)
+	local jumpDur = rise / math.max(G.botJumpVelocity, 1)                 -- time to rise from restY to contactY
+	local vBall = bc:currentVelocity()                                   -- the descending ball velocity at contact
+
+	-- DETERMINISTIC CORRECTION (mirrors BallController; no physics change). Forecast the resolved strike's arc
+	-- and adjust the contact so it BOTH stays under the ceiling AND lands in the court. Two opposing levers on
+	-- the drive flatness (standoff): a STEEPER drive peaks higher but lands shorter; a FLATTER drive peaks lower
+	-- but lands longer. We resolve the tension in priority order each pass, up to botLandPredictIters:
+	--   1) PEAK first -- if the forecast arc would near the gym ceiling (peak > botLandPeakCap), FLATTEN
+	--      (raise standoff) to shed vertical energy sideways. The ceiling fix is non-negotiable.
+	--   2) then BOUNDS -- if it would leave the court, STEEPEN (shrink standoff + offset) to drop it in-cell.
+	-- No Math.random. The hit itself is still resolved by bc:step's swept collision; this only picks the
+	-- offset/standoff. (botJumpVelocity caps the raw energy so the peak stays reachable without the ceiling.)
 	local offset = G.botOffCenterFrac * (G.hitZoneRadius + G.ballRadius)
+	local standoff = G.botStandoff
+	local courtExtent = 1.5 * G.squareSize
+	local safeExtent = courtExtent - G.botLandMarginFrac * (G.squareSize / 2)
+	local minOffset = G.botMinOffCenterFrac * (G.hitZoneRadius + G.ballRadius)
+	for _ = 1, math.max(G.botLandPredictIters, 0) do
+		local _vOut, landXZ, peakY = self:_forecast(contactPoint, vBall, aimDir, offset, standoff, restY, jumpDur)
+		local overCeiling = peakY > G.botLandPeakCap
+		local outOfBounds = math.abs(landXZ.X) > safeExtent or math.abs(landXZ.Z) > safeExtent
+		if not overCeiling and not outOfBounds then break end
+		if overCeiling then
+			standoff /= G.botLandSteepenStep                       -- flatten: a lower, longer arc (shed vertical)
+		else
+			offset = math.max(offset * G.botLandSteepenStep, minOffset)
+			standoff *= G.botLandSteepenStep                       -- steepen: a tighter, shorter arc (pull in-bounds)
+		end
+	end
+
+	-- Off-centre stand: the bot's centre is on the FAR side of the ball from the aim, so the line of centres
+	-- n = unit(ball - center) points toward the aim (using the corrected, possibly-steepened offset).
 	local standXZ = Vector3.new(contactPoint.X - aimDir.X * offset, 0, contactPoint.Z - aimDir.Z * offset)
 
-	local restY = G.cellCenter(cell).Y + G.botRestColliderY
 	local miss = (math.random() < G.botMissChance)
 
 	-- The bot doesn't just jump STRAIGHT up -- it DRIVES into the ball ALONG the aim line, so the collider's
 	-- velocity (and thus the line-of-centres strike) carries a strong horizontal component toward the aim
 	-- (a vertical-only pop barely bends the ball -> it falls back into the same square). We sweep the collider
 	-- on a straight line from a launch point on the FAR/low side to the contact point, arriving at tContact:
-	-- the launch point sits `botStandoff` behind the off-centre stand (further along -aimDir) and at restY,
-	-- so colVel at contact points UP + toward the aim (+aimDir) -> the strike sends the ball over the pipe
-	-- toward the aim cell.
-	local rise = math.max(contactPoint.Y - restY, 0.5)
-	local jumpDur = rise / math.max(G.botJumpVelocity, 1)             -- time to rise from restY to contactY
+	-- the launch point sits the (corrected) `standoff` behind the off-centre stand (further along -aimDir) and
+	-- at restY, so colVel at contact points UP + toward the aim (+aimDir) -> the strike sends the ball over the
+	-- pipe toward the aim cell. (rise/jumpDur were computed above for the landing forecast; reuse them.)
 	local launchPoint = Vector3.new(
-		standXZ.X - aimDir.X * G.botStandoff,
+		standXZ.X - aimDir.X * standoff,
 		restY,
-		standXZ.Z - aimDir.Z * G.botStandoff)
+		standXZ.Z - aimDir.Z * standoff)
 
 	self._swings[occ.id] = {
 		id = occ.id,
