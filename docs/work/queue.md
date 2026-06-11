@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Persistent player stats — best rank reached + turns held (DataStore) — see [persistent-player-stats.md](persistent-player-stats.md)
 - [x] Floor rank-number decals + on-player jersey labels (replace over-grid nameplates) — see [floor-rank-numbers-jerseys.md](floor-rank-numbers-jerseys.md)
 - [x] M5.1 — Multi-human occupancy + bot backfill + join/leave — see [m5-1-multihuman-occupancy.md](m5-1-multihuman-occupancy.md)
 - [x] M5.2 — Spectator overflow queue + auto-join — see [m5-2-spectator-queue.md](m5-2-spectator-queue.md)
