@@ -149,6 +149,40 @@ spectate + auto-join, and the server stays authoritative. The pieces:
     King/rank nudges are personal.
   - Tunables (`nameplate*`) live in `GridConfig`.
 
+## Persistent player stats (DataStore)
+
+Every **human** carries a persistent profile across sessions, surfaced in the standard Roblox **leaderstats**
+player list (so the stats auto-show for everyone, no custom UI needed). Server-authoritative throughout — the
+client never writes a stat. Bots are excluded (no `UserId`; they never persist).
+
+- **What's tracked** (per human, keyed by `UserId`):
+  - **`Best`** — best rank *reached* = the **lowest rank number ever held** (King = rank 1 = best). Improves
+    only when a better (lower) rank is reached; a fault-back never worsens it. Shown as `0` until the player's
+    first seat.
+  - **`King Turns`** — total rallies held as **King** (rank 1) — the marquee stat.
+  - **`Turns`** — total rallies played while seated.
+  - (also stored: `turnsAtBest` — rallies held at the best rank, i.e. how long they lasted in their peak spot;
+    not shown in the player list but persisted + available via `StatsService.getProfile`.)
+- **A "turn" = one rally** (a serve→fault cycle) the player took part in while seated. `NineSquareServer`
+  observes the existing rally loop: when the ball comes to rest and the deferred rotation runs, it credits a
+  turn to **every seated human at the rank they held during that rally** (`recordRally`), then — after the
+  shift — improves each human's best rank from their new seat (`noteRank`). The seating/rotation model is
+  **unchanged**; stats are pure observation.
+- **Persistence.** `StatsService` uses `DataStoreService` keyed per `UserId` under
+  `GridConfig.statsStoreName .. "_" .. statsStoreVersion` (default `NineSquareStats_v1`). Loaded on
+  `PlayerAdded`, saved on `PlayerRemoving` + a periodic autosave (`statsAutosaveInterval`, default 120s) +
+  `game:BindToClose`. **Every DataStore call is wrapped in `pcall` with an in-memory fallback** — if the store
+  is unavailable the game never errors or blocks; it just runs on in-memory stats for the session and logs a
+  clear `[Stats] DataStore unavailable … FALLING BACK to in-memory` note once.
+- **⚠️ Real persistence requires API access.** On a **published place** DataStore access is on by default. In
+  **Studio** it only writes if you enable **Game Settings → Security → "Enable Studio Access to API
+  Services"**; otherwise reads/writes are rejected and the game runs on the in-memory fallback (you'll see the
+  fallback note in the output, and stats won't survive a rejoin). To reset everyone's stats fresh, bump
+  `GridConfig.statsStoreVersion` (a new keyspace).
+- **Files.** `src/server/StatsService.luau` (profile model + DataStore load/save + leaderstats + turn/rank
+  updates), wired into the rally loop + join/leave in `src/server/NineSquareServer.server.luau`; tunables in
+  `src/shared/GridConfig.luau` (`statsStoreName` / `statsStoreVersion` / `statsAutosaveInterval`).
+
 ## Known issues / next steps
 
 - **OOB / pipe-escape edge case (tracked separately).** On certain outer-bot out-of-bounds hits the ball can

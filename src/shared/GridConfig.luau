@@ -419,6 +419,13 @@ GridConfig.jerseyHumanColor = Color3.fromRGB(120, 220, 255) -- a seated human's 
 GridConfig.jerseyBotColor = Color3.fromRGB(190, 175, 230)   -- a bot's jersey text (muted violet -- clearly "not a person")
 GridConfig.jerseyMaxDistance = 220                       -- studs the jersey stays visible to (covers the gallery overlook)
 
+-- PERSISTENT PLAYER STATS (StatsService). Per-human (keyed by UserId) best rank reached + turns held,
+-- saved across sessions via DataStore. Bump statsStoreVersion to start everyone's stats fresh (a new
+-- keyspace); the live store name is `<statsStoreName>_<statsStoreVersion>`.
+GridConfig.statsStoreName = "NineSquareStats"   -- DataStore base name (versioned at runtime)
+GridConfig.statsStoreVersion = "v1"             -- schema/keyspace version -- bump to reset all stats
+GridConfig.statsAutosaveInterval = 120          -- seconds between periodic autosaves of every live human
+
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]
 	assert(cell, "no cell for rank " .. tostring(rank))

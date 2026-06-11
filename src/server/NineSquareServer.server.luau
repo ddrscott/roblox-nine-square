@@ -13,6 +13,7 @@ local MatchService = require(ns.MatchService)
 local HitResolver = require(ns.HitResolver)
 local RotationService = require(ns.RotationService)
 local BotController = require(ns.BotController)
+local StatsService = require(ns.StatsService)
 
 -- Overhead noon sun so the frame casts straight-down grid shadows on the floor.
 local function setupLighting()
@@ -430,6 +431,10 @@ bc.onRest = function()
 			local o = rotation.byRank[r]
 			if o and o.kind == "human" and o.player then
 				local was = before[o.player]
+				-- STATS: after the shift, observe this human's NEW rank and improve their best (lowest)
+				-- rank reached. noteRank only LOWERS bestRank (and resets turnsAtBest on a new peak), so a
+				-- climb toward the throne raises the leaderstats "Best" live; a fault-back never worsens it.
+				StatsService.noteRank(o.player, r)
 				if was and r ~= was then
 					if r == 9 and was ~= 9 then
 						fireHud(o.player, "rank", "Faulted \u{2014} back to Rank 9", "bad")
@@ -516,10 +521,17 @@ local function placeAtCourtAndSync(plr: Player, char: Model)
 end
 
 local function onJoin(plr: Player)
+	-- STATS: load this human's PERSISTENT profile (DataStore, pcall-guarded -> in-memory fallback) and build
+	-- their leaderstats ("Best" / "King Turns" / "Turns") BEFORE seating, so the player-list stats exist the
+	-- moment they're in. (Bots never reach onJoin -- only real Players fire PlayerAdded / are in GetPlayers.)
+	StatsService.onPlayerAdded(plr)
 	-- Seat the joiner at the entry rank (displaces the lowest-status bot). seatHuman also places them +
 	-- pushes their "Rank" attribute. nil = overflow (all 9 seats human) -> M5.2 spectator queue.
 	local rank = rotation:seatHuman(plr)
 	if rank then
+		-- STATS: their entry rank is a rank "reached" -> note it so "Best" reflects their starting seat
+		-- immediately (a returning player keeps their better stored best; noteRank only lowers it).
+		StatsService.noteRank(plr, rank)
 		-- Seated: ensure they're flagged OUT of spectator state (covers any prior overflow attribute).
 		plr:SetAttribute("Spectating", false)
 		plr:SetAttribute("QueuePos", 0)
@@ -543,6 +555,10 @@ local function onJoin(plr: Player)
 end
 
 local function onLeave(plr: Player)
+	-- STATS: flush this human's profile to the DataStore (pcall-guarded -> no-op/in-memory on failure) and
+	-- drop their live session state, so a re-joiner reloads fresh from the store. Covers BOTH the spectator
+	-- and seated leave paths (it runs before either branch). Server-authoritative; bots never get here.
+	StatsService.onPlayerRemoving(plr)
 	-- M5.4: drop this player's server-side validation state (anti-teleport last-centre + mirrored stamina)
 	-- so a re-joiner with the same UserId starts fresh and we never leak per-player state on churn.
 	HitResolver.forgetPlayer(plr)
@@ -585,5 +601,8 @@ end
 
 Players.PlayerAdded:Connect(onJoin)
 Players.PlayerRemoving:Connect(onLeave)
+-- STATS: start the periodic autosave loop + game:BindToClose flush (every store call pcall-guarded inside
+-- StatsService). getPlayers feeds it the live human list to persist.
+StatsService.start(function() return Players:GetPlayers() end)
 -- Seat any players already connected at boot (Studio Play seats the local player here).
 for _, plr in ipairs(Players:GetPlayers()) do onJoin(plr) end
