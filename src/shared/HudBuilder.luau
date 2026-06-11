@@ -122,15 +122,8 @@ function HudBuilder.buildInto(gui: ScreenGui)
 	local lStroke = Instance.new("UIStroke"); lStroke.Name = "Edge"; lStroke.Thickness = 1
 	lStroke.Color = UI.buttonNeutralStroke; lStroke.Transparency = UI.buttonStrokeTransparency; lStroke.Parent = leave
 
-	-- (5) Spectating status LABEL -- NOT a button (flat bg, no stroke, medium font, accent TEXT tint only).
-	local spec = Instance.new("Frame")
-	spec.Name = "SpecLabel"; spec.LayoutOrder = 5; spec.Visible = false; spec.Size = UDim2.new(1, 0, 0, 34)
-	spec.BackgroundColor3 = UI.labelBg; spec.BackgroundTransparency = UI.labelBgTransparency
-	spec.BorderSizePixel = 0; spec.Parent = right
-	corner(spec, UI.labelCorner)
-	local specTxt = Instance.new("TextLabel"); specTxt.Name = "Text"; specTxt.BackgroundTransparency = 1
-	specTxt.Size = UDim2.fromScale(1, 1); specTxt.Font = UI.labelFont; specTxt.TextSize = 15
-	specTxt.TextColor3 = UI.labelText; specTxt.Text = "Spectating"; specTxt.Parent = spec
+	-- (The old "Spectating" status label was dropped: it's redundant -- the Join button already shows
+	-- "Join Game" / "In queue (#N)", and the world now signs the foyer with "Spectators Area" wall text.)
 
 	-- ── TOP-LEFT cluster: KING chip (label) + transient toast feed ──
 	local left = Instance.new("Frame")

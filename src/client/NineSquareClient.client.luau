@@ -63,13 +63,14 @@ local function isSeated(): boolean
 end
 
 -- ── LOBBY / SEAT UI -- BIND to the StarterGui-authored HUD (no layout built here) ──────────────────────
--- The Join Game button, the small Spectate (leave) button, and the Spectating/queue label are AUTHORED in
--- the StarterGui `NineSquareHUD` TopRight cluster (Studio-editable; self-healed by HudBuilder if absent),
--- stacked under the stamina bar + scoreboard via a UIListLayout so they never collide. This script only
--- RESOLVES them by name + binds state -- it builds no layout. Visibility is mutually exclusive off the
--- server-replicated attributes (the client only reflects + requests):
---   * SPECTATING + not queued (QueuePos 0) -> Join Game button (tappable) + Spectating label
---   * SPECTATING + queued (QueuePos N)      -> "In queue (#N)" button (disabled) + Spectating label
+-- The Join Game button + the small Spectate (leave) button are AUTHORED in the StarterGui `NineSquareHUD`
+-- TopRight cluster (Studio-editable; self-healed by HudBuilder if absent), stacked under the stamina bar +
+-- scoreboard via a UIListLayout so they never collide. This script only RESOLVES them by name + binds state
+-- -- it builds no layout. (The old separate "Spectating" status label was dropped as redundant -- the world
+-- now signs the foyer "Spectators Area"; the Join button carries the queue position.) Visibility is mutually
+-- exclusive off the server-replicated attributes (the client only reflects + requests):
+--   * SPECTATING + not queued (QueuePos 0) -> Join Game button (tappable)
+--   * SPECTATING + queued (QueuePos N)      -> "In queue (#N)" / "Next up!" button (disabled), carries position
 --   * SEATED (Rank>0, Spectating false)     -> small Spectate button only (return to the gallery lobby)
 local JoinRequest = Remotes:WaitForChild("JoinRequest")
 local LeaveRequest = Remotes:WaitForChild("LeaveRequest")
@@ -84,23 +85,23 @@ local topRight = hud:WaitForChild("TopRight")
 local joinBtn = topRight:WaitForChild("JoinBtn") :: TextButton
 local joinStroke = joinBtn:WaitForChild("Edge") :: UIStroke
 local leaveBtn = topRight:WaitForChild("LeaveBtn") :: TextButton
-local specLabelFrame = topRight:WaitForChild("SpecLabel")
-local specLabel = specLabelFrame:WaitForChild("Text") :: TextLabel
 
 local function renderLobbyHud()
 	local spectating = isSpectating()
 	local seated = isSeated()
 	joinBtn.Visible = spectating
-	specLabelFrame.Visible = spectating
 	leaveBtn.Visible = seated
 	if spectating then
+		-- The separate "Spectating" status label was dropped (redundant: the world now signs the foyer with
+		-- "Spectators Area" wall text). The Join button CARRIES the queue state so a queued player still sees
+		-- their position -- "Join Game" when joinable, "NEXT UP!" when first in line, "In queue (#N)" otherwise.
 		local pos = LocalPlayer:GetAttribute("QueuePos")
 		if type(pos) == "number" and pos > 0 then
 			-- Queued: all 9 seats are humans; the server auto-seats the longest-waiting on the next seat freeing.
 			-- Visibly DISABLED -- flat grey, dimmed text, no stroke, non-tappable (doesn't read as a live button).
-			joinBtn.Text = "In queue (#" .. tostring(pos) .. ")"
+			joinBtn.Text = (pos == 1) and "Next up!" or ("In queue (#" .. tostring(pos) .. ")")
 			joinBtn.BackgroundColor3 = UI.buttonDisabledFill
-			joinBtn.TextColor3 = UI.buttonDisabledText
+			joinBtn.TextColor3 = (pos == 1) and UI.accentGood or UI.buttonDisabledText
 			joinBtn.AutoButtonColor = false; joinBtn.Active = false
 			joinStroke.Transparency = 1
 		else
@@ -109,15 +110,6 @@ local function renderLobbyHud()
 			joinBtn.TextColor3 = UI.buttonText
 			joinBtn.AutoButtonColor = true; joinBtn.Active = true
 			joinStroke.Color = UI.buttonGoStroke; joinStroke.Transparency = UI.buttonStrokeTransparency
-		end
-		-- Label copy + TEXT tint (it's a label, so we tint the text, never an edge ring): "NEXT UP" when
-		-- longest-waiting, "#N in line" when queued, plain "Spectating" otherwise.
-		if type(pos) == "number" and pos == 1 then
-			specLabel.Text = "Spectating \u{2014} NEXT UP!"; specLabel.TextColor3 = UI.accentGood
-		elseif type(pos) == "number" and pos > 0 then
-			specLabel.Text = "Spectating \u{2014} #" .. tostring(pos) .. " in line"; specLabel.TextColor3 = UI.accentWarn
-		else
-			specLabel.Text = "Spectating"; specLabel.TextColor3 = UI.labelText
 		end
 	end
 end

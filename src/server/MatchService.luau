@@ -528,6 +528,12 @@ function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L:
 	gpart("GalWallS", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, cs / 2), wallG, Enum.Material.SmoothPlastic, true).Locked = true
 	gpart("GalRoof", Vector3.new(cs + 2, 1, cs + 2), origin + Vector3.new(0, floorTop + wh, 0), roofG, Enum.Material.SmoothPlastic, true).Locked = true
 
+	-- "Spectators Area" SIGNAGE painted on the gallery's interior wall faces (build-once). It's a SurfaceGui +
+	-- TextLabel on the EXISTING GalWall* parts, so it adds NO collision part (stays out of the ball/player sets).
+	-- Placed on the SOUTH wall (in front of the north-band spectator, who faces +Z across the opening) and the
+	-- NORTH wall (behind them, read on turning), so it's legible from the foyer no matter which way they look.
+	MatchService.applyGallerySigns(gallery)
+
 	-- INVISIBLE OPENING BARRIER (decided): a transparent (Transparency=1), collidable, anchored cap across the
 	-- gallery floor opening at galleryFloorY. It blocks LOBBY WATCHERS from falling through the opening into the
 	-- play area while preserving the downward sightline to the court (invisible). Teleporting a SEATED player
@@ -619,6 +625,55 @@ function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L:
 	sspawn.Parent = gallery
 
 	return gallery
+end
+
+-- "Spectators Area" wall signage. Paints a SurfaceGui + TextLabel reading G.spectatorsAreaText onto the
+-- INTERIOR faces of the gallery's existing perimeter walls. Pure presentation -- a surface label on parts
+-- already in the world, so it adds NOTHING to the ball/player collision sets. Idempotent: if a wall already
+-- carries its "SpectatorsAreaSign" SurfaceGui it's refreshed (text/colour follow the GridConfig tunables),
+-- never duplicated -- so this can run build-once in buildGallery AND as a one-time pass on a persisted Gallery.
+-- The two GalWall N/S faces are unrotated slabs (Size.X is the wide span), so the readable face is Front
+-- (interior of the +Z south wall, toward the north-band spectator) and Back (interior of the -Z north wall).
+function MatchService.applyGallerySigns(gallery: Instance)
+	if not gallery then return end
+	-- which interior face each wall presents to the foyer, + a friendly note for the Studio Explorer
+	local FACES = {
+		GalWallS = Enum.NormalId.Front,   -- +Z wall, interior face points -Z (toward the north-band spectator)
+		GalWallN = Enum.NormalId.Back,    -- -Z wall, interior face points +Z
+	}
+	for wallName, face in pairs(FACES) do
+		local wall = gallery:FindFirstChild(wallName)
+		if wall and wall:IsA("BasePart") then
+			local sg = wall:FindFirstChild("SpectatorsAreaSign")
+			if not (sg and sg:IsA("SurfaceGui")) then
+				sg = Instance.new("SurfaceGui")
+				sg.Name = "SpectatorsAreaSign"
+				sg.Parent = wall
+			end
+			local surf = sg :: SurfaceGui
+			surf.Face = face
+			surf.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			surf.PixelsPerStud = 24
+			surf.CanvasSize = Vector2.new(800, 250)
+			surf.LightInfluence = 0.4                 -- picks up a little gym light so it doesn't glow flat
+			surf.ZOffset = 0
+			local lbl = surf:FindFirstChild("Text")
+			if not (lbl and lbl:IsA("TextLabel")) then
+				lbl = Instance.new("TextLabel")
+				lbl.Name = "Text"
+				lbl.Parent = surf
+			end
+			local t = lbl :: TextLabel
+			t.Size = UDim2.fromScale(0.86, 0.6)
+			t.Position = UDim2.fromScale(0.07, 0.2)
+			t.BackgroundTransparency = 1
+			t.Font = G.spectatorsAreaFont
+			t.TextScaled = G.spectatorsAreaTextScaled
+			t.TextColor3 = G.spectatorsAreaTextColor
+			t.TextStrokeTransparency = 1     -- dark text on the cream wall reads cleanly; no stroke needed
+			t.Text = G.spectatorsAreaText
+		end
+	end
 end
 
 -- Per-cell flash generation tokens. Each flashCell call bumps the cell's token and captures it; only the

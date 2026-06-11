@@ -86,6 +86,15 @@ print("[NineSquare] server starting")
 setupLighting()
 MatchService.buildGym(Vector3.new(0, 0, 200))
 MatchService.buildArena(Vector3.new(0, 0, 200))
+-- ONE-TIME PASS: the gym (incl. the gallery) is BUILD-ONCE, so on the already-saved place buildGallery never
+-- re-runs and the new "Spectators Area" wall signage wouldn't appear. applyGallerySigns is idempotent (it
+-- refreshes an existing sign, never duplicates), so call it directly here against the persisted Gallery so the
+-- sign shows now AND on fresh places (where buildGallery already added it). Pure presentation -- no collision.
+do
+	local gym = workspace:FindFirstChild("Gym")
+	local gallery = gym and gym:FindFirstChild("Gallery")
+	if gallery then MatchService.applyGallerySigns(gallery) end
+end
 local bc = BallController.new()
 print("[NineSquare] arena + ball ready")
 

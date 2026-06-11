@@ -198,6 +198,15 @@ GridConfig.galleryWallHeight = 24       -- studs: height of the gallery's perime
 GridConfig.galleryRailHeight = 3.5      -- studs: height of the safety railing ringing the opening (so spectators don't fall through)
 GridConfig.galleryRailInset = 0.5       -- studs the railing sits OUTSIDE the opening edge (a hair, so it rings the hole)
 
+-- "Spectators Area" signage on the gallery (foyer) interior walls. A SurfaceGui + TextLabel painted on the
+-- INTERIOR face of the gallery's perimeter walls (GalWall*), so a roaming spectator up in the foyer reads
+-- where they are. Pure presentation: it's a surface label on the EXISTING wall, so it adds NO part to the
+-- ball/player collision sets. Tunable copy + look so kids can tweak it in GridConfig.
+GridConfig.spectatorsAreaText = "Spectators Area"
+GridConfig.spectatorsAreaTextColor = Color3.fromRGB(60, 70, 90)   -- dark slate: high contrast on the cream gallery wall (verified legible from the foyer)
+GridConfig.spectatorsAreaFont = Enum.Font.GothamBold
+GridConfig.spectatorsAreaTextScaled = true          -- scale text to the SurfaceGui rect (legible at distance)
+
 -- ============================================================================================
 -- BALL ESCAPE / WEDGE SAFETY GUARDS. A degenerate surface reflection (the ball trapped inside a
 -- pipe/corner overlap, a near-zero/NaN contact normal, or repeated reflections in one frame) was
