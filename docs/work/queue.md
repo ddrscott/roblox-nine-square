@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] M5.1 — Multi-human occupancy + bot backfill + join/leave — see [m5-1-multihuman-occupancy.md](m5-1-multihuman-occupancy.md)
+- [x] M5.1 — Multi-human occupancy + bot backfill + join/leave — see [m5-1-multihuman-occupancy.md](m5-1-multihuman-occupancy.md)
 - [ ] M5.2 — Spectator overflow queue + auto-join — see [m5-2-spectator-queue.md](m5-2-spectator-queue.md)
 - [ ] M5.3 — Upper-floor spectator gallery (3D assets) — see [m5-3-spectator-gallery.md](m5-3-spectator-gallery.md)
 - [ ] M5.4 — Server-authority hardening / anti-cheat — see [m5-4-server-authority.md](m5-4-server-authority.md)

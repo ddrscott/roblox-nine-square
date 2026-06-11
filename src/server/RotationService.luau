@@ -1,22 +1,32 @@
 --!strict
 -- ServerScriptService.NineSquare.RotationService
--- The 9-rank occupancy model + BOT rigs + placeAll (and rotateOnFault).
--- Holds byRank[rank] = { id, isDummy, rank } for exactly 9 occupants (1 human + 8 bots), builds the
--- 8 bot bodies, and places everyone at cellForRank(rank).
+-- The 9-seat occupancy model + BOT rigs + placeAll / rotateOnFault / join+leave (M5.1).
 --
--- The bot occupants are now REAL R15 rigs (default blocky "Rig Builder" dummy): one template
--- (ReplicatedStorage.BotRigTemplate, built once in Studio) cloned 8x, one per rank. The rig is
--- COSMETIC + server-authoritative -- its HumanoidRootPart is anchored and CFrame-driven by the server
--- (the SAME intercept slide / jump / procedural idle the stylised body used; NO Humanoid:MoveTo /
--- pathfinding / self-locomotion). Every rig part is CanCollide=false + Massless, and the rigs live in
--- their OWN "Dummies" folder under workspace.NineSquare (NOT under NineSquare.Frame), so
--- BallController:_surfaces() never picks them up: the ball strikes the abstract hit-sphere collider
--- (BotController), never the rig, and the ball physics / contact stays server-resolved.
+-- A SEAT = a rank 1..9 <-> cell (King = rank 1 = C, then the clockwise ring outward). Each seat's
+-- occupant is either a HUMAN Player or a BOT. `byRank[1..9]` is the SINGLE SOURCE OF TRUTH:
+--   byRank[rank] = { kind = "human"|"bot", player?, id, rank, cell, isDummy }
+-- `isDummy` is kept as an alias for `kind == "bot"` so every existing bot-square check (BotController,
+-- placement, idle) keeps working unchanged.
 --
--- ANIMATION: the procedural idle (sway / ready-steps / ball-lean) still drives the ROOT translation;
--- stock R15 animation tracks (idle/walk/run/jump) are LAYERED on top via each rig's Animator -- gated
--- by the body's ACTUAL per-frame speed (computed from the driven HRP delta) so the legs match the
--- motion, and a one-shot jump track fires when the bot drives its collider up to strike.
+-- OCCUPANCY POLICY (M5.1): HUMANS fill seats as they join, BOTS backfill the rest -> it is ALWAYS a full
+-- 9-square. A joining human takes the ENTRY rank (the highest-numbered seat farthest from the King) by
+-- DISPLACING the bot there (that bot's rig is destroyed). Multiple humans each take the next-highest open
+-- seat; humans always outrank bots (bots are pure backfill). A leaving human's seat is BACKFILLED via an
+-- injected hook (M5.2 spectator queue overrides it; the default is a fresh bot) so a rank is never empty.
+--
+-- The bot occupants are REAL R15 rigs (default blocky "Rig Builder" dummy): one template
+-- (ReplicatedStorage.BotRigTemplate, built once in Studio) cloned per bot, recoloured + animation-wired,
+-- created/destroyed as bots are spawned/displaced. The rig is COSMETIC + server-authoritative -- its
+-- HumanoidRootPart is anchored and CFrame-driven by the server (the SAME intercept slide / jump /
+-- procedural idle; NO Humanoid:MoveTo / pathfinding / self-locomotion). Every rig part is CanCollide=false
+-- + in the non-colliding BotRig group, and the rigs live in their OWN "Dummies" folder under
+-- workspace.NineSquare (NOT under NineSquare.Frame), so BallController:_surfaces() never picks them up:
+-- the ball strikes the abstract hit-sphere collider (BotController), never the rig.
+--
+-- ANIMATION: the procedural idle (sway / ready-steps / ball-lean) drives the ROOT translation; stock R15
+-- animation tracks (idle/walk/run/jump) are LAYERED on top via each rig's Animator -- gated by the body's
+-- ACTUAL per-frame speed (computed from the driven HRP delta) so the legs match the motion, and a one-shot
+-- jump track fires when the bot drives its collider up to strike.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local PhysicsService = game:GetService("PhysicsService")
@@ -37,9 +47,12 @@ do
 end
 
 export type Occupant = {
-	id: string,        -- "human" or "dummy1".."dummy8"
-	isDummy: boolean,
-	rank: number,      -- 1..9 (King = 1)
+	kind: string,        -- "human" | "bot"
+	player: Player?,     -- the seated Player (humans only)
+	id: string,          -- stable occupant id: humans "human_<userId>", bots "bot#<n>" (unique per rig)
+	isDummy: boolean,    -- alias for kind == "bot" (back-compat: every existing bot-square check reads this)
+	rank: number,        -- 1..9 (King = 1)
+	cell: string,        -- cellForRank(rank); kept in sync on placement/rotation
 }
 
 -- Per-rig animation + drive state (so we can gate idle/walk/run from the real body speed and fire jump).
@@ -59,13 +72,22 @@ type RigState = {
 local RotationService = {}
 RotationService.__index = RotationService
 
+-- How the server seats / replicates a HUMAN. Injected by NineSquareServer so the service stays decoupled
+-- from character handling + remotes.
+--   placeHuman(player, cell): teleport THAT player's HRP to the cell.
+--   setHumanRank(player, rank): replicate that player's current rank (its own "Rank" attribute).
+--   backfillHook(rank, cell): OPTIONAL leave-backfill override (M5.2 spectator queue). Returns an
+--     Occupant to seat at the freed rank, or nil to fall through to a fresh bot. Default: nil -> bot.
 export type RotationService = typeof(setmetatable(
 	{} :: {
 		byRank: { [number]: Occupant },
-		_dummyParts: { [string]: Model },       -- id -> the bot's rig Model (human has none)
-		_rigState: { [string]: RigState },      -- id -> animation/drive state for that rig
-		_placeHuman: (cell: string) -> (),     -- injected: teleport the human's HRP to a cell
-		_setHumanRank: ((rank: number) -> ())?,  -- injected: replicate the human's current rank (player attribute)
+		_dummyParts: { [string]: Model },       -- bot id -> the bot's rig Model (humans have none)
+		_rigState: { [string]: RigState },      -- bot id -> animation/drive state for that rig
+		_botSeq: number,                         -- monotonic counter -> unique bot ids (no rig id reuse)
+		_placeHuman: (player: Player, cell: string) -> (),       -- injected: teleport a player's HRP to a cell
+		_setHumanRank: ((player: Player, rank: number) -> ())?,  -- injected: replicate a player's rank
+		_backfillHook: ((rank: number, cell: string) -> Occupant?)?, -- injected: M5.2 leave override (default bot)
+		_dummyFolder: Folder?,                   -- workspace.NineSquare.Dummies (holds every bot rig)
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
 	},
 	RotationService
@@ -73,26 +95,33 @@ export type RotationService = typeof(setmetatable(
 
 local RANKS = 9
 
--- Build a fresh M3 occupancy: the human at rank 9 (entry square, PRD §7) and dummies at ranks 1..8
--- (so the King -- rank 1 / C -- starts as a dummy). placeHuman is how we teleport the human to a cell
--- (NineSquareServer injects its placeAtCell so RotationService stays decoupled from character handling).
-function RotationService.new(placeHuman: (cell: string) -> ()): RotationService
+-- Build a fresh full 9-square: ALL seats start as bots (the King -- rank 1 / C -- is a bot until a human
+-- earns it). Humans are seated later via seatHuman as they join. placeHuman/setHumanRank are how we drive a
+-- seated player (NineSquareServer injects them so the service stays decoupled from character handling).
+function RotationService.new(placeHuman: (player: Player, cell: string) -> ()): RotationService
 	local self = setmetatable({
 		byRank = {},
 		_dummyParts = {},
 		_rigState = {},
+		_botSeq = 0,
 		_placeHuman = placeHuman,
+		_dummyFolder = nil,
 	}, RotationService)
 
-	for rank = 1, RANKS do
-		if rank == RANKS then
-			self.byRank[rank] = { id = "human", isDummy = false, rank = rank }
-		else
-			self.byRank[rank] = { id = "dummy" .. rank, isDummy = true, rank = rank }
-		end
+	-- Fresh "Dummies" folder for the rigs (rebuilt each construction, like the arena builders).
+	local ns = workspace:FindFirstChild("NineSquare")
+	if ns then
+		local old = ns:FindFirstChild("Dummies"); if old then old:Destroy() end
+		local folder = Instance.new("Folder"); folder.Name = "Dummies"; folder.Parent = ns
+		self._dummyFolder = folder
+	else
+		warn("[Rotation] no workspace.NineSquare folder; build the arena before bot rigs")
 	end
 
-	self:_buildDummies()
+	-- Seed all 9 seats with bots (each gets its own rig).
+	for rank = 1, RANKS do
+		self.byRank[rank] = self:_makeBot(rank)
+	end
 	return self
 end
 
@@ -150,48 +179,55 @@ local function buildRigState(rig: Model): RigState?
 	}
 end
 
--- Owns the 8 bot rigs in a dedicated Dummies folder (rebuilt fresh each call, like the arena builders).
--- Clones the R15 template (ReplicatedStorage.BotRigTemplate) once per rank, recolours it, and wires its
--- animation tracks. If the template is missing, warns once -- bots simply won't appear (physics intact).
-function RotationService._buildDummies(self: RotationService)
-	local ns = workspace:FindFirstChild("NineSquare")
-	if not ns then
-		warn("[Rotation] no workspace.NineSquare folder; build the arena before bot rigs")
-		return
-	end
+-- Spawn ONE bot occupant for `rank`: build its rig from the template (recoloured + animation-wired) and
+-- return the occupant record. The rig is created in the Dummies folder under a UNIQUE id (no rig reuse, so
+-- displace/backfill never collides with a stale rig). If the template is missing, the bot still occupies
+-- the seat (occupant record) but has no rig (warned once) -- the abstract collider + physics are intact.
+function RotationService._makeBot(self: RotationService, rank: number): Occupant
+	self._botSeq += 1
+	local id = "bot#" .. tostring(self._botSeq)
+	local occ: Occupant = {
+		kind = "bot", player = nil, id = id, isDummy = true,
+		rank = rank, cell = G.cellForRank(rank),
+	}
+
+	local folder = self._dummyFolder
 	local template = RS:FindFirstChild(G.botRigTemplateName)
+	if not folder then
+		warn("[Rotation] no Dummies folder; bot " .. id .. " has no rig")
+		return occ
+	end
 	if not template then
 		warn("[Rotation] no ReplicatedStorage." .. G.botRigTemplateName .. " rig template; bots will not render")
-		self._dummyParts = {}
-		self._rigState = {}
-		return
+		return occ
 	end
 
-	local old = ns:FindFirstChild("Dummies"); if old then old:Destroy() end
-	local folder = Instance.new("Folder"); folder.Name = "Dummies"; folder.Parent = ns
-
-	self._dummyParts = {}
-	self._rigState = {}
-	for rank = 1, RANKS do
-		local occ = self.byRank[rank]
-		if occ and occ.isDummy then
-			local rig = template:Clone()
-			rig.Name = "Bot_rank" .. rank
-			recolourRig(rig, rank)
-			rig.Parent = folder
-			-- Put every rig part in the non-colliding BotRig group (the Humanoid flips CanCollide back on at
-			-- runtime, so the group is what actually guarantees the rig never perturbs the ball/player/rigs).
-			for _, d in ipairs(rig:GetDescendants()) do
-				if d:IsA("BasePart") then
-					d.CanCollide = false
-					pcall(function() d.CollisionGroup = BOT_RIG_COLLISION_GROUP end)
-				end
-			end
-			self._dummyParts[occ.id] = rig
-			local st = buildRigState(rig)
-			if st then self._rigState[occ.id] = st end
+	local rig = template:Clone()
+	rig.Name = "Bot_" .. id
+	recolourRig(rig, rank)
+	rig.Parent = folder
+	-- Put every rig part in the non-colliding BotRig group (the Humanoid flips CanCollide back on at runtime,
+	-- so the group is what actually guarantees the rig never perturbs the ball/player/rigs).
+	for _, d in ipairs(rig:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CanCollide = false
+			pcall(function() d.CollisionGroup = BOT_RIG_COLLISION_GROUP end)
 		end
 	end
+	self._dummyParts[id] = rig
+	local st = buildRigState(rig)
+	if st then self._rigState[id] = st end
+	return occ
+end
+
+-- Destroy a bot's rig + animation state (called when a human DISPLACES the bot at the entry rank). The
+-- occupant record itself is overwritten by the caller; here we just reap its rig so it stops rendering.
+function RotationService._destroyBot(self: RotationService, occ: Occupant)
+	if occ.kind ~= "bot" then return end
+	local rig = self._dummyParts[occ.id]
+	if rig then rig:Destroy() end
+	self._dummyParts[occ.id] = nil
+	self._rigState[occ.id] = nil
 end
 
 -- Drive a rig: place its anchored HumanoidRootPart at `hrpCF` and update the layered animation from the
@@ -276,14 +312,15 @@ function RotationService._idForRig(self: RotationService, rig: Model): string?
 	return nil
 end
 
--- Position one occupant (human or bot) at the cell for its rank.
+-- Position one occupant (human or bot) at the cell for its rank. Keeps occ.cell in sync.
 function RotationService._placeOccupant(self: RotationService, occ: Occupant)
 	local cell = G.cellForRank(occ.rank)
-	if occ.isDummy then
+	occ.cell = cell
+	if occ.kind == "bot" then
 		local rig = self._dummyParts[occ.id]
 		if rig then self:_standBot(rig, cell, occ.rank) end
-	else
-		self._placeHuman(cell)
+	elseif occ.player then
+		self._placeHuman(occ.player, cell)
 	end
 end
 
@@ -396,7 +433,7 @@ function RotationService.idleOccupant(self: RotationService, id: string, offsetX
 	self:_driveRig(id, cf, false)
 end
 
--- The world cell the bot `id` currently stands in (for the collider's rest position). nil if not a bot.
+-- The world cell the bot `id` currently stands in (for the collider's rest position). nil if not found.
 function RotationService.occupantCell(self: RotationService, id: string): string?
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
@@ -405,20 +442,20 @@ function RotationService.occupantCell(self: RotationService, id: string): string
 	return nil
 end
 
--- Replicate the human's CURRENT rank to their client (server-authoritative; the client only displays).
--- Finds the human occupant and pushes its rank via the injected setter (a player attribute in the server).
+-- Replicate EACH seated human's CURRENT rank to its OWN client (server-authoritative; the client only
+-- displays). Per-human now (M5.1): each player gets its own "Rank" attribute via the injected setter, so
+-- with a human/bot mix every human reads ITS seat -- not a single shared rank.
 function RotationService._syncHumanRank(self: RotationService)
 	if not self._setHumanRank then return end
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
-		if occ and not occ.isDummy then
-			self._setHumanRank(occ.rank)
-			return
+		if occ and occ.kind == "human" and occ.player then
+			self._setHumanRank(occ.player, occ.rank)
 		end
 	end
 end
 
--- Put every occupant at cellForRank(rank). Re-placeable (M3 step 2 rotation re-calls this).
+-- Put every occupant at cellForRank(rank). Re-placeable (rotation re-calls this).
 function RotationService.placeAll(self: RotationService)
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
@@ -427,14 +464,98 @@ function RotationService.placeAll(self: RotationService)
 	self:_syncHumanRank()
 end
 
+-- ============================================================================================
+-- JOIN / LEAVE (M5.1): humans fill seats, bots backfill -- always a full 9-square.
+-- ============================================================================================
+
+-- Is `player` already seated? Returns its current rank, or nil. (Idempotent join guard.)
+function RotationService.rankOfPlayer(self: RotationService, player: Player): number?
+	for rank = 1, RANKS do
+		local occ = self.byRank[rank]
+		if occ and occ.kind == "human" and occ.player == player then return rank end
+	end
+	return nil
+end
+
+-- The ENTRY rank for a joining human: the HIGHEST-numbered seat currently held by a BOT (farthest from the
+-- King). Humans always outrank bots, so a joiner displaces the lowest-status bot. Returns nil if all 9
+-- seats are humans (caller should route the player to the spectator queue -- M5.2).
+function RotationService._entryRankForJoin(self: RotationService): number?
+	for rank = RANKS, 1, -1 do
+		local occ = self.byRank[rank]
+		if occ and occ.kind == "bot" then return rank end
+	end
+	return nil
+end
+
+-- JOIN: seat `player` at the entry rank by DISPLACING the bot there (its rig is destroyed). Idempotent: if
+-- the player already holds a seat, just returns that rank. Returns the assigned rank, or nil when all 9
+-- seats are humans (overflow -> the M5.2 spectator queue owns the player; we leave occupancy untouched).
+function RotationService.seatHuman(self: RotationService, player: Player): number?
+	local existing = self:rankOfPlayer(player)
+	if existing then return existing end
+
+	local rank = self:_entryRankForJoin()
+	if not rank then
+		print(("[Rotation] JOIN overflow: %s -- all 9 seats are humans (spectator queue owns this player)"):format(player.Name))
+		return nil
+	end
+
+	local displaced = self.byRank[rank]
+	self:_destroyBot(displaced)
+	local occ: Occupant = {
+		kind = "human", player = player, id = "human_" .. tostring(player.UserId),
+		isDummy = false, rank = rank, cell = G.cellForRank(rank),
+	}
+	self.byRank[rank] = occ
+	print(("[Rotation] JOIN: %s seated at entry rank %d (%s); displaced bot %s")
+		:format(player.Name, rank, occ.cell, displaced.id))
+	self:_placeOccupant(occ)
+	self:_syncHumanRank()
+	return rank
+end
+
+-- LEAVE: free `player`'s seat and BACKFILL it so the rank is never empty. Backfill priority:
+--   (1) the injected _backfillHook (M5.2 spectator queue -> seats the longest-waiting spectator), else
+--   (2) a fresh bot.
+-- The backfilled occupant inherits the leaver's rank/cell (no shifting -- rotation stays a separate
+-- mechanism). Returns the occupant now holding the freed rank, or nil if the player wasn't seated.
+function RotationService.unseatHuman(self: RotationService, player: Player): Occupant?
+	local rank = self:rankOfPlayer(player)
+	if not rank then return nil end
+	local cell = G.cellForRank(rank)
+
+	-- (1) Hook first (spectator queue). It returns a ready occupant to seat, or nil to fall through to a bot.
+	local replacement: Occupant? = nil
+	if self._backfillHook then
+		replacement = self._backfillHook(rank, cell)
+		if replacement then
+			replacement.rank = rank
+			replacement.cell = cell
+			replacement.isDummy = (replacement.kind == "bot")
+		end
+	end
+	-- (2) Default: a fresh bot.
+	if not replacement then
+		replacement = self:_makeBot(rank)
+	end
+
+	self.byRank[rank] = replacement
+	print(("[Rotation] LEAVE: %s left rank %d (%s); backfilled with %s %s")
+		:format(player.Name, rank, cell, replacement.kind, replacement.id))
+	self:_placeOccupant(replacement)
+	self:_syncHumanRank()
+	return replacement
+end
+
 -- Rotate the queue after a fault (PRD §4.3 / M3 design §4). The occupant who faulted at `faultRank`
 -- is pushed to the tail (rank 9 / NW entry square) and every occupant at faultRank+1..9 advances ONE
 -- rank toward the King (rank K takes rank K-1's cell). With the fixed 9 occupants this is exactly a
 -- cyclic shift of ranks faultRank..9. A fault at rank 1 is a DETHRONE: the rank-2 occupant becomes the
--- new King (rank 1 / C) and onDethrone fires with them.
+-- new King (rank 1 / C) and onDethrone fires with them. Works for ANY occupant mix (human or bot).
 --
--- MECHANISM ONLY: this does not decide WHO faulted (that's step 3's fault attribution); the caller
--- passes the rank. After the shift it re-places everyone (incl. the human, via the injected teleport).
+-- MECHANISM ONLY: this does not decide WHO faulted (that's fault attribution); the caller passes the rank.
+-- After the shift it re-places everyone (incl. seated humans, via the injected per-player teleport).
 function RotationService.rotateOnFault(self: RotationService, faultRank: number)
 	assert(faultRank >= 1 and faultRank <= RANKS, "faultRank out of range: " .. tostring(faultRank))
 
@@ -462,44 +583,42 @@ function RotationService.rotateOnFault(self: RotationService, faultRank: number)
 	end
 end
 
--- Place ONLY the human at their current cell (used on CharacterAdded, when the dummies already stand).
-function RotationService.placeHuman(self: RotationService)
+-- Place ONLY one player at their current cell (used on CharacterAdded, when the others already stand).
+-- Re-asserts that player's rank attribute too.
+function RotationService.placePlayer(self: RotationService, player: Player)
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
-		if occ and not occ.isDummy then
+		if occ and occ.kind == "human" and occ.player == player then
 			self:_placeOccupant(occ)
-			self:_syncHumanRank()
+			if self._setHumanRank then self._setHumanRank(player, occ.rank) end
 			return
 		end
 	end
 end
 
--- The cell the human currently owns (for spawn placement / future HUD).
-function RotationService.humanCell(self: RotationService): string?
-	for rank = 1, RANKS do
-		local occ = self.byRank[rank]
-		if occ and not occ.isDummy then return G.cellForRank(occ.rank) end
-	end
-	return nil
+-- The cell a seated player currently owns (for spawn placement). nil if not seated.
+function RotationService.cellOfPlayer(self: RotationService, player: Player): string?
+	local rank = self:rankOfPlayer(player)
+	return rank and G.cellForRank(rank) or nil
 end
 
--- The human's current rank (1..9), or 9 if somehow absent. Used to seed a (re)joining player's HUD.
-function RotationService.humanRank(self: RotationService): number
-	for rank = 1, RANKS do
-		local occ = self.byRank[rank]
-		if occ and not occ.isDummy then return occ.rank end
-	end
-	return RANKS
-end
-
--- The current King (rank 1 / C). Always present (fixed 9 occupants). Used by the serve branch.
+-- The current King (rank 1 / C). Always present (a full 9-square). Used by the serve branch.
 function RotationService.kingOccupant(self: RotationService): Occupant
 	return self.byRank[1]
 end
 
--- Is the human currently King (rank 1)? Decides physical serve (human) vs auto-serve (dummy).
+-- Is the CURRENT King (rank 1) a human? Decides physical serve (human) vs auto-serve (bot). The serve
+-- branch keys off this occupant -- NOT a hard-coded single human -- so any human King serves physically
+-- and any bot King auto-serves.
 function RotationService.isHumanKing(self: RotationService): boolean
-	return not self.byRank[1].isDummy
+	return self.byRank[1].kind == "human"
+end
+
+-- The Player currently King (rank 1), or nil if a bot holds the throne. Lets the server hover-serve for the
+-- SPECIFIC human King (feed its collider / target its client) rather than "the human".
+function RotationService.kingPlayer(self: RotationService): Player?
+	local king = self.byRank[1]
+	return (king.kind == "human") and king.player or nil
 end
 
 -- The occupant whose square is `cell` right now (reverse of placement). Used for fault attribution:

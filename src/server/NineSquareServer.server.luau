@@ -93,25 +93,26 @@ local function placeAtCell(char: Model, cell: string)
 	end
 end
 
--- M3 rank occupancy: the human enters at rank 9 (NW) and 8 dummies hold ranks 1..8 (King = rank 1 / C).
--- RotationService owns the occupant model + the dummy parts; we inject how to teleport the human so the
--- service stays decoupled from character handling. (Rotation/serve wiring is a later M3 step.)
-local function placeHumanAtAssignedCell(cell: string)
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr.Character then placeAtCell(plr.Character, cell) end
-	end
+-- M5.1 occupancy: HUMANS fill seats as they join, BOTS backfill the rest -- always a full 9-square. The
+-- service starts all 9 seats as bots; PlayerAdded seats each joiner at the entry rank (displacing a bot),
+-- PlayerRemoving backfills (spectator-hook -> bot). RotationService owns the occupant model + rig parts;
+-- we inject how to teleport a SPECIFIC seated player so the service stays decoupled from character handling.
+local function placeOnePlayer(player: Player, cell: string)
+	if player.Character then placeAtCell(player.Character, cell) end
 end
-local rotation = RotationService.new(placeHumanAtAssignedCell)
--- M3 step 4: replicate the human's current rank to every player (server-authoritative). The single
--- human shares one rank in M3, so we mirror it onto all players' "Rank" attribute; the client HUD
--- (RankHud) observes the attribute and shows "Rank N" / "KING". (M4's real bots get per-player ranks.)
-rotation._setHumanRank = function(rank: number)
-	for _, plr in ipairs(Players:GetPlayers()) do
-		plr:SetAttribute("Rank", rank)
-	end
+local rotation = RotationService.new(placeOnePlayer)
+-- Replicate EACH seated player's OWN rank (server-authoritative; per-player now -- a human/bot mix means
+-- every human reads ITS seat). The client HUD (RankHud) observes the player's "Rank" attribute and shows
+-- "Rank N" / "KING".
+rotation._setHumanRank = function(player: Player, rank: number)
+	player:SetAttribute("Rank", rank)
 end
+-- M5.1 leave-backfill hook: M5.2's spectator queue will set rotation._backfillHook to seat the longest-
+-- waiting spectator into a freed seat. Until then it stays nil and unseatHuman falls through to a fresh bot
+-- (so a leaving human never leaves a rank empty). Left intentionally unset here.
 rotation:placeAll()
-print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotation:humanCell()) .. ", dummies ranks 1..8)")
+print(("[NineSquare] rotation occupancy ready (full 9-square: all bots until humans join; King = %s)")
+	:format(tostring(rotation:kingOccupant().id)))
 
 -- Bot hitter (physical rework). Each Heartbeat (BEFORE bc:step) the bots driver commits a swing for a
 -- descent toward a bot square, slides the bot's hit-sphere collider to an OFF-CENTER stand position and
@@ -210,9 +211,12 @@ local function serveNextRally()
 	lastSavedCell = nil
 	MatchService.clearSaveHighlight()
 	if rotation:isHumanKing() then
-		-- Human serves physically: park the ball hovering at C. rallyArmed flips true when they strike it.
+		-- Human King serves physically: park the ball hovering at C. rallyArmed flips true when the human
+		-- King strikes it. Keyed off byRank[1] (the SPECIFIC human King), not a hard-coded single human.
 		bc:resetToServe()
-		print("[NineSquare] human is King -- hover-serve at C (jump-strike to serve)")
+		local king = rotation:kingPlayer()
+		print(("[NineSquare] human King (%s) -- hover-serve at C (jump-strike to serve)")
+			:format(king and king.Name or "?"))
 	else
 		-- Dummy King: wind up, then auto-serve to a random outer square.
 		local target = G.outerCells[math.random(1, #G.outerCells)]
@@ -324,19 +328,49 @@ end)
 -- Kick off the live loop: the starting King (a dummy at rank 1) serves the first rally.
 serveNextRally()
 
--- Spawn placement: stand the human in their assigned ranked square (rank 9 = NW) plus a resync so the
--- late-loading client gets ball state.
-local function placeAtCourtAndSync(char: Model)
-	local cell = rotation:humanCell() or "NW"
-	placeAtCell(char, cell)
+-- ============================================================================================
+-- M5.1 -- JOIN / LEAVE wiring. Humans fill seats (entry rank, displacing a bot), bots backfill on leave.
+-- Each seated human binds its OWN client (camera / RankHud / movement / hit-sphere) to ITS server-assigned
+-- seat via the per-player "Rank" attribute (RotationService._setHumanRank) + the per-player spawn cell;
+-- HitResolver already feeds EVERY player's hit collider to bc:step, so each seated human strikes from its
+-- own square. Spectator overflow (humans > 9) is M5.2 -- here seatHuman just returns nil and we log it.
+-- ============================================================================================
+
+-- Spawn / respawn a SEATED player into their current ranked square. Late-loading clients also get a ball
+-- resync. A player with no seat (overflow / spectator, M5.2) is left at the default spawn for now.
+local function placeAtCourtAndSync(plr: Player, char: Model)
+	local cell = rotation:cellOfPlayer(plr)
+	if cell then
+		placeAtCell(char, cell)
+	end
 	task.delay(1, function() bc:resync() end)
 end
-local function hook(plr: Player)
-	-- Seed the rank attribute immediately so a (re)joining player's HUD shows their current rank, even
-	-- before the next rotation pushes it. _syncHumanRank also re-asserts it on placeHuman/placeAll.
-	plr:SetAttribute("Rank", rotation:humanRank())
-	if plr.Character then placeAtCourtAndSync(plr.Character) end
-	plr.CharacterAdded:Connect(placeAtCourtAndSync)
+
+local function onJoin(plr: Player)
+	-- Seat the joiner at the entry rank (displaces the lowest-status bot). seatHuman also places them +
+	-- pushes their "Rank" attribute. nil = overflow (all 9 seats human) -> M5.2 spectator queue.
+	local rank = rotation:seatHuman(plr)
+	if rank then
+		print(("[NineSquare] %s joined -> seated at rank %d (%s)"):format(plr.Name, rank, tostring(rotation:cellOfPlayer(plr))))
+	else
+		-- Overflow: no seat. Seed a benign attribute so the HUD isn't blank; M5.2 owns the spectator path.
+		plr:SetAttribute("Rank", 0)
+		print(("[NineSquare] %s joined -> NO SEAT (overflow; spectator queue is M5.2)"):format(plr.Name))
+	end
+	-- Bind this player's character to its seat on (re)spawn.
+	if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
+	plr.CharacterAdded:Connect(function(char) placeAtCourtAndSync(plr, char) end)
 end
-Players.PlayerAdded:Connect(hook)
-for _, plr in ipairs(Players:GetPlayers()) do hook(plr) end
+
+local function onLeave(plr: Player)
+	-- Backfill the freed seat (spectator hook -> bot) so a rank is never empty + the game never wedges.
+	local repl = rotation:unseatHuman(plr)
+	if repl then
+		print(("[NineSquare] %s left -> seat backfilled with %s %s"):format(plr.Name, repl.kind, repl.id))
+	end
+end
+
+Players.PlayerAdded:Connect(onJoin)
+Players.PlayerRemoving:Connect(onLeave)
+-- Seat any players already connected at boot (Studio Play seats the local player here).
+for _, plr in ipairs(Players:GetPlayers()) do onJoin(plr) end
