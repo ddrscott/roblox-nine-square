@@ -249,7 +249,7 @@ GridConfig.wallDecorScoreboardFill = Color3.fromRGB(22, 26, 34)     -- dark scor
 GridConfig.wallDecorScoreboardText3 = Color3.fromRGB(255, 196, 64)  -- amber scoreboard LED text
 GridConfig.wallDecorBannerColor = Color3.fromRGB(120, 30, 40)       -- deep maroon championship banner felt
 GridConfig.wallDecorBannerText = Color3.fromRGB(245, 224, 150)      -- gold banner lettering
-GridConfig.wallDecorBannerLabels = { "CHAMPIONS", "2024", "2025" }  -- championship banner captions (cycled)
+GridConfig.wallDecorBannerLabels = { "CHAMPIONS", "2026", "2025" }  -- championship banner captions (cycled); 2026 = current/max year
 GridConfig.wallDecorClockFace = Color3.fromRGB(245, 245, 240)       -- gym wall-clock face
 GridConfig.wallDecorClockRim = Color3.fromRGB(30, 34, 42)           -- clock rim/bezel
 GridConfig.wallDecorPosterText = "PLAY FAIR\nHAVE FUN"              -- playful motivational poster copy
