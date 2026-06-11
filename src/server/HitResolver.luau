@@ -119,6 +119,15 @@ function HitResolver.playerColliders(): { PlayerCollider }
 
 			plr:SetAttribute("ServerStamina", s.stamina)   -- (debug/inspection) the server's authoritative pool
 
+			-- ----- HUMAN STRIKE-FORCE TRIM (~30% cut): scale the (now validated/clamped) collider velocity by
+			-- G.humanHitForceMult, AFTER the M5.4 anti-cheat clamp so the ceilings still apply to the raw input.
+			-- This cuts the approach speed (playerVel.n) ~30%, so the strike's ACTIVE term (hitGain*approach)
+			-- drops ~30% -> ~30% less outgoing force on a human hard hit (the OOB-launch source). The shared
+			-- strikeVelocity formula -- passive rebound + hitMinPop floor + hitGain -- is UNTOUCHED, so gentle
+			-- returns still clear the pipe + stay alive (the floor holds). HUMAN ONLY: bots feed their own
+			-- colliders (bots:update in NineSquareServer), so they never pass through here. -----
+			vel = vel * G.humanHitForceMult
+
 			table.insert(list, {
 				center = center,
 				radius = G.hitZoneRadius,

@@ -75,6 +75,18 @@ GridConfig.jumpVelocityMult = 1.3   -- human jump boost: the local Humanoid's de
                                     --   this (UseJumpPower=true) on character setup -> ~30% more upward velocity,
                                     --   so a jump-strike carries more force into the velocity-proportional hit.
                                     --   Applied per-character (each respawn gets a fresh default), so it never stacks.
+-- HUMAN-ONLY strike force trim (~30% cut). A human's hard jump/dash strike was launching the ball OUT OF
+-- BOUNDS too easily. The strike is velocity-proportional -- strikeVelocity = passive rebound (the ball's own
+-- incoming, restitution-scaled) + ACTIVE power hitGain*(playerVel.n), floored by hitMinPop. The OOB launches
+-- come from that ACTIVE term on a hard human hit. We do NOT touch the shared hitGain / hitMinPop (the BOTS
+-- are tuned against those via botJumpVelocity + the in-bounds landing forecast; changing them re-breaks bot
+-- accuracy). Instead HitResolver scales each SEATED HUMAN collider's velocity (the vel fed to bc:step) by this
+-- mult AFTER the M5.4 anti-cheat clamp -- so the approach speed drops ~30% -> the active hitGain*approach term
+-- drops ~30% -> ~30% less outgoing force on a human strike. The passive rebound + the hitMinPop floor are
+-- unchanged, so gentle returns still pop enough to clear the pipe + stay alive; only the hard OOB-causing
+-- hits get tamed. Bots feed their OWN colliders (bots:update in NineSquareServer, not HitResolver), so this is
+-- human-only. Tunable: 1.0 = no change (full human force); lower = softer human strike.
+GridConfig.humanHitForceMult = 0.7  -- multiplier on a seated human collider's velocity (applied AFTER the M5.4 clamp); ~30% cut to tame OOB launches. HUMAN ONLY (bots untouched).
 GridConfig.staminaMax = 100         -- energy pool ceiling
 GridConfig.staminaRegen = 28        -- energy regained per second while not spending
 GridConfig.dashCost = 30            -- energy spent per dash (must have >= this to dash)
