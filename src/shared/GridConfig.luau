@@ -302,6 +302,31 @@ GridConfig.botStandoff = 1.6         -- studs the bot's drive STARTS behind its 
                                      --   Lowered from 3.0: the long horizontal sweep drove the approach speed past
                                      --   strikeMoveThreshold and added flat hitGain power -> overshoot/OOB. 1.6 keeps
                                      --   enough lateral drive to steer toward the aim while landing inside the court.
+GridConfig.botKingStandoffMult = 3.6 -- 0..N: MULTIPLIER applied to botStandoff ONLY for the CENTRE/King seat
+                                     --   (cell == "C"). The King must drive the ball OUTWARD ~14 studs over a
+                                     --   dividing pipe into an outer cell, whereas outer bots hit DOWNHILL into the
+                                     --   big central target and clear easily. With the plain botStandoff(1.6) the
+                                     --   King's drive against a near-vertical descending ball collapses to a vertical
+                                     --   pop (n = unit(colVel) -> nearly straight up) -> the ball falls back into C
+                                     --   and the bot SELF-RALLIES. A larger standoff sweeps the collider from further
+                                     --   back/lower along -aimDir, so colVel (and thus the line-of-centres normal n)
+                                     --   carries a strong HORIZONTAL component toward the aimed outer -> the strike
+                                     --   actually clears the pipe and lands in the outer cell. The shared in-bounds /
+                                     --   peak-cap forecast loop still trims any overshoot, so this only restores the
+                                     --   King's outward reach. OUTER seats use the plain botStandoff (mult = 1) and
+                                     --   their camera-height arc + accuracy are unchanged. Verified in Studio: at 3.6
+                                     --   (paired with botKingStandoffFloorFrac) the King clears on EVERY swing (SAVE->C
+                                     --   each time, longest 'defending C' run = 1) -- no self-rally; peak still ~24-30
+                                     --   (under the ~32.75 camera top).
+GridConfig.botKingStandoffFloorFrac = 0.7 -- 0..1: FLOOR on the King's STEEPENED standoff, as a fraction of its
+                                     --   boosted base (botStandoff * botKingStandoffMult). The in-bounds OOB-steepen
+                                     --   pass (BotController) shrinks standoff+offset to pull a long hit into the court,
+                                     --   but for the King that could collapse the outward drive back to a vertical pop
+                                     --   -> the ball falls into C and the bot SELF-RALLIES. Clamping the King's standoff
+                                     --   to this fraction guarantees it ALWAYS keeps enough horizontal drive to carry
+                                     --   over the pipe; in-bounds correction then rides on the OFFSET (which still
+                                     --   steepens freely). 0 would re-allow the collapse; 1 would block in-bounds
+                                     --   steepening entirely. OUTER seats use floor = 0 (unaffected).
 GridConfig.botJumpLeadTime = 0.0     -- seconds to begin the jump EARLY before the predicted contact time, so the
                                      --   collider is rising THROUGH the ball at contact (0 = reach contact exactly)
 GridConfig.botRestColliderY = 4.5    -- height (studs above the cell floor) of the bot's hit-sphere at rest /

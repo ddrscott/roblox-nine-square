@@ -4,7 +4,7 @@
 - [x] M5.2 — Spectator overflow queue + auto-join — see [m5-2-spectator-queue.md](m5-2-spectator-queue.md)
 - [x] M5.3 — Upper-floor spectator gallery (3D assets) — see [m5-3-spectator-gallery.md](m5-3-spectator-gallery.md)
 - [x] M5.4 — Server-authority hardening / anti-cheat — see [m5-4-server-authority.md](m5-4-server-authority.md)
-- [-] M5.5 — Bot-King outward-clearing fix (stop center self-rally) — see [m5-5-bot-king-clearing.md](m5-5-bot-king-clearing.md)
+- [x] M5.5 — Bot-King outward-clearing fix (stop center self-rally) — see [m5-5-bot-king-clearing.md](m5-5-bot-king-clearing.md)
 - [ ] M5.6 — Multiplayer UX + README + playtest checklist (close out M5) — see [m5-6-multiplayer-ux-readme.md](m5-6-multiplayer-ux-readme.md)
 - [x] Improve bot accuracy — keep returns in-bounds (stop spraying it out) + near-zero intentional miss — see [bot-accuracy-keep-in-bounds.md](bot-accuracy-keep-in-bounds.md)
 - [x] Sound effect on any player impact (human + bot strikes) — see [player-impact-sound.md](player-impact-sound.md)

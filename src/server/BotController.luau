@@ -219,7 +219,20 @@ function BotController._tryCommit(self)
 	-- No Math.random. The hit itself is still resolved by bc:step's swept collision; this only picks the
 	-- offset/standoff. (botJumpVelocity caps the raw energy so the peak stays reachable without the ceiling.)
 	local offset = G.botOffCenterFrac * (G.hitZoneRadius + G.ballRadius)
-	local standoff = G.botStandoff
+	-- The CENTRE/King seat must drive the ball OUTWARD over a dividing pipe into an outer cell (~14 studs);
+	-- against a near-vertical descending ball the plain standoff collapses the drive to a vertical pop that
+	-- falls back into C (the self-rally bug). Give the King a larger base standoff (botKingStandoffMult) so
+	-- colVel -- and thus the line-of-centres normal n -- carries a strong HORIZONTAL component toward the
+	-- aimed outer. OUTER seats keep the plain standoff (they hit downhill into C and clear easily). The shared
+	-- in-bounds/peak-cap forecast loop below still trims any overshoot, so this only restores outward reach.
+	local isKing = (cell == "C")
+	local standoff = isKing and (G.botStandoff * G.botKingStandoffMult) or G.botStandoff
+	-- King-only FLOOR on the (steepened) standoff: the OOB-steepen pass below shrinks standoff to pull a long
+	-- hit in-bounds, but for the King that can collapse the outward drive back to a vertical pop -> the ball
+	-- falls into C and the bot SELF-RALLIES. Clamp the King's standoff to a fraction of its boosted base so it
+	-- ALWAYS keeps enough horizontal drive to carry over the pipe; in-bounds correction then rides on the
+	-- OFFSET (which still steepens freely). Outer seats are unaffected (floor = 0).
+	local standoffFloor = isKing and (G.botStandoff * G.botKingStandoffMult * G.botKingStandoffFloorFrac) or 0
 	local courtExtent = 1.5 * G.squareSize
 	local safeExtent = courtExtent - G.botLandMarginFrac * (G.squareSize / 2)
 	local minOffset = G.botMinOffCenterFrac * (G.hitZoneRadius + G.ballRadius)
@@ -232,7 +245,7 @@ function BotController._tryCommit(self)
 			standoff /= G.botLandSteepenStep                       -- flatten: a lower, longer arc (shed vertical)
 		else
 			offset = math.max(offset * G.botLandSteepenStep, minOffset)
-			standoff *= G.botLandSteepenStep                       -- steepen: a tighter, shorter arc (pull in-bounds)
+			standoff = math.max(standoff * G.botLandSteepenStep, standoffFloor)  -- steepen, but keep King's outward drive
 		end
 	end
 
