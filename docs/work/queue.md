@@ -1,7 +1,7 @@
 # Work Queue
 
 - [x] Lobby spawn (gallery) + tap-to-join button + opening barrier + lock the building shell — see [lobby-spawn-join-button-barrier.md](lobby-spawn-join-button-barrier.md)
-- [ ] Sun directly overhead (centered) so shadows fall straight down over the play area — see [sun-overhead-centered.md](sun-overhead-centered.md)
+- [-] Sun directly overhead (centered) so shadows fall straight down over the play area — see [sun-overhead-centered.md](sun-overhead-centered.md)
 - [x] Mobile camera: pinch-zoom + on-screen mode toggle + fit-the-grid (playable on phones) — see [mobile-camera-controls.md](mobile-camera-controls.md)
 - [x] Build-once / self-heal world so Studio tweaks persist (kids can adjust parts; GridLines stays white) — see [build-once-tweakable-world.md](build-once-tweakable-world.md)
 - [x] Orient grid: worst rank (9) to lower-right (SE) + upright floor numbers (camera common-sense) — see [orient-ranks-and-upright-numbers.md](orient-ranks-and-upright-numbers.md)
