@@ -29,6 +29,7 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local G = require(RS.GridConfig)
+local UI = G.uiStyle    -- shared HUD style language (label/panel colours, corners, hairline)
 
 local player = Players.LocalPlayer
 
@@ -46,18 +47,39 @@ local function spend(cost: number)
 end
 
 -- ---------------------------------------------------------------------------------------------------
--- HUD: a simple stamina bar bottom-centre
+-- HUD: a slim stamina bar in the TOP-RIGHT cluster, directly ABOVE the scoreboard (the stats panel /
+-- built-in player list both sit at the top-right, just under the CoreGui topbar). RIGHT-anchored,
+-- shorter than before (was a wide 260x16 bottom-centre bar) and sized to the scoreboard's width so it
+-- reads as the topmost chip of that right column. Placement/size only -- the fill/drain + show/hide
+-- behaviour below is unchanged. The scoreboard begins at GuiInset.Top + a small margin, so to sit ABOVE
+-- it WITHOUT overlapping (and without moving it) we IgnoreGuiInset (true-screen coords) and pin the bar's
+-- BOTTOM a hair ABOVE the inset line -- i.e. in the FREE right region of the topbar (the player-list
+-- icon is hidden on the mobile compact HUD), so it's never clipped. All sizes/offsets come from
+-- GridConfig.uiStyle + the stamina-bar tunables (single source of truth).
 -- ---------------------------------------------------------------------------------------------------
+local GuiService = game:GetService("GuiService")
 local gui = Instance.new("ScreenGui")
 gui.Name = "MovementHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local barBg = Instance.new("Frame")
-barBg.Name = "StaminaBar"; barBg.AnchorPoint = Vector2.new(0.5, 1)
-barBg.Position = UDim2.new(0.5, 0, 1, -24); barBg.Size = UDim2.fromOffset(260, 16)
-barBg.BackgroundColor3 = Color3.fromRGB(20, 22, 28); barBg.BackgroundTransparency = 0.25
+barBg.Name = "StaminaBar"; barBg.AnchorPoint = Vector2.new(1, 1)   -- pin by the BOTTOM-right so it tucks just above the inset line
+barBg.Size = UDim2.fromOffset(G.staminaBarWidth, G.staminaBarHeight)
+barBg.BackgroundColor3 = UI.labelBg; barBg.BackgroundTransparency = UI.labelBgTransparency
 barBg.BorderSizePixel = 0; barBg.Parent = gui
-local bgCorner = Instance.new("UICorner"); bgCorner.CornerRadius = UDim.new(0, 8); bgCorner.Parent = barBg
+local bgCorner = Instance.new("UICorner"); bgCorner.CornerRadius = UDim.new(0, UI.labelCorner); bgCorner.Parent = barBg
+local bgStroke = Instance.new("UIStroke"); bgStroke.Thickness = UI.panelHairlineThickness
+bgStroke.Color = UI.panelHairlineColor; bgStroke.Transparency = UI.panelHairlineTransparency; bgStroke.Parent = barBg
+
+-- Keep the bar's bottom pinned just above the CoreGui inset line (true-screen coords): the scoreboard
+-- starts at inset.Top + its own margin, so this lands the bar directly ABOVE the scoreboard with a small
+-- gap, never overlapping it. Re-evaluated whenever the inset changes (topbar appears/resizes).
+local function placeBar()
+	local insetTop = GuiService:GetGuiInset().Y
+	barBg.Position = UDim2.new(1, -G.staminaBarRightMargin, 0, insetTop - G.staminaBarTop)
+end
+placeBar()
+GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(placeBar)
 
 local barFill = Instance.new("Frame")
 barFill.Name = "Fill"; barFill.Position = UDim2.fromOffset(2, 2)
@@ -67,8 +89,8 @@ local fillCorner = Instance.new("UICorner"); fillCorner.CornerRadius = UDim.new(
 
 local label = Instance.new("TextLabel")
 label.BackgroundTransparency = 1; label.Size = UDim2.fromScale(1, 1)
-label.Font = Enum.Font.GothamBold; label.TextSize = 11; label.Text = "STAMINA"
-label.TextColor3 = Color3.fromRGB(235, 240, 245); label.TextTransparency = 0.15; label.Parent = barBg
+label.Font = UI.labelFont; label.TextSize = 10; label.Text = "STAMINA"
+label.TextColor3 = UI.labelText; label.TextTransparency = 0.1; label.Parent = barBg
 
 local function updateHud()
 	local frac = stamina / G.staminaMax

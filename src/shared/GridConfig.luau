@@ -580,6 +580,18 @@ GridConfig.mobileStatsRowHeight = 22            -- px height per stat row
 GridConfig.mobileStatsMargin = 8                -- px gap from the right/top screen edges (clear of the central play view + the CoreGui topbar)
 GridConfig.mobileStatsTextSize = 13             -- px font size for the compact rows (small but readable on a phone)
 
+-- ── STAMINA METER placement (the player-movement HUD fill bar) ─────────────────────────────────────
+-- The stamina bar (dash/flip energy) lives in the MovementHUD. It used to sit BOTTOM-CENTRE (260x16),
+-- drawing the eye into the play view. We now park it in the TOP-RIGHT cluster, directly ABOVE the
+-- scoreboard (the stats panel / built-in player list), RIGHT-anchored and SHORTER so it reads as the
+-- topmost slim chip of that right-side column. Placement/size ONLY -- the stamina pool + dash/flip
+-- gating/values are unchanged. The MovementHUD respects the CoreGui inset, so y is measured BELOW the
+-- topbar; the bar sits at the very top of the inset region and the scoreboard begins just under it.
+GridConfig.staminaBarWidth = 132                -- px width -- matches the compact stats panel so it lines up over the scoreboard
+GridConfig.staminaBarHeight = 14                -- px height -- slim, still fits the small "STAMINA" caption + reads as a fill bar (was 16)
+GridConfig.staminaBarRightMargin = 8            -- px gap from the RIGHT screen edge (matches mobileStatsMargin so it aligns with the scoreboard)
+GridConfig.staminaBarTop = 2                     -- px the bar's BOTTOM sits ABOVE the CoreGui inset line (true-screen) -- the scoreboard starts just below the inset, so this lands the bar directly above it without overlap
+
 -- ── LOBBY UI placement (Join Game / Leave-Spectate button + Spectating pill) ───────────────────────────
 -- The lobby/spectator UI used to sit bottom-CENTRE, covering the court view. We now RIGHT-ANCHOR it and
 -- stack it vertically BENEATH the scoreboard (the stats panel is top-right), so it's out of the central
