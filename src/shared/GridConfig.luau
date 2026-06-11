@@ -672,6 +672,15 @@ GridConfig.lobbyUITextSize = 20                 -- px button text size (desktop)
 GridConfig.lobbyUITextSizeMobile = 15           -- px button text size (mobile)
 GridConfig.lobbyUIPillTextSize = 16             -- px pill text size (desktop)
 GridConfig.lobbyUIPillTextSizeMobile = 13       -- px pill text size (mobile)
+-- The seated "Spectate" button is deliberately SMALL + low-key (we don't promote leaving the game): a tiny
+-- unobtrusive button, much smaller than the big "Join Game" CTA. It still fires LeaveRequest -- it's a real,
+-- tappable button, just quiet (compact size, small font, neutral fill -- see uiStyle.buttonNeutral*).
+GridConfig.lobbyUILeaveWidth = 88               -- px width of the seated Spectate button (desktop) -- small
+GridConfig.lobbyUILeaveHeight = 26              -- px height of the seated Spectate button (desktop) -- short
+GridConfig.lobbyUILeaveTextSize = 13            -- px text size of the seated Spectate button (desktop)
+GridConfig.lobbyUILeaveWidthMobile = 76         -- px width on mobile -- compact
+GridConfig.lobbyUILeaveHeightMobile = 24        -- px height on mobile
+GridConfig.lobbyUILeaveTextSizeMobile = 12      -- px text size on mobile
 
 -- ── HUD STYLE LANGUAGE (buttons vs labels) ─────────────────────────────────────────────────────────
 -- A single source of truth for the HUD's visual language so interactive vs informational elements read

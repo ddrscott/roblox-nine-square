@@ -90,6 +90,11 @@ local btnH = lobbyIsMobile and G.lobbyUIButtonHeightMobile or G.lobbyUIButtonHei
 local pillH = lobbyIsMobile and G.lobbyUIPillHeightMobile or G.lobbyUIPillHeight
 local btnTxt = lobbyIsMobile and G.lobbyUITextSizeMobile or G.lobbyUITextSize
 local pillTxt = lobbyIsMobile and G.lobbyUIPillTextSizeMobile or G.lobbyUIPillTextSize
+-- The seated "Spectate" button is intentionally small + unobtrusive (its own compact dims), NOT the big
+-- Join-Game CTA size -- we don't want to promote leaving the game.
+local leaveW = lobbyIsMobile and G.lobbyUILeaveWidthMobile or G.lobbyUILeaveWidth
+local leaveH = lobbyIsMobile and G.lobbyUILeaveHeightMobile or G.lobbyUILeaveHeight
+local leaveTxt = lobbyIsMobile and G.lobbyUILeaveTextSizeMobile or G.lobbyUILeaveTextSize
 
 local lobbyGui = Instance.new("ScreenGui")
 lobbyGui.Name = "LobbyHud"; lobbyGui.ResetOnSpawn = false; lobbyGui.IgnoreGuiInset = false
@@ -123,17 +128,20 @@ local joinCorner = Instance.new("UICorner"); joinCorner.CornerRadius = UDim.new(
 local joinStroke = Instance.new("UIStroke"); joinStroke.Thickness = UI.buttonStrokeThickness
 joinStroke.Color = UI.buttonGoStroke; joinStroke.Transparency = UI.buttonStrokeTransparency; joinStroke.Parent = joinBtn
 
--- Leave / Spectate BUTTON (shown to a SEATED player) -- the counterpart to Join Game. Solid red LEAVE fill.
+-- "Spectate" BUTTON (shown to a SEATED player) -- a deliberately SMALL, unobtrusive button (we don't promote
+-- leaving the game, so this is NOT a big red CTA): compact size, small font, quiet NEUTRAL fill. It's still a
+-- real, tappable button (AutoButtonColor + hairline stroke) that fires the same LeaveRequest -- behaviour is
+-- unchanged; it's just low-key. Right-aligned in the column so it sits clear of the scoreboard / camera toggle.
 local leaveBtn = Instance.new("TextButton")
 leaveBtn.Name = "LeaveBtn"; leaveBtn.LayoutOrder = 2
-leaveBtn.Size = UDim2.fromOffset(colW, btnH)
-leaveBtn.BackgroundColor3 = UI.buttonLeaveFill; leaveBtn.BackgroundTransparency = UI.buttonBgTransparency
+leaveBtn.Size = UDim2.fromOffset(leaveW, leaveH)
+leaveBtn.BackgroundColor3 = UI.buttonNeutralFill; leaveBtn.BackgroundTransparency = UI.buttonBgTransparency
 leaveBtn.BorderSizePixel = 0; leaveBtn.AutoButtonColor = true
-leaveBtn.Font = UI.buttonFont; leaveBtn.TextSize = btnTxt
-leaveBtn.TextColor3 = UI.buttonText; leaveBtn.Text = "Leave \u{2192} Spectate"; leaveBtn.Parent = lobbyCol
-local leaveCorner = Instance.new("UICorner"); leaveCorner.CornerRadius = UDim.new(0, UI.buttonCorner); leaveCorner.Parent = leaveBtn
-local leaveStroke = Instance.new("UIStroke"); leaveStroke.Thickness = UI.buttonStrokeThickness
-leaveStroke.Color = UI.buttonLeaveStroke; leaveStroke.Transparency = UI.buttonStrokeTransparency; leaveStroke.Parent = leaveBtn
+leaveBtn.Font = UI.labelFont; leaveBtn.TextSize = leaveTxt
+leaveBtn.TextColor3 = UI.buttonText; leaveBtn.Text = "Spectate"; leaveBtn.Parent = lobbyCol
+local leaveCorner = Instance.new("UICorner"); leaveCorner.CornerRadius = UDim.new(0, UI.labelCorner); leaveCorner.Parent = leaveBtn
+local leaveStroke = Instance.new("UIStroke"); leaveStroke.Thickness = 1
+leaveStroke.Color = UI.buttonNeutralStroke; leaveStroke.Transparency = UI.buttonStrokeTransparency; leaveStroke.Parent = leaveBtn
 
 -- Spectating / queue LABEL (shown to a SPECTATING watcher, beneath the Join button). Deliberately NOT a button:
 -- flat low-opacity banner, NO stroke edge, lighter (Medium) font, accent-tinted TEXT only. Reports state; not tappable.

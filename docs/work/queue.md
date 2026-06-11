@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Shrink the seated "Leave → Spectate" button to a small unobtrusive button labeled just "Spectate" (don't promote leaving the game) — in src/client/NineSquareClient.client.luau lobby UI; verify seated state via screen_capture; Studio left in Edit
+- [x] Shrink the seated "Leave → Spectate" button to a small unobtrusive button labeled just "Spectate" (don't promote leaving the game) — in src/client/NineSquareClient.client.luau lobby UI; verify seated state via screen_capture; Studio left in Edit
 - [x] Re-imagine the HUD: minimal + consistent (stats = Turns + TAK; drop rank-change toasts + rank pill; transient messaging) — see [hud-reimagine-minimal-consistent.md](hud-reimagine-minimal-consistent.md)
 - [x] Shrink the in-game message feed (esp. mobile) so it doesn't block the action — see [shrink-message-feed-mobile.md](shrink-message-feed-mobile.md)
 - [x] BUG: prevent the player falling out of the building — find/seal the gap (windows? foyer dash-over?) + a fell-out teleport-back safety net — see [prevent-player-falling-out.md](prevent-player-falling-out.md)
