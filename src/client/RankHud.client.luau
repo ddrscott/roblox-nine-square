@@ -12,29 +12,34 @@ local G = require(RS.GridConfig)
 local Remotes = RS:WaitForChild("NineSquareRemotes")
 local LocalPlayer = Players.LocalPlayer
 
+-- Shared HUD style language (buttons vs labels) -- everything in this script is a LABEL/PANEL (status, never
+-- tappable), so it uses the flat label background + neutral panel hairline + Medium font, with the ACCENT
+-- colours applied only as TEXT tint. Centralised in GridConfig so the HUD stays consistent + tweakable.
+local UI = G.uiStyle
+
 -- ── (A) Rank readout ────────────────────────────────────────────────────────────────────────────
 local gui = Instance.new("ScreenGui")
 gui.Name = "RankHud"; gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Top-centre pill, styled to match the stamina bar (Gotham, rounded, semi-transparent dark).
+-- Top-centre LABEL pill: flat dark info card with a faint neutral hairline (a tidy card, NOT a button). The
+-- rank ACCENT (gold KING / cyan rank) is applied to the TEXT, never as a bright button-style ring.
 local pill = Instance.new("Frame")
 pill.Name = "RankPill"; pill.AnchorPoint = Vector2.new(0.5, 0)
 pill.Position = UDim2.new(0.5, 0, 0, 16); pill.Size = UDim2.fromOffset(140, 40)
-pill.BackgroundColor3 = Color3.fromRGB(20, 22, 28); pill.BackgroundTransparency = 0.2
+pill.BackgroundColor3 = UI.labelBg; pill.BackgroundTransparency = UI.labelBgTransparency
 pill.BorderSizePixel = 0; pill.Parent = gui
-local pillCorner = Instance.new("UICorner"); pillCorner.CornerRadius = UDim.new(0, 10); pillCorner.Parent = pill
-local pillStroke = Instance.new("UIStroke"); pillStroke.Thickness = 1.5
-pillStroke.Color = Color3.fromRGB(120, 220, 255); pillStroke.Transparency = 0.4; pillStroke.Parent = pill
+local pillCorner = Instance.new("UICorner"); pillCorner.CornerRadius = UDim.new(0, UI.labelCorner); pillCorner.Parent = pill
+local pillStroke = Instance.new("UIStroke"); pillStroke.Thickness = UI.panelHairlineThickness
+pillStroke.Color = UI.panelHairlineColor; pillStroke.Transparency = UI.panelHairlineTransparency; pillStroke.Parent = pill
 
 local rankLabel = Instance.new("TextLabel")
 rankLabel.Name = "RankLabel"; rankLabel.BackgroundTransparency = 1
-rankLabel.Size = UDim2.fromScale(1, 1); rankLabel.Font = Enum.Font.GothamBold
-rankLabel.TextSize = 20; rankLabel.TextColor3 = Color3.fromRGB(235, 240, 245)
+rankLabel.Size = UDim2.fromScale(1, 1); rankLabel.Font = UI.buttonFont
+rankLabel.TextSize = 20; rankLabel.TextColor3 = UI.labelText
 rankLabel.Text = "Rank ?"; rankLabel.Parent = pill
 
-local KING_COLOR = Color3.fromRGB(255, 210, 80)
-local NORMAL_COLOR = Color3.fromRGB(120, 220, 255)
+local KING_COLOR = UI.accentKing
 
 -- While this client is an overflow SPECTATOR (M5.2), the rank pill is meaningless (no seat) -- hide it; the
 -- SpectatorHud ("Spectating -- #N in line") owns the screen instead. The pill returns the instant the server
@@ -47,14 +52,14 @@ local function render(rank: number?)
 	if isSpectating() then pill.Visible = false; return end
 	pill.Visible = true
 	if rank == nil then return end
+	-- Label: tint the TEXT only (gold for KING, plain for a numbered rank). The card's hairline stays a neutral
+	-- panel grey so it never reads as a tappable accent-ringed button.
 	if rank <= 1 then
 		rankLabel.Text = "KING"
 		rankLabel.TextColor3 = KING_COLOR
-		pillStroke.Color = KING_COLOR
 	else
 		rankLabel.Text = "Rank " .. tostring(rank)
-		rankLabel.TextColor3 = Color3.fromRGB(235, 240, 245)
-		pillStroke.Color = NORMAL_COLOR
+		rankLabel.TextColor3 = UI.labelText
 	end
 end
 
@@ -110,9 +115,9 @@ if HudEvent then
 	layout.Padding = UDim.new(0, 4); layout.Parent = toastHolder
 
 	local TONE_COLOR = {
-		good = Color3.fromRGB(150, 235, 160),
-		bad = Color3.fromRGB(255, 140, 120),
-		neutral = Color3.fromRGB(225, 230, 238),
+		good = UI.accentGood,
+		bad = UI.accentBad,
+		neutral = UI.accentNeutral,
 	}
 	local MAX_TOASTS = 4          -- cap stacked lines so a burst never floods the screen
 	local TOAST_SECONDS = 3.2     -- how long each note lingers before it fades
@@ -132,11 +137,11 @@ if HudEvent then
 		seq += 1
 		local toast = Instance.new("TextLabel")
 		toast.LayoutOrder = seq; toast.Size = UDim2.fromOffset(340, 28)
-		toast.BackgroundColor3 = Color3.fromRGB(20, 22, 28); toast.BackgroundTransparency = 0.25
-		toast.BorderSizePixel = 0; toast.Font = Enum.Font.GothamMedium; toast.TextSize = 15
+		toast.BackgroundColor3 = UI.labelBg; toast.BackgroundTransparency = UI.labelBgTransparency
+		toast.BorderSizePixel = 0; toast.Font = UI.labelFont; toast.TextSize = 15
 		toast.TextColor3 = TONE_COLOR[tone or "neutral"] or TONE_COLOR.neutral
 		toast.Text = text; toast.Parent = toastHolder
-		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = toast
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, UI.labelCorner); corner.Parent = toast
 
 		task.delay(TOAST_SECONDS, function()
 			if toast and toast.Parent then toast:Destroy() end
@@ -189,11 +194,11 @@ if isMobile() then
 	statsPanel.Name = "StatsPanel"; statsPanel.AnchorPoint = Vector2.new(1, 0)
 	statsPanel.Position = UDim2.new(1, -G.mobileStatsMargin, 0, G.mobileStatsMargin)
 	statsPanel.Size = UDim2.fromOffset(G.mobileStatsWidth, panelH)
-	statsPanel.BackgroundColor3 = Color3.fromRGB(20, 22, 28); statsPanel.BackgroundTransparency = 0.25
+	statsPanel.BackgroundColor3 = UI.labelBg; statsPanel.BackgroundTransparency = UI.labelBgTransparency
 	statsPanel.BorderSizePixel = 0; statsPanel.Parent = gui
-	local sCorner = Instance.new("UICorner"); sCorner.CornerRadius = UDim.new(0, 8); sCorner.Parent = statsPanel
-	local sStroke = Instance.new("UIStroke"); sStroke.Thickness = 1
-	sStroke.Color = Color3.fromRGB(120, 220, 255); sStroke.Transparency = 0.5; sStroke.Parent = statsPanel
+	local sCorner = Instance.new("UICorner"); sCorner.CornerRadius = UDim.new(0, UI.labelCorner); sCorner.Parent = statsPanel
+	local sStroke = Instance.new("UIStroke"); sStroke.Thickness = UI.panelHairlineThickness
+	sStroke.Color = UI.panelHairlineColor; sStroke.Transparency = UI.panelHairlineTransparency; sStroke.Parent = statsPanel
 	local sPad = Instance.new("UIPadding")
 	sPad.PaddingTop = UDim.new(0, 4); sPad.PaddingBottom = UDim.new(0, 4)
 	sPad.PaddingLeft = UDim.new(0, 8); sPad.PaddingRight = UDim.new(0, 8); sPad.Parent = statsPanel
@@ -210,16 +215,16 @@ if isMobile() then
 		local name = Instance.new("TextLabel")
 		name.BackgroundTransparency = 1; name.AnchorPoint = Vector2.new(0, 0.5)
 		name.Position = UDim2.fromScale(0, 0.5); name.Size = UDim2.fromScale(0.6, 1)
-		name.Font = Enum.Font.GothamMedium; name.TextSize = G.mobileStatsTextSize
+		name.Font = UI.labelFont; name.TextSize = G.mobileStatsTextSize
 		name.TextXAlignment = Enum.TextXAlignment.Left
-		name.TextColor3 = Color3.fromRGB(180, 190, 205); name.Text = spec.text; name.Parent = row
+		name.TextColor3 = UI.labelMutedText; name.Text = spec.text; name.Parent = row
 
 		local value = Instance.new("TextLabel")
 		value.BackgroundTransparency = 1; value.AnchorPoint = Vector2.new(1, 0.5)
 		value.Position = UDim2.fromScale(1, 0.5); value.Size = UDim2.fromScale(0.4, 1)
 		value.Font = Enum.Font.GothamBold; value.TextSize = G.mobileStatsTextSize
 		value.TextXAlignment = Enum.TextXAlignment.Right
-		value.TextColor3 = Color3.fromRGB(235, 240, 245); value.Text = "-"; value.Parent = row
+		value.TextColor3 = UI.labelText; value.Text = "-"; value.Parent = row
 		valueLabels[spec.key] = value
 	end
 

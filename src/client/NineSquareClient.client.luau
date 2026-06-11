@@ -107,43 +107,46 @@ colLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 colLayout.SortOrder = Enum.SortOrder.LayoutOrder
 colLayout.Padding = UDim.new(0, G.lobbyUIGap); colLayout.Parent = lobbyCol
 
--- Join / In-queue button (shown to a SPECTATING watcher).
+-- Shared HUD style language (buttons look tappable; labels look static). Centralised in GridConfig so both
+-- client HUD scripts stay consistent + tweakable.
+local UI = G.uiStyle
+
+-- Join / In-queue BUTTON (shown to a SPECTATING watcher). Solid green GO fill, stroke edge, bold, AutoButtonColor.
 local joinBtn = Instance.new("TextButton")
 joinBtn.Name = "JoinBtn"; joinBtn.LayoutOrder = 1
 joinBtn.Size = UDim2.fromOffset(colW, btnH)
-joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92); joinBtn.BackgroundTransparency = 0.05
+joinBtn.BackgroundColor3 = UI.buttonGoFill; joinBtn.BackgroundTransparency = UI.buttonBgTransparency
 joinBtn.BorderSizePixel = 0; joinBtn.AutoButtonColor = true
-joinBtn.Font = Enum.Font.GothamBold; joinBtn.TextSize = btnTxt
-joinBtn.TextColor3 = Color3.fromRGB(245, 250, 245); joinBtn.Text = "Join Game"; joinBtn.Parent = lobbyCol
-local joinCorner = Instance.new("UICorner"); joinCorner.CornerRadius = UDim.new(0, 12); joinCorner.Parent = joinBtn
-local joinStroke = Instance.new("UIStroke"); joinStroke.Thickness = 2
-joinStroke.Color = Color3.fromRGB(150, 235, 160); joinStroke.Transparency = 0.25; joinStroke.Parent = joinBtn
+joinBtn.Font = UI.buttonFont; joinBtn.TextSize = btnTxt
+joinBtn.TextColor3 = UI.buttonText; joinBtn.Text = "Join Game"; joinBtn.Parent = lobbyCol
+local joinCorner = Instance.new("UICorner"); joinCorner.CornerRadius = UDim.new(0, UI.buttonCorner); joinCorner.Parent = joinBtn
+local joinStroke = Instance.new("UIStroke"); joinStroke.Thickness = UI.buttonStrokeThickness
+joinStroke.Color = UI.buttonGoStroke; joinStroke.Transparency = UI.buttonStrokeTransparency; joinStroke.Parent = joinBtn
 
--- Leave / Spectate button (shown to a SEATED player) -- the counterpart to Join Game.
+-- Leave / Spectate BUTTON (shown to a SEATED player) -- the counterpart to Join Game. Solid red LEAVE fill.
 local leaveBtn = Instance.new("TextButton")
 leaveBtn.Name = "LeaveBtn"; leaveBtn.LayoutOrder = 2
 leaveBtn.Size = UDim2.fromOffset(colW, btnH)
-leaveBtn.BackgroundColor3 = Color3.fromRGB(170, 78, 70); leaveBtn.BackgroundTransparency = 0.05
+leaveBtn.BackgroundColor3 = UI.buttonLeaveFill; leaveBtn.BackgroundTransparency = UI.buttonBgTransparency
 leaveBtn.BorderSizePixel = 0; leaveBtn.AutoButtonColor = true
-leaveBtn.Font = Enum.Font.GothamBold; leaveBtn.TextSize = btnTxt
-leaveBtn.TextColor3 = Color3.fromRGB(250, 245, 245); leaveBtn.Text = "Leave \u{2192} Spectate"; leaveBtn.Parent = lobbyCol
-local leaveCorner = Instance.new("UICorner"); leaveCorner.CornerRadius = UDim.new(0, 12); leaveCorner.Parent = leaveBtn
-local leaveStroke = Instance.new("UIStroke"); leaveStroke.Thickness = 2
-leaveStroke.Color = Color3.fromRGB(245, 170, 160); leaveStroke.Transparency = 0.25; leaveStroke.Parent = leaveBtn
+leaveBtn.Font = UI.buttonFont; leaveBtn.TextSize = btnTxt
+leaveBtn.TextColor3 = UI.buttonText; leaveBtn.Text = "Leave \u{2192} Spectate"; leaveBtn.Parent = lobbyCol
+local leaveCorner = Instance.new("UICorner"); leaveCorner.CornerRadius = UDim.new(0, UI.buttonCorner); leaveCorner.Parent = leaveBtn
+local leaveStroke = Instance.new("UIStroke"); leaveStroke.Thickness = UI.buttonStrokeThickness
+leaveStroke.Color = UI.buttonLeaveStroke; leaveStroke.Transparency = UI.buttonStrokeTransparency; leaveStroke.Parent = leaveBtn
 
--- Spectating / queue pill (shown to a SPECTATING watcher, beneath the Join button).
+-- Spectating / queue LABEL (shown to a SPECTATING watcher, beneath the Join button). Deliberately NOT a button:
+-- flat low-opacity banner, NO stroke edge, lighter (Medium) font, accent-tinted TEXT only. Reports state; not tappable.
 local specPill = Instance.new("Frame")
-specPill.Name = "SpecPill"; specPill.LayoutOrder = 3
+specPill.Name = "SpecLabel"; specPill.LayoutOrder = 3
 specPill.Size = UDim2.fromOffset(colW, pillH)
-specPill.BackgroundColor3 = Color3.fromRGB(20, 22, 28); specPill.BackgroundTransparency = 0.2
+specPill.BackgroundColor3 = UI.labelBg; specPill.BackgroundTransparency = UI.labelBgTransparency
 specPill.BorderSizePixel = 0; specPill.Parent = lobbyCol
-local specCorner = Instance.new("UICorner"); specCorner.CornerRadius = UDim.new(0, 10); specCorner.Parent = specPill
-local specStroke = Instance.new("UIStroke"); specStroke.Thickness = 1.5
-specStroke.Color = Color3.fromRGB(255, 210, 80); specStroke.Transparency = 0.35; specStroke.Parent = specPill
+local specCorner = Instance.new("UICorner"); specCorner.CornerRadius = UDim.new(0, UI.labelCorner); specCorner.Parent = specPill
 local specLabel = Instance.new("TextLabel")
 specLabel.BackgroundTransparency = 1; specLabel.Size = UDim2.fromScale(1, 1)
-specLabel.Font = Enum.Font.GothamBold; specLabel.TextSize = pillTxt
-specLabel.TextColor3 = Color3.fromRGB(235, 240, 245); specLabel.Text = "Spectating"; specLabel.Parent = specPill
+specLabel.Font = UI.labelFont; specLabel.TextSize = pillTxt
+specLabel.TextColor3 = UI.labelText; specLabel.Text = "Spectating"; specLabel.Parent = specPill
 
 local function renderLobbyHud()
 	local spectating = isSpectating()
@@ -157,23 +160,27 @@ local function renderLobbyHud()
 		local pos = LocalPlayer:GetAttribute("QueuePos")
 		if type(pos) == "number" and pos > 0 then
 			-- Queued: all 9 seats are humans; the server auto-seats the longest-waiting on the next seat freeing.
+			-- Visibly DISABLED -- flat grey, dimmed text, no stroke, non-tappable (doesn't read as a live button).
 			joinBtn.Text = "In queue (#" .. tostring(pos) .. ")"
-			joinBtn.BackgroundColor3 = Color3.fromRGB(70, 76, 92)
+			joinBtn.BackgroundColor3 = UI.buttonDisabledFill
+			joinBtn.TextColor3 = UI.buttonDisabledText
 			joinBtn.AutoButtonColor = false; joinBtn.Active = false
-			joinStroke.Color = Color3.fromRGB(255, 210, 80)
+			joinStroke.Transparency = 1
 		else
 			joinBtn.Text = "Join Game"
-			joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92)
+			joinBtn.BackgroundColor3 = UI.buttonGoFill
+			joinBtn.TextColor3 = UI.buttonText
 			joinBtn.AutoButtonColor = true; joinBtn.Active = true
-			joinStroke.Color = Color3.fromRGB(150, 235, 160)
+			joinStroke.Color = UI.buttonGoStroke; joinStroke.Transparency = UI.buttonStrokeTransparency
 		end
-		-- Pill copy: "NEXT UP" when longest-waiting, "#N in line" when queued, plain "Spectating" otherwise.
+		-- Label copy + TEXT tint (it's a label, so we tint the text, never an edge ring): "NEXT UP" when
+		-- longest-waiting, "#N in line" when queued, plain "Spectating" otherwise.
 		if type(pos) == "number" and pos == 1 then
-			specLabel.Text = "Spectating \u{2014} NEXT UP!"; specStroke.Color = Color3.fromRGB(150, 235, 160)
+			specLabel.Text = "Spectating \u{2014} NEXT UP!"; specLabel.TextColor3 = UI.accentGood
 		elseif type(pos) == "number" and pos > 0 then
-			specLabel.Text = "Spectating \u{2014} #" .. tostring(pos) .. " in line"; specStroke.Color = Color3.fromRGB(255, 210, 80)
+			specLabel.Text = "Spectating \u{2014} #" .. tostring(pos) .. " in line"; specLabel.TextColor3 = UI.accentWarn
 		else
-			specLabel.Text = "Spectating"; specStroke.Color = Color3.fromRGB(255, 210, 80)
+			specLabel.Text = "Spectating"; specLabel.TextColor3 = UI.labelText
 		end
 	end
 end
@@ -249,19 +256,19 @@ if isTouch then
 	btn.AnchorPoint = Vector2.new(1, 1)
 	btn.Position = UDim2.new(1, -16, 1, -120)   -- bottom-right, above the default touch jump button
 	btn.Size = UDim2.fromOffset(116, 54)
-	btn.BackgroundColor3 = Color3.fromRGB(20, 22, 28); btn.BackgroundTransparency = 0.2
+	btn.BackgroundColor3 = G.uiStyle.buttonNeutralFill; btn.BackgroundTransparency = G.uiStyle.buttonBgTransparency
 	btn.BorderSizePixel = 0; btn.AutoButtonColor = true
-	btn.Font = Enum.Font.GothamBold; btn.TextSize = 16
-	btn.TextColor3 = Color3.fromRGB(235, 240, 245)
+	btn.Font = G.uiStyle.buttonFont; btn.TextSize = 16
+	btn.TextColor3 = G.uiStyle.buttonText
 	btn.Text = "Camera\nCourt"; btn.Parent = camGui
-	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = btn
-	local s = Instance.new("UIStroke"); s.Thickness = 1.5
-	s.Color = Color3.fromRGB(255, 210, 80); s.Transparency = 0.35; s.Parent = btn
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, G.uiStyle.buttonCorner); c.Parent = btn
+	local s = Instance.new("UIStroke"); s.Thickness = G.uiStyle.buttonStrokeThickness
+	s.Color = G.uiStyle.accentKing; s.Transparency = G.uiStyle.buttonStrokeTransparency; s.Parent = btn
 
 	function setFollowMode(on: boolean)
 		followMode = on
 		btn.Text = on and "Camera\nFollow" or "Camera\nCourt"
-		s.Color = on and Color3.fromRGB(150, 235, 160) or Color3.fromRGB(255, 210, 80)
+		s.Color = on and G.uiStyle.accentGood or G.uiStyle.accentKing
 	end
 	btn.Activated:Connect(function() setFollowMode(not followMode) end)
 	setFollowMode(false)

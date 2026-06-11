@@ -579,6 +579,58 @@ GridConfig.lobbyUITextSizeMobile = 15           -- px button text size (mobile)
 GridConfig.lobbyUIPillTextSize = 16             -- px pill text size (desktop)
 GridConfig.lobbyUIPillTextSizeMobile = 13       -- px pill text size (mobile)
 
+-- ── HUD STYLE LANGUAGE (buttons vs labels) ─────────────────────────────────────────────────────────
+-- A single source of truth for the HUD's visual language so interactive vs informational elements read
+-- DIFFERENTLY and the whole HUD is consistent + tweakable. Two element classes:
+--   * BUTTON  -> tappable. Solid SATURATED fill, AutoButtonColor, a stroke "edge", a chunkier corner, bold
+--                font. Accent roles: GO (green / Join), LEAVE (red / exit), DISABLED (flat grey, no stroke,
+--                non-tappable). The mobile camera toggle is also a button (neutral fill).
+--   * LABEL/PANEL -> NON-interactive status (Spectating/queue, rank pill, stats panel, toasts). FLAT, dark,
+--                low-opacity background, NO stroke (or the faintest hairline on grouped panels), a tighter
+--                corner, a LIGHTER (Medium) font weight. Never looks tappable.
+-- Sizes (width/height/text) still come from the per-context tunables above; this table owns the COLOUR
+-- ROLES, corner radii, fonts and stroke weights shared across both client HUD scripts.
+GridConfig.uiStyle = {
+	-- Corner radii: buttons get a chunkier, clearly-pressable corner; labels/panels a tighter one.
+	buttonCorner = 12,
+	labelCorner = 8,
+
+	-- Button fills (solid, saturated -- reads as tappable) + their matching stroke edge colours.
+	buttonGoFill = Color3.fromRGB(46, 160, 92),      -- Join / GO  (green)
+	buttonGoStroke = Color3.fromRGB(150, 235, 160),
+	buttonLeaveFill = Color3.fromRGB(170, 78, 70),   -- Leave / exit (red)
+	buttonLeaveStroke = Color3.fromRGB(245, 170, 160),
+	buttonNeutralFill = Color3.fromRGB(54, 60, 74),  -- neutral button (mobile camera toggle) -- clearly solid, not the flat label dark
+	buttonNeutralStroke = Color3.fromRGB(150, 165, 195),
+	buttonDisabledFill = Color3.fromRGB(58, 62, 72), -- "In queue (#N)" -- flat grey, looks dead
+	buttonDisabledText = Color3.fromRGB(150, 158, 170),
+	buttonText = Color3.fromRGB(245, 250, 248),      -- bright text on a saturated button fill
+	buttonFont = Enum.Font.GothamBold,               -- bold == tappable
+	buttonStrokeThickness = 2,
+	buttonStrokeTransparency = 0.2,
+	buttonBgTransparency = 0,                         -- solid (was 0.05) so buttons read opaque/tappable
+
+	-- Label/panel look (flat, no button edge, lighter weight -- reads as static status text).
+	labelBg = Color3.fromRGB(16, 18, 24),            -- flat dark banner
+	labelBgTransparency = 0.45,                       -- low-opacity (more see-through than a button) so it reads informational
+	labelText = Color3.fromRGB(225, 232, 240),
+	labelMutedText = Color3.fromRGB(178, 188, 202),  -- secondary text (stat row names)
+	labelFont = Enum.Font.GothamMedium,              -- lighter weight than buttons
+	-- Grouped INFO panels (rank pill, stats panel) may carry the FAINTEST hairline so they read as a tidy
+	-- card -- still clearly not a button (thin, very transparent, neutral grey -- never a bright accent ring).
+	panelHairlineColor = Color3.fromRGB(120, 132, 150),
+	panelHairlineThickness = 1,
+	panelHairlineTransparency = 0.65,
+
+	-- Shared ACCENT roles (used for label TEXT tint, never as a button-style ring on a label).
+	accentKing = Color3.fromRGB(255, 210, 80),       -- KING / gold
+	accentInfo = Color3.fromRGB(120, 220, 255),      -- normal rank / info cyan
+	accentGood = Color3.fromRGB(150, 235, 160),      -- NEXT UP / good news
+	accentWarn = Color3.fromRGB(255, 200, 90),       -- queued / waiting
+	accentBad = Color3.fromRGB(255, 140, 120),       -- bad news (dethroned)
+	accentNeutral = Color3.fromRGB(225, 230, 238),   -- plain toast
+}
+
 -- Is a ball world position OUTSIDE the sane play volume (escaped)? True when it's above the gym ceiling +
 -- margin, below the floor - margin, or its |XZ| (relative to the court origin) is beyond the court's outer
 -- edge + margin. A normal rally never leaves this volume (peak ~32 << ceiling+margin; an OOB landing still
