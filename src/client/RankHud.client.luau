@@ -11,6 +11,34 @@ local RS = game:GetService("ReplicatedStorage")
 local G = require(RS.GridConfig)
 local Remotes = RS:WaitForChild("NineSquareRemotes")
 local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+
+-- Mobile = a touch session without a keyboard, OR a small/portrait viewport (so a phone-emulated portrait
+-- preview also counts, not just a real touch device). Hoisted up here (above the toast feed) so both the
+-- event-toast feed (C) and the compact stats panel (D) gate their compact sizing on the SAME check. The play
+-- view's form factor doesn't change mid-session, so it's safe to evaluate where each consumer needs it.
+-- NOTE: at the first frame `CurrentCamera.ViewportSize` can still read a transient (often portrait/zero)
+-- value before it settles, which would wrongly flag a desktop session as "mobile". Wait for a settled,
+-- non-zero viewport (a couple of RenderStepped frames, bounded) before trusting the aspect branch.
+local RunService = game:GetService("RunService")
+local function settledViewport(): Vector2?
+	local cam = workspace.CurrentCamera
+	for _ = 1, 5 do
+		cam = workspace.CurrentCamera
+		local vp = cam and cam.ViewportSize
+		if vp and vp.X > 1 and vp.Y > 1 then return vp end
+		RunService.RenderStepped:Wait()
+	end
+	local cam2 = workspace.CurrentCamera
+	return cam2 and cam2.ViewportSize or nil
+end
+
+local function isMobile(): boolean
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then return true end
+	local vp = settledViewport()
+	if vp and vp.Y > 0 and (vp.X / vp.Y) <= G.mobileStatsAspectMax then return true end
+	return false
+end
 
 -- Shared HUD style language (buttons vs labels) -- everything in this script is a LABEL/PANEL (status, never
 -- tappable), so it uses the flat label background + neutral panel hairline + Medium font, with the ACCENT
@@ -110,11 +138,25 @@ local HudEvent = Remotes:FindFirstChild("HudEvent")
 if not HudEvent then HudEvent = Remotes:WaitForChild("HudEvent", 10) end
 
 if HudEvent then
+	-- Responsive sizing: on a phone (touch / small portrait) the feed is a small corner note -- NARROWER
+	-- holder + SMALLER text + FEWER stacked lines + SHORTER on-screen time -- so it never banners across the
+	-- court. Desktop keeps the roomier sizing. All values are GridConfig tunables (mobile vs desktop); content
+	-- and the events that fire are unchanged.
+	local mobile = isMobile()
+	local TOAST_WIDTH = mobile and G.toastWidthMobile or G.toastWidthDesktop
+	local TOAST_HEIGHT = mobile and G.toastHeightMobile or G.toastHeightDesktop
+	local TOAST_TEXTSIZE = mobile and G.toastTextSizeMobile or G.toastTextSizeDesktop
+	local MAX_TOASTS = mobile and G.toastMaxLinesMobile or G.toastMaxLinesDesktop   -- cap stacked lines so a burst never floods the screen
+	local TOAST_SECONDS = mobile and G.toastSecondsMobile or G.toastSecondsDesktop  -- how long each note lingers before it fades
+
 	-- Left-anchored, stacked directly UNDER the rank pill so status reads down the LEFT edge (the top-centre
 	-- stays clear of the court). The pill sits at PILL_TOP and is 40px tall; start the feed just below it.
+	-- Holder height = the max stacked lines (each TOAST_HEIGHT, +4px UIListLayout padding) so it never
+	-- reserves more vertical room than the cap can fill.
+	local holderHeight = MAX_TOASTS * (TOAST_HEIGHT + 4)
 	local toastHolder = Instance.new("Frame")
 	toastHolder.Name = "ToastHolder"; toastHolder.AnchorPoint = Vector2.new(0, 0)
-	toastHolder.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP + 40 + 8); toastHolder.Size = UDim2.fromOffset(340, 160)
+	toastHolder.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP + 40 + 8); toastHolder.Size = UDim2.fromOffset(TOAST_WIDTH, holderHeight)
 	toastHolder.BackgroundTransparency = 1; toastHolder.Parent = gui
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
@@ -125,8 +167,6 @@ if HudEvent then
 		bad = UI.accentBad,
 		neutral = UI.accentNeutral,
 	}
-	local MAX_TOASTS = 4          -- cap stacked lines so a burst never floods the screen
-	local TOAST_SECONDS = 3.2     -- how long each note lingers before it fades
 	local seq = 0
 
 	local function showToast(text: string, tone: string?)
@@ -142,9 +182,9 @@ if HudEvent then
 
 		seq += 1
 		local toast = Instance.new("TextLabel")
-		toast.LayoutOrder = seq; toast.Size = UDim2.fromOffset(340, 28)
+		toast.LayoutOrder = seq; toast.Size = UDim2.fromOffset(TOAST_WIDTH, TOAST_HEIGHT)
 		toast.BackgroundColor3 = UI.labelBg; toast.BackgroundTransparency = UI.labelBgTransparency
-		toast.BorderSizePixel = 0; toast.Font = UI.labelFont; toast.TextSize = 15
+		toast.BorderSizePixel = 0; toast.Font = UI.labelFont; toast.TextSize = TOAST_TEXTSIZE
 		toast.TextColor3 = TONE_COLOR[tone or "neutral"] or TONE_COLOR.neutral
 		toast.TextXAlignment = Enum.TextXAlignment.Left   -- read from the LEFT edge (left-anchored feed)
 		toast.Text = text; toast.Parent = toastHolder
@@ -170,20 +210,10 @@ end
 -- list and draw our OWN compact, RIGHT-ANCHORED panel that reads the SAME server-authoritative leaderstats
 -- IntValues live (display only -- no values are computed here). Desktop is unchanged: it keeps the normal
 -- built-in player list and never gets this panel.
-local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
-local cam = workspace.CurrentCamera
 
--- Mobile = a touch session without a keyboard, OR a small/portrait viewport (so a phone-emulated portrait
--- preview also gets the compact treatment, not just a real touch device). Evaluated once at startup; the
--- play view's form factor doesn't change mid-session.
-local function isMobile(): boolean
-	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then return true end
-	local vp = cam and cam.ViewportSize
-	if vp and vp.Y > 0 and (vp.X / vp.Y) <= G.mobileStatsAspectMax then return true end
-	return false
-end
-
+-- isMobile() (touch/no-keyboard OR small/portrait viewport) is defined at the top of this script and shared
+-- with the event-toast feed (C) above.
 if isMobile() then
 	-- Hide the bulky built-in player list on mobile (it's what covers the play view); our compact panel
 	-- replaces it. pcall: SetCoreGuiEnabled can transiently throw before the CoreGui is ready.

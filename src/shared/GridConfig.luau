@@ -617,6 +617,24 @@ GridConfig.mobileStatsRowHeight = 22            -- px height per stat row
 GridConfig.mobileStatsMargin = 8                -- px gap from the right/top screen edges (clear of the central play view + the CoreGui topbar)
 GridConfig.mobileStatsTextSize = 13             -- px font size for the compact rows (small but readable on a phone)
 
+-- ── HUD EVENT TOAST FEED (client). The top-LEFT event/toast feed (join/leave/auto-seat/dethrone/King/
+-- rank-change notes) used to be a ~340px-wide banner with up to 4 stacked 28px lines lingering 3.2s -- a big
+-- chunk of a phone screen that blocked the court. These tune that feed's SIZE / LINE-COUNT / DURATION only
+-- (display, not content -- the same events fire with the same text). The client picks the MOBILE values on a
+-- touch/portrait session (reusing the same isMobile() check as the stats panel) and the DESKTOP values
+-- otherwise. Mobile = narrower holder + smaller text + fewer simultaneous lines + shorter on-screen time so
+-- it reads as a small corner feed, never a banner across the play view.
+GridConfig.toastWidthMobile = 200               -- px width of each toast + holder on a phone (was 340) -- a small corner feed, not a banner
+GridConfig.toastWidthDesktop = 320              -- px width on desktop (trimmed a touch from 340)
+GridConfig.toastHeightMobile = 22               -- px height per toast line on a phone (was 28) -- compact
+GridConfig.toastHeightDesktop = 28              -- px height per toast line on desktop (unchanged)
+GridConfig.toastTextSizeMobile = 12             -- px font for toasts on a phone (was 15) -- small but legible
+GridConfig.toastTextSizeDesktop = 15            -- px font for toasts on desktop (unchanged)
+GridConfig.toastMaxLinesMobile = 2              -- cap simultaneous stacked lines on a phone (was 4) so it never stacks tall over the court
+GridConfig.toastMaxLinesDesktop = 4             -- cap on desktop (unchanged)
+GridConfig.toastSecondsMobile = 2.2             -- how long each note lingers on a phone (was 3.2) -- clears faster, less time blocking the action
+GridConfig.toastSecondsDesktop = 3.2            -- how long each note lingers on desktop (unchanged)
+
 -- ── STAMINA METER placement (the player-movement HUD fill bar) ─────────────────────────────────────
 -- The stamina bar (dash/flip energy) lives in the MovementHUD. It used to sit BOTTOM-CENTRE (260x16),
 -- drawing the eye into the play view. We now park it in the TOP-RIGHT cluster, directly ABOVE the
