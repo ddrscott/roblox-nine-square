@@ -19,14 +19,22 @@ INTO the ball along the aim line** (a jump/run toward the contact point). That c
 the bot stands on the far side of the ball from its aim cell so `n = unit(ball − center)` points toward
 the aim (outer bot → center C; King → a random outer square), and the jump velocity supplies the force.
 Bots **miss** at a tuned rate (`botMissChance = 0.18`, under-driving so the spheres never overlap) → the
-ball falls → floor fault → the grid rotates. Bots have cheap **stylised humanoid bodies** (torso + head +
-arms) kept synced to the collider so they visibly **move their feet + leap into the ball**, recoloured
-gold on the throne — `CanCollide = false` and out of `BallController._surfaces`, so the hit is the
-abstract collider's, not the body's. Real rallies happen (bot ↔ center ↔ bot), the human climbs the ranks
+ball falls → floor fault → the grid rotates. The bot bodies are now **real R15 rigs** (the default blocky
+"Rig Builder" dummy — one `ReplicatedStorage.BotRigTemplate` cloned 8×), kept synced to the collider so
+they visibly **run their feet + leap into the ball**, recoloured gold on the throne. Each rig's
+`HumanoidRootPart` is **anchored and CFrame-driven by the server** (the existing intercept slide / jump /
+procedural idle sway-steps-lean — **no `Humanoid:MoveTo`/pathfinding**, `WalkSpeed`/`JumpPower = 0`), and
+**stock R15 animation tracks (idle/walk/run/jump) are layered on top** via each rig's `Animator`, gated by
+the body's actual per-frame speed. The rigs are cosmetic only: every part is `CanCollide = false` and put
+in a non-colliding **`BotRig` collision group** (the R15 Humanoid re-enables `CanCollide` at runtime, so
+the group is what actually guarantees the rigs never perturb the ball, the player, or each other), and
+they live OUTSIDE `NineSquare.Frame` so they're never in `BallController._surfaces` — the hit is the
+abstract collider's, not the rig's. Real rallies happen (bot ↔ center ↔ bot), the human climbs the ranks
 and can reach **King**, and a bot-King fault fires the **dethrone**. The **human's volley, the swept
 collision/physics, the over-pipe save/ownership, rotation timing, and the dethrone are unchanged** — bots
-now go *through* the existing collision. Tunables (`botJumpVelocity`, `botStandoff`, `botOffCenterFrac`,
-`botRestColliderY`, `botMoveSpeed`) live in `GridConfig`. M3 loop / rank HUD / camera are unchanged.
+still go *through* the existing collision. Tunables (`botJumpVelocity`, `botStandoff`, `botOffCenterFrac`,
+`botRestColliderY`, `botMoveSpeed`, R15 anim ids + the walk-blend speed threshold) live in `GridConfig`.
+M3 loop / rank HUD / camera are unchanged.
 
 ## Docs
 
@@ -87,8 +95,9 @@ now go *through* the existing collision. Tunables (`botJumpVelocity`, `botStando
 - `src/shared/GridConfig.luau` — dimensions + pure grid/contact math (all tunables).
 - `src/server/` — `BallController` (ball physics/arcs/collision + the swept player/bot hit-sphere
   collision), `MatchService` (builds gym + court, player-cell lookup), `HitResolver` (the human's moving
-  hit-sphere colliders), `RotationService` (9-rank occupancy + bot bodies + `driveOccupant`/`restOccupant`
-  body sync + rotation/dethrone), `BotController` (per-Heartbeat physical bot hitter: predicts the contact,
+  hit-sphere colliders), `RotationService` (9-rank occupancy + R15 bot rigs cloned from
+  `ReplicatedStorage.BotRigTemplate` + layered idle/walk/run/jump anim tracks + `driveOccupant`/`restOccupant`
+  rig sync + rotation/dethrone), `BotController` (per-Heartbeat physical bot hitter: predicts the contact,
   drives an off-center hit-sphere collider into the ball along the aim line, misses by under-driving;
   returns colliders merged into `bc:step`), `NineSquareServer` (bootstrap + Heartbeat + the king-of-the-hill
   loop; merges human + bot colliders into `bc:step`).

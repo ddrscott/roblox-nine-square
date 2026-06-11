@@ -103,9 +103,18 @@ GridConfig.outerCells = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 -- change this table and placement follows (cellForRank just indexes it).
 GridConfig.rankCells = { "C", "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
--- Bot occupant look (M4: the 8 non-human squares). A cheap STYLISED humanoid body (anchored stacked
--- parts: torso + head + two arms), NOT a physics Humanoid -- so it stays server-authoritative,
--- non-colliding (CanCollide=false, out of BallController._surfaces), and we can tween it for the hop.
+-- Bot occupant look. The 8 non-human squares are now REAL R15 rigs (default blocky "Rig Builder"
+-- dummy), one template cloned per rank. The rig is COSMETIC + server-authoritative: its
+-- HumanoidRootPart is anchored and CFrame-driven by the server (NO Humanoid:MoveTo / pathfinding /
+-- self-locomotion -- WalkSpeed/JumpPower = 0), every part is CanCollide=false + Massless and lives
+-- OUTSIDE NineSquare.Frame, so the ball never collides with a rig (the hit stays server-resolved on
+-- the abstract hit-sphere collider in BotController). The procedural idle (sway / ready-steps /
+-- ball-lean) still drives the ROOT translation; stock R15 animation tracks (idle/walk/run/jump) are
+-- LAYERED on top via the rig's Animator for limb life (gated by the body's actual per-frame speed).
+GridConfig.botRigTemplateName = "BotRigTemplate"  -- name of the R15 rig template under ReplicatedStorage
+GridConfig.botRigFootToRoot = 3.006   -- studs from a standing R15 rig's feet up to its HumanoidRootPart
+                                      --   centre (so feet sit on the cell floor: HRP_Y = floorY + this).
+                                      --   Measured off the default R15 blocky rig (HipHeight 2.192 + HRP half).
 GridConfig.dummyHeight = 5          -- (legacy cylinder height; retained for back-compat references)
 GridConfig.dummyRadius = 1.3        -- (legacy cylinder radius)
 GridConfig.dummyColor = Color3.fromRGB(120, 90, 210)   -- a clearly-non-player violet (bot body)
@@ -113,12 +122,27 @@ GridConfig.dummyKingColor = Color3.fromRGB(225, 185, 60) -- the King (rank 1 / C
 GridConfig.botBodyColor = Color3.fromRGB(120, 90, 210)   -- bot torso/limb colour (alias of dummyColor)
 GridConfig.botKingColor = Color3.fromRGB(225, 185, 60)   -- King bot colour
 GridConfig.botSkinColor = Color3.fromRGB(245, 222, 179)  -- head colour (reads as a face)
-GridConfig.botTorsoSize = Vector3.new(2.2, 2.6, 1.2)     -- torso block
-GridConfig.botHeadSize = 1.4                              -- head cube edge
-GridConfig.botArmSize = Vector3.new(0.7, 2.4, 0.7)       -- a side arm
+GridConfig.botTorsoSize = Vector3.new(2.2, 2.6, 1.2)     -- (legacy stylised torso block; collider-only ref)
+GridConfig.botHeadSize = 1.4                              -- (legacy stylised head edge; collider-only ref)
+GridConfig.botArmSize = Vector3.new(0.7, 2.4, 0.7)       -- (legacy stylised arm; collider-only ref)
 GridConfig.botHopHeight = 2.6        -- (legacy) studs the bot popped upward on a volley before the leap rework
 GridConfig.botHopUpTime = 0.10       -- (legacy) up-leg of the old in-place hop
 GridConfig.botHopDownTime = 0.22     -- (legacy) down-leg of the old in-place hop
+
+-- Stock R15 animation ids LAYERED on the server-driven rig (cosmetic only -- limb life on top of the
+-- procedural root translation). These are Roblox's public default R15 animations (always load, no
+-- asset-permission warnings). The right track is chosen per frame from the rig's ACTUAL body speed:
+-- below botAnimWalkSpeed -> idle; between walk/run -> walk; above botAnimRunSpeed -> run; a jump track
+-- one-shots when the bot drives its collider up to strike (driveOccupant with a rising armRaise).
+GridConfig.botAnimIdleId = "rbxassetid://507766666"  -- looped R15 idle
+GridConfig.botAnimWalkId = "rbxassetid://507777826"  -- R15 walk cycle (intercept slide / ready-step)
+GridConfig.botAnimRunId  = "rbxassetid://507767714"  -- R15 run cycle (fast intercept drive)
+GridConfig.botAnimJumpId = "rbxassetid://507765000"  -- R15 jump (one-shot when striking)
+GridConfig.botAnimWalkSpeed = 2.5    -- studs/s body speed above which the walk track plays (below = idle)
+GridConfig.botAnimRunSpeed  = 14     -- studs/s body speed above which the run track plays instead of walk
+GridConfig.botAnimWalkRate  = 0.7    -- multiplier mapping body speed -> walk/run AdjustSpeed so the cycle
+                                     --   visually tracks the actual translation (higher = faster legs)
+GridConfig.botAnimFadeTime  = 0.18   -- crossfade (s) between idle/walk/run tracks (smooth blend, no pop)
 
 -- Bot LEAP-TO-BALL (M4 visual fix). Instead of a small in-place floor hop, the bot body now LEAPS up
 -- toward the live contact point (~frameHeight at the ball's XZ) so it visibly meets + strikes the ball,

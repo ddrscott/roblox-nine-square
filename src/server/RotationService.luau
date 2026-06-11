@@ -1,22 +1,59 @@
 --!strict
 -- ServerScriptService.NineSquare.RotationService
--- M3 step 1 / M4 step 2: the 9-rank occupancy model + BOT bodies + placeAll (and rotateOnFault).
+-- The 9-rank occupancy model + BOT rigs + placeAll (and rotateOnFault).
 -- Holds byRank[rank] = { id, isDummy, rank } for exactly 9 occupants (1 human + 8 bots), builds the
--- 8 stylised bot bodies, and places everyone at cellForRank(rank).
+-- 8 bot bodies, and places everyone at cellForRank(rank).
 --
--- M4 step 2: the bot occupants are now cheap STYLISED HUMANOID bodies (a Model: anchored torso + head +
--- arms with a PrimaryPart), not cylinders -- so they read as players and can HOP on a volley
--- (hopOccupant pivots the Model up + back down). They are deliberately cosmetic + CanCollide=false and
--- live in their OWN "Dummies" folder under workspace.NineSquare (NOT under NineSquare.Frame), so
--- BallController:_surfaces() never picks them up and the ball physics / contact stays server-resolved.
+-- The bot occupants are now REAL R15 rigs (default blocky "Rig Builder" dummy): one template
+-- (ReplicatedStorage.BotRigTemplate, built once in Studio) cloned 8x, one per rank. The rig is
+-- COSMETIC + server-authoritative -- its HumanoidRootPart is anchored and CFrame-driven by the server
+-- (the SAME intercept slide / jump / procedural idle the stylised body used; NO Humanoid:MoveTo /
+-- pathfinding / self-locomotion). Every rig part is CanCollide=false + Massless, and the rigs live in
+-- their OWN "Dummies" folder under workspace.NineSquare (NOT under NineSquare.Frame), so
+-- BallController:_surfaces() never picks them up: the ball strikes the abstract hit-sphere collider
+-- (BotController), never the rig, and the ball physics / contact stays server-resolved.
+--
+-- ANIMATION: the procedural idle (sway / ready-steps / ball-lean) still drives the ROOT translation;
+-- stock R15 animation tracks (idle/walk/run/jump) are LAYERED on top via each rig's Animator -- gated
+-- by the body's ACTUAL per-frame speed (computed from the driven HRP delta) so the legs match the
+-- motion, and a one-shot jump track fires when the bot drives its collider up to strike.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local PhysicsService = game:GetService("PhysicsService")
 local G = require(RS.GridConfig)
+
+-- A collision group the bot rigs live in that collides with NOTHING. The R15 Humanoid re-enables
+-- CanCollide on its limbs at runtime, so CanCollide=false alone isn't enough -- this group GUARANTEES the
+-- rigs never physically perturb the ball, the player, or each other. (The ball never even sees the rigs:
+-- they live OUTSIDE NineSquare.Frame, which is the only thing BallController:_surfaces() collects.)
+local BOT_RIG_COLLISION_GROUP = "BotRig"
+do
+	local ok = pcall(function() PhysicsService:RegisterCollisionGroup(BOT_RIG_COLLISION_GROUP) end)
+	if ok then
+		-- Don't collide with the default group, and don't collide with itself.
+		pcall(function() PhysicsService:CollisionGroupSetCollidable(BOT_RIG_COLLISION_GROUP, "Default", false) end)
+		pcall(function() PhysicsService:CollisionGroupSetCollidable(BOT_RIG_COLLISION_GROUP, BOT_RIG_COLLISION_GROUP, false) end)
+	end
+end
 
 export type Occupant = {
 	id: string,        -- "human" or "dummy1".."dummy8"
 	isDummy: boolean,
 	rank: number,      -- 1..9 (King = 1)
+}
+
+-- Per-rig animation + drive state (so we can gate idle/walk/run from the real body speed and fire jump).
+type RigState = {
+	humanoid: Humanoid,
+	animator: Animator,
+	idle: AnimationTrack,
+	walk: AnimationTrack,
+	run: AnimationTrack,
+	jump: AnimationTrack,
+	moveState: string,        -- "idle" | "walk" | "run": the currently-playing locomotion track
+	lastPos: Vector3?,        -- last driven HRP position (to derive body speed for the walk gate)
+	lastTime: number?,        -- os.clock() of the last drive (real dt for the speed calc)
+	jumpedAt: number,         -- os.clock() of the last jump one-shot (debounce so it fires once per strike)
 }
 
 local RotationService = {}
@@ -25,7 +62,8 @@ RotationService.__index = RotationService
 export type RotationService = typeof(setmetatable(
 	{} :: {
 		byRank: { [number]: Occupant },
-		_dummyParts: { [string]: Model },       -- id -> the bot's body Model (human has none)
+		_dummyParts: { [string]: Model },       -- id -> the bot's rig Model (human has none)
+		_rigState: { [string]: RigState },      -- id -> animation/drive state for that rig
 		_placeHuman: (cell: string) -> (),     -- injected: teleport the human's HRP to a cell
 		_setHumanRank: ((rank: number) -> ())?,  -- injected: replicate the human's current rank (player attribute)
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
@@ -42,6 +80,7 @@ function RotationService.new(placeHuman: (cell: string) -> ()): RotationService
 	local self = setmetatable({
 		byRank = {},
 		_dummyParts = {},
+		_rigState = {},
 		_placeHuman = placeHuman,
 	}, RotationService)
 
@@ -57,272 +96,270 @@ function RotationService.new(placeHuman: (cell: string) -> ()): RotationService
 	return self
 end
 
--- Build one stylised bot body: a small Model (anchored torso + head + two arms) with the torso as the
--- PrimaryPart so the whole body can be CFramed/tweened as a unit. All parts CanCollide=false + Anchored
--- and live OUTSIDE NineSquare.Frame, so the ball never collides with a bot (the hit stays server-resolved).
--- The body is built around a local origin (torso centre at y=0); _placeOccupant CFrames the PrimaryPart so
--- the FEET sit on the floor of the cell.
-local function buildBotBody(name: string, bodyColor: Color3): Model
-	local model = Instance.new("Model"); model.Name = name
-	local function part(pname: string, size: Vector3, offset: Vector3, color: Color3, shape: Enum.PartType?)
-		local p = Instance.new("Part")
-		p.Name = pname
-		if shape then p.Shape = shape end
-		p.Anchored = true
-		p.CanCollide = false
-		p.CastShadow = true
-		p.Size = size
-		p.Color = color
-		p.Material = Enum.Material.SmoothPlastic
-		p.CFrame = CFrame.new(offset)   -- relative to the torso centre (set absolutely in _placeOccupant)
-		p.Parent = model
-		return p
-	end
-	local torso = part("Torso", G.botTorsoSize, Vector3.new(0, 0, 0), bodyColor)
-	local headOff = G.botTorsoSize.Y / 2 + G.botHeadSize / 2 + 0.15
-	part("Head", Vector3.new(G.botHeadSize, G.botHeadSize, G.botHeadSize), Vector3.new(0, headOff, 0), G.botSkinColor)
-	local armX = G.botTorsoSize.X / 2 + G.botArmSize.X / 2 + 0.1
-	local armY = G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2
-	part("ArmL", G.botArmSize, Vector3.new(-armX, armY, 0), bodyColor)
-	part("ArmR", G.botArmSize, Vector3.new(armX, armY, 0), bodyColor)
-	model.PrimaryPart = torso
-	return model
-end
-
--- The y-offset (from the cell floor up to the torso centre) that puts a bot's feet on the floor.
+-- The y-offset (from the cell floor up to the rig's HumanoidRootPart centre) that puts the rig's feet
+-- on the floor. Measured off the default R15 blocky rig (GridConfig.botRigFootToRoot).
 local function botTorsoY(): number
-	local armBottom = (G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2) - G.botArmSize.Y / 2  -- lowest point (arm tip)
-	return -armBottom
+	return G.botRigFootToRoot
 end
 
--- Owns the 8 bot bodies in a dedicated Dummies folder (rebuilt fresh each call, like the arena builders).
+-- Recolour the rig's body parts by rank (King = gold). The head keeps its skin tone; the arms/torso/legs
+-- take the body colour so whoever holds rank 1 reads as the gold King after a rotation.
+local function recolourRig(rig: Model, rank: number)
+	local color = (rank == 1) and G.botKingColor or G.botBodyColor
+	for _, d in ipairs(rig:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "Head" and d.Name ~= "HumanoidRootPart" then
+			d.Color = color
+			d.Material = Enum.Material.SmoothPlastic
+		end
+	end
+end
+
+-- Load one looped/one-shot animation track onto a rig's Animator.
+local function loadTrack(animator: Animator, id: string, looped: boolean, priority: Enum.AnimationPriority): AnimationTrack
+	local anim = Instance.new("Animation")
+	anim.AnimationId = id
+	local track = animator:LoadAnimation(anim)
+	track.Looped = looped
+	track.Priority = priority
+	return track
+end
+
+-- Build the per-rig animation state (idle/walk/run/jump tracks on the rig's Animator) and start the
+-- looped idle so a resting rig is alive from frame one.
+local function buildRigState(rig: Model): RigState?
+	local hum = rig:FindFirstChildOfClass("Humanoid")
+	if not hum then warn("[Rotation] rig has no Humanoid: " .. rig.Name); return nil end
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if not animator then animator = Instance.new("Animator"); animator.Parent = hum end
+
+	local idle = loadTrack(animator, G.botAnimIdleId, true, Enum.AnimationPriority.Idle)
+	local walk = loadTrack(animator, G.botAnimWalkId, true, Enum.AnimationPriority.Movement)
+	local run  = loadTrack(animator, G.botAnimRunId,  true, Enum.AnimationPriority.Movement)
+	local jump = loadTrack(animator, G.botAnimJumpId, false, Enum.AnimationPriority.Action)
+
+	idle:Play(G.botAnimFadeTime)
+
+	return {
+		humanoid = hum,
+		animator = animator,
+		idle = idle, walk = walk, run = run, jump = jump,
+		moveState = "idle",
+		lastPos = nil,
+		lastTime = nil,
+		jumpedAt = 0,
+	}
+end
+
+-- Owns the 8 bot rigs in a dedicated Dummies folder (rebuilt fresh each call, like the arena builders).
+-- Clones the R15 template (ReplicatedStorage.BotRigTemplate) once per rank, recolours it, and wires its
+-- animation tracks. If the template is missing, warns once -- bots simply won't appear (physics intact).
 function RotationService._buildDummies(self: RotationService)
 	local ns = workspace:FindFirstChild("NineSquare")
 	if not ns then
-		warn("[Rotation] no workspace.NineSquare folder; build the arena before bot bodies")
+		warn("[Rotation] no workspace.NineSquare folder; build the arena before bot rigs")
 		return
 	end
+	local template = RS:FindFirstChild(G.botRigTemplateName)
+	if not template then
+		warn("[Rotation] no ReplicatedStorage." .. G.botRigTemplateName .. " rig template; bots will not render")
+		self._dummyParts = {}
+		self._rigState = {}
+		return
+	end
+
 	local old = ns:FindFirstChild("Dummies"); if old then old:Destroy() end
 	local folder = Instance.new("Folder"); folder.Name = "Dummies"; folder.Parent = ns
 
 	self._dummyParts = {}
+	self._rigState = {}
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
 		if occ and occ.isDummy then
-			local color = (rank == 1) and G.botKingColor or G.botBodyColor
-			local body = buildBotBody("Bot_rank" .. rank, color)
-			body.Parent = folder
-			self._dummyParts[occ.id] = body
+			local rig = template:Clone()
+			rig.Name = "Bot_rank" .. rank
+			recolourRig(rig, rank)
+			rig.Parent = folder
+			-- Put every rig part in the non-colliding BotRig group (the Humanoid flips CanCollide back on at
+			-- runtime, so the group is what actually guarantees the rig never perturbs the ball/player/rigs).
+			for _, d in ipairs(rig:GetDescendants()) do
+				if d:IsA("BasePart") then
+					d.CanCollide = false
+					pcall(function() d.CollisionGroup = BOT_RIG_COLLISION_GROUP end)
+				end
+			end
+			self._dummyParts[occ.id] = rig
+			local st = buildRigState(rig)
+			if st then self._rigState[occ.id] = st end
 		end
 	end
 end
 
--- Stand a bot body in the centre of its cell with the feet on the floor (re-colours by current rank so
--- whoever holds rank 1 reads as the gold King). Returns the floor-standing torso CFrame.
-function RotationService._standBot(self: RotationService, body: Model, cell: string, rank: number): CFrame
+-- Drive a rig: place its anchored HumanoidRootPart at `hrpCF` and update the layered animation from the
+-- body's ACTUAL frame speed. `striking` (true while the bot drives its collider up to a strike) fires a
+-- one-shot jump track. All cosmetic -- the rig never collides; the hit is the abstract collider's.
+function RotationService._driveRig(self: RotationService, id: string, hrpCF: CFrame, striking: boolean)
+	local rig = self._dummyParts[id]
+	if not rig or not rig.PrimaryPart then return end
+	rig:PivotTo(hrpCF)
+
+	local st = self._rigState[id]
+	if not st then return end
+
+	-- Body speed from the driven HRP delta over real wall-clock dt (the procedural root translation IS the
+	-- locomotion signal). XZ only, so a vertical jump doesn't read as "walking".
+	local pos = hrpCF.Position
+	local now = os.clock()
+	local speed = 0
+	if st.lastPos and st.lastTime then
+		local dt = now - st.lastTime
+		if dt > 1e-4 then
+			local d = pos - st.lastPos
+			speed = Vector3.new(d.X, 0, d.Z).Magnitude / dt
+		end
+	end
+	st.lastPos = pos
+	st.lastTime = now
+
+	-- Locomotion gate: idle < walk < run by the body's real speed (smooth crossfades).
+	local want = "idle"
+	if speed >= G.botAnimRunSpeed then want = "run"
+	elseif speed >= G.botAnimWalkSpeed then want = "walk" end
+	if want ~= st.moveState then
+		if st.moveState == "idle" then st.idle:Stop(G.botAnimFadeTime)
+		elseif st.moveState == "walk" then st.walk:Stop(G.botAnimFadeTime)
+		elseif st.moveState == "run" then st.run:Stop(G.botAnimFadeTime) end
+		if want == "idle" then st.idle:Play(G.botAnimFadeTime)
+		elseif want == "walk" then st.walk:Play(G.botAnimFadeTime)
+		elseif want == "run" then st.run:Play(G.botAnimFadeTime) end
+		st.moveState = want
+	end
+	-- Map body speed onto the walk/run cycle rate so the legs track the actual translation.
+	if want == "walk" then st.walk:AdjustSpeed(math.clamp(speed * G.botAnimWalkRate / math.max(G.botAnimWalkSpeed, 0.1), 0.4, 2.5))
+	elseif want == "run" then st.run:AdjustSpeed(math.clamp(speed * G.botAnimWalkRate / math.max(G.botAnimRunSpeed, 0.1), 0.6, 2.0)) end
+
+	-- Jump one-shot on a strike (debounced so it fires once per swing, not every frame mid-jump).
+	if striking and (now - st.jumpedAt) > 0.5 then
+		st.jump:Play(0.08)
+		st.jumpedAt = now
+	end
+end
+
+-- Stand a bot rig in the centre of its cell with the feet on the floor (re-colours by current rank so
+-- whoever holds rank 1 reads as the gold King). Returns the floor-standing HRP CFrame. This is a SNAP
+-- (placement / rest), so we reset the rig's speed tracking to zero so the snap never reads as "running".
+function RotationService._standBot(self: RotationService, rig: Model, cell: string, rank: number): CFrame
 	local center = G.cellCenter(cell) + Vector3.new(0, botTorsoY(), 0)
 	local cf = CFrame.new(center)
-	if body.PrimaryPart then body:PivotTo(cf) end
-	-- Recolour torso + arms by rank (King = gold) so the body's colour tracks its rank after rotation.
-	local color = (rank == 1) and G.botKingColor or G.botBodyColor
-	for _, child in ipairs(body:GetChildren()) do
-		if child:IsA("BasePart") and child.Name ~= "Head" then
-			child.Color = color
+	if rig.PrimaryPart then rig:PivotTo(cf) end
+	recolourRig(rig, rank)
+
+	-- Reset the animation drive so the snapped position is the new rest (no spurious walk/run from the jump).
+	local st = self._rigState[self:_idForRig(rig)]
+	if st then
+		st.lastPos = center
+		st.lastTime = os.clock()
+		if st.moveState ~= "idle" then
+			if st.moveState == "walk" then st.walk:Stop(G.botAnimFadeTime)
+			elseif st.moveState == "run" then st.run:Stop(G.botAnimFadeTime) end
+			st.idle:Play(G.botAnimFadeTime)
+			st.moveState = "idle"
 		end
 	end
 	return cf
+end
+
+-- Reverse-lookup a rig's occupant id (for fetching its RigState from a Model handle).
+function RotationService._idForRig(self: RotationService, rig: Model): string?
+	for id, r in pairs(self._dummyParts) do
+		if r == rig then return id end
+	end
+	return nil
 end
 
 -- Position one occupant (human or bot) at the cell for its rank.
 function RotationService._placeOccupant(self: RotationService, occ: Occupant)
 	local cell = G.cellForRank(occ.rank)
 	if occ.isDummy then
-		local body = self._dummyParts[occ.id]
-		if body then self:_standBot(body, cell, occ.rank) end
+		local rig = self._dummyParts[occ.id]
+		if rig then self:_standBot(rig, cell, occ.rank) end
 	else
 		self._placeHuman(cell)
 	end
 end
 
--- Cubic ease-out (fast start, soft stop) -- for the rise to the strike.
-local function easeOutCubic(t: number): number
-	local u = 1 - t
-	return 1 - u * u * u
-end
--- Cubic ease-in (soft start, fast finish) -- for the fall back down.
-local function easeInCubic(t: number): number
-	return t * t * t
-end
+-- R15 head sits this far above the HumanoidRootPart centre (measured off the default blocky rig). To put
+-- the rig's HEAD at a world point we place the HRP this far below it.
+local BOT_HEAD_ABOVE_HRP = 1.586
 
--- LEAP-TO-BALL juice (M4 visual fix). Server-driven, called by BotController the instant it resolves a
--- volley (so the apex coincides with bc:launch). `contactPos` is the ball's world position at the strike
--- (~frameHeight at the ball's XZ). The bot body LEAPS from its floor stand UP toward `contactPos` -- rising
--- to ~the ball's height and leaning toward the ball's XZ (capped) -- so it visibly meets + strikes the ball,
--- raises its near arm + tilts in at the apex (the reach), holds briefly, then arcs back down and snaps home.
---
--- The body is a Model of separate ANCHORED parts (no Motor6D), so we drive it on Heartbeat (cheap: <=8 bots,
--- fires only on a volley): the whole-Model pivot carries position + lean; the near arm is re-CFramed each
--- frame relative to the live torso for the overhead reach. Always leaps from the CURRENT rest pose so it
--- never drifts, and snaps exactly back to rest (arms restored) at the end. CanCollide stays false; cosmetic.
---
--- `contactPos` is optional for back-compat: with no contact point it falls back to the legacy in-place hop.
+-- LEGACY in-place hop (back-compat). BotController no longer calls this -- it drives the rig via
+-- driveOccupant/restOccupant. With R15 rigs the limb motion comes from the layered jump anim track, so
+-- this just bobs the rig's anchored HRP up and back down (the Animator handles the legs). Kept so any old
+-- caller still works. `contactPos` is ignored for the R15 path (the strike pose is the jump anim).
 function RotationService.hopOccupant(self: RotationService, id: string, contactPos: Vector3?)
-	local body = self._dummyParts[id]
-	if not body or not body.PrimaryPart then return end
-	local rest = body:GetPivot()
-
-	-- Capture each arm's rest CFrame *relative to the torso* so we can swing one up and restore both exactly.
-	local armL = body:FindFirstChild("ArmL") :: BasePart?
-	local armR = body:FindFirstChild("ArmR") :: BasePart?
-	local restInv = rest:Inverse()
-	local armLLocal = armL and (restInv * armL.CFrame) or nil
-	local armRLocal = armR and (restInv * armR.CFrame) or nil
-
-	-- Restore arms + the model to rest in one place (used on land and on early-out).
-	local function snapHome()
-		body:PivotTo(rest)
-		if armL and armLLocal then armL.CFrame = rest * armLLocal end
-		if armR and armRLocal then armR.CFrame = rest * armRLocal end
-	end
-
-	-- No contact point -> legacy in-place hop (back-compat; keeps old callers working).
-	if not contactPos then
-		local peak = rest + Vector3.new(0, G.botHopHeight, 0)
-		local upDur, downDur = G.botHopUpTime, G.botHopDownTime
-		local t0 = os.clock()
-		local conn
-		conn = RunService.Heartbeat:Connect(function()
-			if not body.Parent then conn:Disconnect(); return end
-			local elapsed = os.clock() - t0
-			if elapsed < upDur then
-				body:PivotTo(rest:Lerp(peak, elapsed / upDur))
-			elseif elapsed < upDur + downDur then
-				body:PivotTo(peak:Lerp(rest, (elapsed - upDur) / downDur))
-			else
-				snapHome(); conn:Disconnect()
-			end
-		end)
-		return
-	end
-
-	-- Apex target: travel `botLeapReachFrac` of the way from the rest torso toward the contact point, with
-	-- the horizontal lean toward the ball's XZ capped (`botLeapMaxLeanXZ`) so an edge contact never flings
-	-- the body out of its square. Vertically we go (almost) all the way up so the body meets the ball.
-	local restPos = rest.Position
-	local frac = G.botLeapReachFrac
-	local riseY = (contactPos.Y - restPos.Y) * frac
-	local leanXZ = Vector3.new(contactPos.X - restPos.X, 0, contactPos.Z - restPos.Z) * frac
-	local leanMag = leanXZ.Magnitude
-	if leanMag > G.botLeapMaxLeanXZ then
-		leanXZ = leanXZ * (G.botLeapMaxLeanXZ / leanMag)
-	end
-	local apexPos = restPos + Vector3.new(leanXZ.X, math.max(riseY, 0), leanXZ.Z)
-
-	-- Lean direction (toward the ball, in XZ) -> pick the near arm + tilt axis for the strike.
-	local horiz = Vector3.new(contactPos.X - restPos.X, 0, contactPos.Z - restPos.Z)
-	local leanDir = (horiz.Magnitude > 1e-3) and horiz.Unit or Vector3.new(0, 0, -1)
-	-- Tilt axis = perpendicular to lean (so positive lean pitches the torso top toward the ball).
-	local tiltAxis = Vector3.new(0, 1, 0):Cross(leanDir)
-	if tiltAxis.Magnitude < 1e-3 then tiltAxis = Vector3.new(1, 0, 0) end
-	tiltAxis = tiltAxis.Unit
-	local tiltMax = math.rad(G.botLeapTiltDeg)
-	-- Near arm = the one on the side the body leans toward (its local +X is right). Default to right arm.
-	local nearArm, nearLocal = armR, armRLocal
-	if armL and armLLocal then
-		local rightDot = rest.RightVector:Dot(leanDir)
-		if rightDot < 0 then nearArm, nearLocal = armL, armLLocal end
-	end
-	local armRaiseMax = math.rad(G.botLeapArmRaiseDeg)
-
-	local upDur, holdDur, downDur = G.botLeapUpTime, G.botLeapHoldTime, G.botLeapDownTime
+	local rig = self._dummyParts[id]
+	if not rig or not rig.PrimaryPart then return end
+	local rest = rig:GetPivot()
+	local peak = rest + Vector3.new(0, G.botHopHeight, 0)
+	local upDur, downDur = G.botHopUpTime, G.botHopDownTime
+	-- Fire the jump anim once at the start of the hop.
+	local st = self._rigState[id]
+	if st and (os.clock() - st.jumpedAt) > 0.5 then st.jump:Play(0.08); st.jumpedAt = os.clock() end
 	local t0 = os.clock()
 	local conn
 	conn = RunService.Heartbeat:Connect(function()
-		if not body.Parent then conn:Disconnect(); return end
+		if not rig.Parent then conn:Disconnect(); return end
 		local elapsed = os.clock() - t0
-
-		-- s = 0..1 leap progress (1 = fully extended at the strike); reach/tilt scale with s.
-		local s: number
-		local atApex = false
 		if elapsed < upDur then
-			s = easeOutCubic(elapsed / upDur)                         -- ease-out up to the strike
-		elseif elapsed < upDur + holdDur then
-			s = 1; atApex = true                                      -- brief hold at contact
-		elseif elapsed < upDur + holdDur + downDur then
-			s = 1 - easeInCubic((elapsed - upDur - holdDur) / downDur) -- ease-in back down
+			rig:PivotTo(rest:Lerp(peak, elapsed / upDur))
+		elseif elapsed < upDur + downDur then
+			rig:PivotTo(peak:Lerp(rest, (elapsed - upDur) / downDur))
 		else
-			snapHome(); conn:Disconnect(); return
-		end
-
-		-- Position: rest -> apex by s, with a touch of upward stretch as it extends toward the strike
-		-- (squash-stretch: the body looks like it reaches a hair past the apex for the ball).
-		local stretchY = G.botLeapSquashFrac * (atApex and 1 or s * 0.6)
-		local pos = restPos:Lerp(apexPos, s) + Vector3.new(0, stretchY, 0)
-		-- Torso pitches toward the ball, peaking at the apex (the lean-in on the strike).
-		local cf = CFrame.new(pos) * CFrame.fromAxisAngle(tiltAxis, tiltMax * s)
-		body:PivotTo(cf)
-
-		-- The near arm swings up overhead (the reach), restoring on the way down. Swung about the shoulder
-		-- line (the arm's local X axis) off the LIVE torso CFrame so it tracks the lean + position.
-		if nearArm and nearLocal then
-			local swing = CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -armRaiseMax * s)
-			nearArm.CFrame = cf * (nearLocal * swing)
+			rig:PivotTo(rest); conn:Disconnect()
 		end
 	end)
 end
 
--- PHYSICAL-HIT body drive (bot hit rework). The bot is now a REAL physical hitter: BotController drives a
+-- PHYSICAL-HIT body drive (bot hit rework). The bot is a REAL physical hitter: BotController drives a
 -- moving hit-sphere collider (center, vel) to an off-centre stand position and jumps it into the ball, and
--- the SAME swept collision the human uses resolves the strike. This method keeps the bot BODY synced to that
--- collider so the player SEES the bot move its feet + leap into the ball: it pivots the torso so the body's
--- "contact area" (head) sits at the collider's centre `headWorld`, leaning toward `leanTarget` (the ball) so
--- it reads as a reach/strike rather than a stiff float. Cosmetic only (CanCollide stays false) -- the hit is
--- the collider's, not the body's. `armRaise` (0..1) swings the near arm up for the strike pose at the apex.
+-- the SAME swept collision the human uses resolves the strike. This method keeps the R15 RIG synced to that
+-- collider so the player SEES the bot run its feet + leap into the ball: it places the rig's HEAD at the
+-- collider centre `headWorld` (so the rig rises with the jump), faces it toward `leanTarget` (the ball) and
+-- pitches it into the strike. The R15 jump anim (fired by _driveRig when `armRaise` is high) gives the limb
+-- life -- no manual arm CFrames. Cosmetic only (CanCollide stays false) -- the hit is the collider's.
 function RotationService.driveOccupant(self: RotationService, id: string, headWorld: Vector3, leanTarget: Vector3?, armRaise: number?)
-	local body = self._dummyParts[id]
-	if not body or not body.PrimaryPart then return end
+	local rig = self._dummyParts[id]
+	if not rig or not rig.PrimaryPart then return end
 
-	-- The head sits this far above the torso centre (mirror of buildBotBody's headOff). To place the HEAD at
-	-- headWorld we pivot the torso headOff below it.
-	local headOff = G.botTorsoSize.Y / 2 + G.botHeadSize / 2 + 0.15
-	local torsoPos = headWorld - Vector3.new(0, headOff, 0)
+	-- Place the HRP so the rig's HEAD sits at the collider centre (head tracks the collider through the jump).
+	local hrpPos = headWorld - Vector3.new(0, BOT_HEAD_ABOVE_HRP, 0)
 
-	-- Lean the torso toward the ball (capped) so the body tilts INTO the strike. Build the CFrame facing the
-	-- lean direction with a forward pitch.
-	local cf = CFrame.new(torsoPos)
+	-- Face the ball (XZ) and pitch INTO the strike, so the rig reads as a reach not a stiff float.
+	local cf = CFrame.new(hrpPos)
 	if leanTarget then
 		local horiz = Vector3.new(leanTarget.X - headWorld.X, 0, leanTarget.Z - headWorld.Z)
 		if horiz.Magnitude > 1e-3 then
 			local leanDir = horiz.Unit
-			local tiltAxis = Vector3.new(0, 1, 0):Cross(leanDir)
-			if tiltAxis.Magnitude > 1e-3 then
-				cf = CFrame.new(torsoPos) * CFrame.fromAxisAngle(tiltAxis.Unit, math.rad(G.botLeapTiltDeg))
-			end
+			cf = CFrame.lookAt(hrpPos, hrpPos + leanDir)
+			-- A small forward pitch toward the ball at the apex (scales with the strike's armRaise).
+			local raise = math.clamp(armRaise or 0, 0, 1)
+			cf = cf * CFrame.Angles(math.rad(G.botLeapTiltDeg) * raise, 0, 0)
 		end
 	end
-	body:PivotTo(cf)
 
-	-- Swing both arms up for the reach when armRaise is high (strike pose). Re-CFrame relative to the live
-	-- torso so they track the lean. The rest arm offsets are recomputed from the body config (no captured rest).
-	local raise = math.clamp(armRaise or 0, 0, 1)
-	local armX = G.botTorsoSize.X / 2 + G.botArmSize.X / 2 + 0.1
-	local armY = G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2
-	local swing = CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -math.rad(G.botLeapArmRaiseDeg) * raise)
-	local armL = body:FindFirstChild("ArmL") :: BasePart?
-	local armR = body:FindFirstChild("ArmR") :: BasePart?
-	if armL then armL.CFrame = cf * (CFrame.new(-armX, armY, 0) * swing) end
-	if armR then armR.CFrame = cf * (CFrame.new(armX, armY, 0) * swing) end
+	-- A high armRaise == we're at/near the strike -> _driveRig fires the one-shot jump anim.
+	local striking = (math.clamp(armRaise or 0, 0, 1) > 0.6)
+	self:_driveRig(id, cf, striking)
 end
 
--- Snap a bot body back to its resting stand in its current cell (feet on the floor, arms down). Called when
--- a swing ends so the body never drifts from the collider's rest pose.
+-- Snap a bot rig back to its resting stand in its current cell (feet on the floor). Called when a swing
+-- ends so the rig never drifts from the collider's rest pose.
 function RotationService.restOccupant(self: RotationService, id: string)
-	local body = self._dummyParts[id]
-	if not body then return end
+	local rig = self._dummyParts[id]
+	if not rig then return end
 	for rank = 1, RANKS do
 		local occ = self.byRank[rank]
 		if occ and occ.id == id then
-			self:_standBot(body, G.cellForRank(occ.rank), occ.rank)
+			self:_standBot(rig, G.cellForRank(occ.rank), occ.rank)
 			return
 		end
 	end
@@ -336,34 +373,27 @@ end
 -- square. Cosmetic only (CanCollide stays false); yields cleanly to driveOccupant/restOccupant when this bot
 -- becomes the receiver (those overwrite the pivot the same frame). Arms are left at their rest offsets.
 function RotationService.idleOccupant(self: RotationService, id: string, offsetXZ: Vector3, bobY: number, leanTarget: Vector3?)
-	local body = self._dummyParts[id]
-	if not body or not body.PrimaryPart then return end
-	-- Find the bot's home torso position (feet on the floor of its current cell), same as _standBot.
+	local rig = self._dummyParts[id]
+	if not rig or not rig.PrimaryPart then return end
+	-- Find the bot's home HRP position (feet on the floor of its current cell), same as _standBot.
 	local cell = self:occupantCell(id)
 	if not cell then return end
 	local home = G.cellCenter(cell) + Vector3.new(0, botTorsoY(), 0)
-	local torsoPos = home + Vector3.new(offsetXZ.X, bobY, offsetXZ.Z)
+	local hrpPos = home + Vector3.new(offsetXZ.X, bobY, offsetXZ.Z)
 
-	local cf = CFrame.new(torsoPos)
+	-- Face the live ball (XZ) so the rig subtly turns toward the rally; a faint pitch reads as an idle lean.
+	local cf = CFrame.new(hrpPos)
 	if leanTarget then
-		local horiz = Vector3.new(leanTarget.X - torsoPos.X, 0, leanTarget.Z - torsoPos.Z)
+		local horiz = Vector3.new(leanTarget.X - hrpPos.X, 0, leanTarget.Z - hrpPos.Z)
 		if horiz.Magnitude > 1e-3 then
 			local leanDir = horiz.Unit
-			local tiltAxis = Vector3.new(0, 1, 0):Cross(leanDir)
-			if tiltAxis.Magnitude > 1e-3 then
-				cf = CFrame.new(torsoPos) * CFrame.fromAxisAngle(tiltAxis.Unit, math.rad(G.botIdleLeanDeg))
-			end
+			cf = CFrame.lookAt(hrpPos, hrpPos + leanDir) * CFrame.Angles(math.rad(G.botIdleLeanDeg), 0, 0)
 		end
 	end
-	body:PivotTo(cf)
 
-	-- Keep the arms hanging at their rest offsets relative to the (now leaning) torso so they track the body.
-	local armX = G.botTorsoSize.X / 2 + G.botArmSize.X / 2 + 0.1
-	local armY = G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2
-	local armL = body:FindFirstChild("ArmL") :: BasePart?
-	local armR = body:FindFirstChild("ArmR") :: BasePart?
-	if armL then armL.CFrame = cf * CFrame.new(-armX, armY, 0) end
-	if armR then armR.CFrame = cf * CFrame.new(armX, armY, 0) end
+	-- Drive the rig (idle/walk anim gates off the per-frame speed of this small sway/ready-step motion; the
+	-- ready-step pushes the body fast enough to flip to the walk track, then back to idle when it returns).
+	self:_driveRig(id, cf, false)
 end
 
 -- The world cell the bot `id` currently stands in (for the collider's rest position). nil if not a bot.
