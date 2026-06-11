@@ -283,20 +283,17 @@ end
 
 local currentFocus: Vector3? = nil
 local function updateCamera()
-	-- SPECTATOR / LOBBY: hand the camera to Roblox's default third-person (Custom) so a watching player can
-	-- ROAM the upper foyer freely + look around. The server spawns them FACING the court centre, so the
-	-- default camera starts looking toward the play area. The scripted court/follow camera below is for SEATED
-	-- players only (it's court-tuned + flattens focus to court height, which is wrong for a gallery roamer).
-	if isSpectating() then
-		cam.CameraType = Enum.CameraType.Custom
-		currentFocus = nil   -- reset the eased focus so seating later glides from a fresh court target
-		return
-	end
+	-- SPECTATOR / LOBBY: a watching player gets the COURT OVERVIEW camera -- the same proven scripted framing
+	-- seated players see when NOT in follow mode (looks DOWN through the gallery opening at the play area,
+	-- framing the whole 9-square centred). They keep moving (not anchored) and tap Join to drop in. We do NOT
+	-- use CameraType.Custom: Custom sits behind the player at the gallery bench, filling the view with the
+	-- bench backrest and facing the wrong way. Spectators fall through the `courtView` branch below by gating
+	-- FOLLOW mode on `not isSpectating()` -- so they always get the fixed court overview, never follow.
 	cam.CameraType = Enum.CameraType.Scriptable
 	cam.FieldOfView = G.camBaseFOV
 	local target, farEye, farLook, nearEye, nearLook
 	local char = LocalPlayer.Character
-	local hrp = followMode and char and char:FindFirstChild("HumanoidRootPart")
+	local hrp = followMode and not isSpectating() and char and char:FindFirstChild("HumanoidRootPart")
 	local courtView = false
 	if hrp then
 		target = Vector3.new(hrp.Position.X, courtOrigin().Y, hrp.Position.Z)
