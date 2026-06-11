@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] UI pass: buttons look like buttons, labels like labels ("Spectating" isn't a button) + consistency — see [ui-buttons-vs-labels-consistency.md](ui-buttons-vs-labels-consistency.md)
 - [x] Leave-to-spectate button + foyer fall-out barriers + move buttons right under the scoreboard — see [leave-to-spectate-barriers-button-placement.md](leave-to-spectate-barriers-button-placement.md)
 - [x] Spectate spawn: place/orient watchers so the bench isn't in the camera (KEEP roam) — see [spectate-spawn-clear-of-bench.md](spectate-spawn-clear-of-bench.md)
 - [~] Spectate camera: look DOWN at the court (fixed overview) — SUPERSEDED (misread; Scott wants to keep roaming) — see [spectate-camera-look-down-court.md](spectate-camera-look-down-court.md)
