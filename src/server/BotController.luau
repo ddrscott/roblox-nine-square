@@ -172,16 +172,37 @@ function BotController._tryCommit(self)
 	local contactPoint = self:_ballPosAt(tContact)
 	contactPoint = Vector3.new(contactPoint.X, contactY, contactPoint.Z)
 
-	-- Aim: outer bot -> centre (C); King bot (C) -> a random outer cell. Aim at the cell CENTRE pulled an
-	-- in-bounds margin toward the COURT centre (botAimInsetFrac of a half-square), so a clean return lands a
-	-- margin INSIDE the court boundary rather than on the far edge where a small error sprays it OOB.
-	local aimCell = (cell == "C") and G.outerCells[math.random(1, #G.outerCells)] or "C"
+	-- Aim: outer bot -> the King (C). King bot (C) -> a random OUTER cell, but NEVER the one that just hit the
+	-- ball to us (bc.struckCell) -> breaks the 2-player C<->outer ping-pong so different outers get pulled in
+	-- instead of the ball funnelling back to the same player. Aim at the cell CENTRE pulled an in-bounds margin
+	-- toward the COURT centre (botAimInsetFrac of a half-square), so a clean return lands a margin INSIDE the
+	-- court boundary rather than on the far edge where a small error sprays it OOB.
+	local aimCell
+	if cell == "C" then
+		local sender = bc.struckCell                          -- the outer cell that just struck the ball to us
+		local choices = {}
+		for _, oc in ipairs(G.outerCells) do
+			if oc ~= sender then choices[#choices + 1] = oc end
+		end
+		aimCell = choices[math.random(1, #choices)]           -- a DIFFERENT outer than the sender (no ping-pong)
+	else
+		aimCell = "C"                                         -- outer bots keep attacking the King
+	end
 	local aimCtr = G.cellCenter(aimCell)                                  -- XZ at the floor (cell centre)
 	local toCourt = Vector3.new(G.origin.X - aimCtr.X, 0, G.origin.Z - aimCtr.Z)
 	local inset = G.botAimInsetFrac * (G.squareSize / 2)
 	if toCourt.Magnitude > 1e-3 then aimCtr = aimCtr + toCourt.Unit * inset end
 	local aimFlat = Vector3.new(aimCtr.X - contactPoint.X, 0, aimCtr.Z - contactPoint.Z)
 	local aimDir = (aimFlat.Magnitude > 1e-3) and aimFlat.Unit or Vector3.new(0, 0, -1)
+
+	-- Hits shouldn't be robotically perfect: jitter the aim by a small random yaw so returns scatter naturally
+	-- around the target (sometimes near a cell edge, occasionally nicking a neighbour). The in-bounds forecast
+	-- below still reins in any spill past the court, so jitter adds life without spraying it OOB.
+	if G.botAimJitterDeg and G.botAimJitterDeg > 0 then
+		local ang = (math.random() * 2 - 1) * math.rad(G.botAimJitterDeg)
+		local cs, sn = math.cos(ang), math.sin(ang)
+		aimDir = Vector3.new(aimDir.X * cs - aimDir.Z * sn, 0, aimDir.X * sn + aimDir.Z * cs)
+	end
 
 	local restY = G.cellCenter(cell).Y + G.botRestColliderY
 	local rise = math.max(contactPoint.Y - restY, 0.5)

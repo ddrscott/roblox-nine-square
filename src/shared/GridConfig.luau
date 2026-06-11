@@ -199,7 +199,7 @@ GridConfig.botContactBand = 3        -- studs around frameHeight that count as t
 -- human's, so the existing swept, velocity-proportional collision (`strikeVelocity`) resolves the bot hit.
 -- The aim emerges from the off-center contact: the bot stands on the FAR side of the ball from its aim cell
 -- so `n = unit(ball - center)` points toward the aim; the jump velocity supplies the force.
-GridConfig.botJumpVelocity = 9       -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
+GridConfig.botJumpVelocity = 12      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
                                      --   contact -> the velocity-proportional strike (hitGain) turns this into
                                      --   outgoing ball speed (paired with the off-center normal for the aim).
                                      --   60 sprayed every return out of bounds; 28 kept the strike inside the
@@ -216,8 +216,11 @@ GridConfig.botJumpVelocity = 9       -- upward speed (studs/s) the bot drives it
                                      --   strike still clears the pipe + sustains the rally.
                                      --   Lowered 16 -> 9 to bring the rally arc inside the DEFAULT CAMERA's view (the
                                      --   limit-cycle peak scales with this drive: jv20->peak~47.5, jv16->~41, ~1.6
-                                     --   studs/unit; jv9 targets a ~28-30 peak so the ball top stays under the camera's
-                                     --   ~32.75 visible top). Still well above pipeClearHeight(13) so rallies sustain.
+                                     --   studs/unit; jv9 -> ~24 peak). BUT jv9 left the centre/King seat too weak to
+                                     --   clear the ball OUTWARD over a pipe (it self-rallied straight up in C). Raised
+                                     --   to 12 (peak ~30-31, ball top ~32-33 ~ the camera's ~32.75 centre top) so the
+                                     --   King reliably clears to the outer ring while the typical arc still stays ~in
+                                     --   view; the rare higher ball going beyond is acceptable (per design).
 GridConfig.botOffCenterFrac = 0.50   -- 0..1: how far off-centre the bot stands, as a fraction of
                                      --   (hitZoneRadius + ballRadius). The stand centre is offset this far on
                                      --   the FAR side of the ball from the aim, so contact is clearly off-centre
@@ -248,6 +251,11 @@ GridConfig.botRestColliderY = 4.5    -- height (studs above the cell floor) of t
 -- would be out of the court (or wouldn't clear the dividing pipe), the bot deterministically STEEPENS the
 -- contact (shrinks the off-centre stand + standoff) and re-predicts, up to botLandPredictIters times -- trading
 -- horizontal reach for a tighter arc that drops inside the aim cell. No Math.random: a fixed correction loop.
+GridConfig.botAimJitterDeg = 12       -- +/- random yaw (degrees) applied to the bot's aim direction each swing so
+                                     --   hits aren't robotically perfect: returns scatter naturally around the
+                                     --   target (sometimes near a cell edge, occasionally nicking a neighbour). The
+                                     --   in-bounds landing forecast still reins in any spill, so this adds life
+                                     --   without spraying it OOB. 0 = perfectly precise; higher = wilder/looser.
 GridConfig.botAimInsetFrac = 0.32    -- 0..1: pull the aim point this fraction of a half-square toward the COURT
                                      --   centre from the aim cell's centre, so the predicted landing sits a margin
                                      --   inside the court boundary (not on the far edge where a small error -> OOB)
@@ -260,10 +268,10 @@ GridConfig.botLandSteepenStep = 0.78 -- per pass, multiply the off-centre offset
                                      --   (lower, longer arc) when the forecast peak would near the ceiling
 GridConfig.botMinOffCenterFrac = 0.34 -- 0..1: FLOOR on the off-centre fraction the steepen pass may shrink to, so
                                      --   the contact keeps enough lateral tilt to steer toward the aim cell
-GridConfig.botLandPeakCap = 28       -- studs: max ball-CENTRE peak height the forecast arc may reach before the
-                                     --   loop flattens the strike. Lowered 40 -> 28 to keep the volley inside the
-                                     --   DEFAULT CAMERA's view: at the zoomed-out court cam the visible top is ~32.75
-                                     --   at centre (dipping to ~27.5 over the far cells), so a ~40 peak (ball top ~42)
+GridConfig.botLandPeakCap = 32       -- studs: max ball-CENTRE peak height the forecast arc may reach before the
+                                     --   loop flattens the strike. A CAMERA bound: at the zoomed-out court cam the
+                                     --   visible top is ~32.75 at centre (dipping to ~27.5 over the far cells), so a
+                                     --   ~40 peak (ball top ~42)
                                      --   sailed 25% above the screen. Cap 28 (ball top ~30) keeps the typical rally on
                                      --   screen; rare overshoots may still poke above the far-cell top -- acceptable.
                                      --   (The gym ceiling at ~49.5 is now far above; this cap is a CAMERA bound, not a
