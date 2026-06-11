@@ -149,3 +149,94 @@ if HudEvent then
 		end
 	end)
 end
+
+-- ── (D) Compact MOBILE stats readout (this task) ───────────────────────────────────────────────────
+-- Best / King Turns / Turns normally show in Roblox's BUILT-IN leaderstats PLAYER LIST (CoreGui, top-right,
+-- opened via the player-list button). On a phone that list is bulky, not freely repositionable, and covers
+-- too much of the narrow portrait play view. So on TOUCH / small (portrait) screens we hide the built-in
+-- list and draw our OWN compact, RIGHT-ANCHORED panel that reads the SAME server-authoritative leaderstats
+-- IntValues live (display only -- no values are computed here). Desktop is unchanged: it keeps the normal
+-- built-in player list and never gets this panel.
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local cam = workspace.CurrentCamera
+
+-- Mobile = a touch session without a keyboard, OR a small/portrait viewport (so a phone-emulated portrait
+-- preview also gets the compact treatment, not just a real touch device). Evaluated once at startup; the
+-- play view's form factor doesn't change mid-session.
+local function isMobile(): boolean
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then return true end
+	local vp = cam and cam.ViewportSize
+	if vp and vp.Y > 0 and (vp.X / vp.Y) <= G.mobileStatsAspectMax then return true end
+	return false
+end
+
+if isMobile() then
+	-- Hide the bulky built-in player list on mobile (it's what covers the play view); our compact panel
+	-- replaces it. pcall: SetCoreGuiEnabled can transiently throw before the CoreGui is ready.
+	pcall(function()
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+	end)
+
+	local STAT_LABELS = { { key = "Best", text = "Best" }, { key = "King Turns", text = "King" }, { key = "Turns", text = "Turns" } }
+	local rowH = G.mobileStatsRowHeight
+	local panelH = rowH * #STAT_LABELS + 8   -- rows + a little vertical padding
+
+	-- Right-anchored, top-right, just below the CoreGui topbar -- out of the central play view and clear of
+	-- the rank pill (top-centre), the camera toggle / stamina bar / Join button (all bottom). IgnoreGuiInset
+	-- is left FALSE so the panel sits under Roblox's top inset on a phone.
+	local statsPanel = Instance.new("Frame")
+	statsPanel.Name = "StatsPanel"; statsPanel.AnchorPoint = Vector2.new(1, 0)
+	statsPanel.Position = UDim2.new(1, -G.mobileStatsMargin, 0, G.mobileStatsMargin)
+	statsPanel.Size = UDim2.fromOffset(G.mobileStatsWidth, panelH)
+	statsPanel.BackgroundColor3 = Color3.fromRGB(20, 22, 28); statsPanel.BackgroundTransparency = 0.25
+	statsPanel.BorderSizePixel = 0; statsPanel.Parent = gui
+	local sCorner = Instance.new("UICorner"); sCorner.CornerRadius = UDim.new(0, 8); sCorner.Parent = statsPanel
+	local sStroke = Instance.new("UIStroke"); sStroke.Thickness = 1
+	sStroke.Color = Color3.fromRGB(120, 220, 255); sStroke.Transparency = 0.5; sStroke.Parent = statsPanel
+	local sPad = Instance.new("UIPadding")
+	sPad.PaddingTop = UDim.new(0, 4); sPad.PaddingBottom = UDim.new(0, 4)
+	sPad.PaddingLeft = UDim.new(0, 8); sPad.PaddingRight = UDim.new(0, 8); sPad.Parent = statsPanel
+	local sLayout = Instance.new("UIListLayout")
+	sLayout.SortOrder = Enum.SortOrder.LayoutOrder; sLayout.Padding = UDim.new(0, 0); sLayout.Parent = statsPanel
+
+	-- Each row: a left-aligned name + a right-aligned value, both compact.
+	local valueLabels: { [string]: TextLabel } = {}
+	for i, spec in ipairs(STAT_LABELS) do
+		local row = Instance.new("Frame")
+		row.LayoutOrder = i; row.BackgroundTransparency = 1
+		row.Size = UDim2.new(1, 0, 0, rowH); row.Parent = statsPanel
+
+		local name = Instance.new("TextLabel")
+		name.BackgroundTransparency = 1; name.AnchorPoint = Vector2.new(0, 0.5)
+		name.Position = UDim2.fromScale(0, 0.5); name.Size = UDim2.fromScale(0.6, 1)
+		name.Font = Enum.Font.GothamMedium; name.TextSize = G.mobileStatsTextSize
+		name.TextXAlignment = Enum.TextXAlignment.Left
+		name.TextColor3 = Color3.fromRGB(180, 190, 205); name.Text = spec.text; name.Parent = row
+
+		local value = Instance.new("TextLabel")
+		value.BackgroundTransparency = 1; value.AnchorPoint = Vector2.new(1, 0.5)
+		value.Position = UDim2.fromScale(1, 0.5); value.Size = UDim2.fromScale(0.4, 1)
+		value.Font = Enum.Font.GothamBold; value.TextSize = G.mobileStatsTextSize
+		value.TextXAlignment = Enum.TextXAlignment.Right
+		value.TextColor3 = Color3.fromRGB(235, 240, 245); value.Text = "-"; value.Parent = row
+		valueLabels[spec.key] = value
+	end
+
+	-- Read the LocalPlayer's leaderstats IntValues (server-owned, replicated) and mirror them into the panel.
+	-- The leaderstats folder is built on the server when this human loads, so we wait for it, then bind each
+	-- value's .Changed so the panel ticks live as the player climbs / holds / rotates.
+	task.spawn(function()
+		local ls = LocalPlayer:WaitForChild("leaderstats", 30)
+		if not ls then return end
+		for _, spec in ipairs(STAT_LABELS) do
+			local iv = ls:WaitForChild(spec.key, 10) :: IntValue?
+			local lbl = valueLabels[spec.key]
+			if iv and lbl then
+				local function sync() lbl.Text = tostring(iv.Value) end
+				sync()
+				iv.Changed:Connect(sync)
+			end
+		end
+	end)
+end

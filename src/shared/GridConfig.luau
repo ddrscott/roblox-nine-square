@@ -547,6 +547,18 @@ GridConfig.statsStoreName = "NineSquareStats"   -- DataStore base name (versione
 GridConfig.statsStoreVersion = "v1"             -- schema/keyspace version -- bump to reset all stats
 GridConfig.statsAutosaveInterval = 120          -- seconds between periodic autosaves of every live human
 
+-- MOBILE STATS HUD (client). On phones the built-in Roblox `leaderstats` PLAYER LIST (CoreGui, top-right,
+-- opened via the player-list button) is heavy and not freely repositionable, and it covers too much of the
+-- portrait play view. So on TOUCH / small (portrait) viewports the client draws its OWN compact, right-
+-- anchored stats readout (Best / King Turns / Turns, read live from the LocalPlayer's leaderstats) instead --
+-- desktop keeps the normal built-in list untouched. These tune that mobile-only panel (display/layout only;
+-- the stat VALUES are server-authoritative and unchanged).
+GridConfig.mobileStatsAspectMax = 1.25          -- treat a viewport with aspect (X/Y) <= this as a "small/portrait" screen that gets the compact HUD (so phone-emulated portrait also triggers, not just real touch)
+GridConfig.mobileStatsWidth = 132               -- px width of the compact right-anchored stats panel
+GridConfig.mobileStatsRowHeight = 22            -- px height per stat row
+GridConfig.mobileStatsMargin = 8                -- px gap from the right/top screen edges (clear of the central play view + the CoreGui topbar)
+GridConfig.mobileStatsTextSize = 13             -- px font size for the compact rows (small but readable on a phone)
+
 -- Is a ball world position OUTSIDE the sane play volume (escaped)? True when it's above the gym ceiling +
 -- margin, below the floor - margin, or its |XZ| (relative to the court origin) is beyond the court's outer
 -- edge + margin. A normal rally never leaves this volume (peak ~32 << ceiling+margin; an OOB landing still
