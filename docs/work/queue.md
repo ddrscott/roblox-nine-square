@@ -1,7 +1,9 @@
 # Work Queue
 
+- [-] Make the green active-grid highlight tighter to the grid + dimmer (subtle) — see [subtle-tight-green-grid-highlight.md](subtle-tight-green-grid-highlight.md)
+- [ ] No double-hit: same player can't hit the ball twice in a row → fault + ragdoll out until the point resets — see [no-double-hit-ragdoll-penalty.md](no-double-hit-ragdoll-penalty.md)
 - [x] Give the bots different colors (palette in GridConfig; keep the King obvious) — see [bots-different-colors.md](bots-different-colors.md)
-- [x] Decorate the game-area walls (gym + playful mix) — decorations MUST fade with the wall (camera occlusion) — see [wall-decoration-gym-playful-fades.md](wall-decoration-gym-playful-fades.md) — code complete (buildWallDecor + wall-fade extended); Studio GridConfig+Client deployed; MatchService deploy + author-into-persisted-Gym + screen-capture verification PENDING (Studio place was closed mid-task — reopen the place + re-run buildWallDecor on Gym to author/verify)
+- [x] Decorate the game-area walls (gym + playful mix) — decorations MUST fade with the wall (camera occlusion) — see [wall-decoration-gym-playful-fades.md](wall-decoration-gym-playful-fades.md) — DONE: MatchService.buildWallDecor + wall-fade extension deployed to Studio; decor authored into the persisted Gym (48 non-colliding parts across WallN/S/E/W, none under NineSquare.Frame); verified the decor fades WITH its wall + reappears when the eye is inside
 - [x] Drop the "Spectating" HUD label; add "Spectators Area" text on the gallery walls — see [spectators-area-wall-sign.md](spectators-area-wall-sign.md)
 - [x] Remove the artificial ball + player shadows (real sun shadows now show position) — keep the strike ring + landing highlight; ensure the ball CastShadow=true — see [remove-fake-shadows-use-real-sun.md](remove-fake-shadows-use-real-sun.md)
 - [x] Slow the ball a little (lower gravity ~0.8x, keep one consistent gravity for serve+bots) so it's easier to contact — see [slow-ball-gravity-easier-contact.md](slow-ball-gravity-easier-contact.md)
