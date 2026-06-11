@@ -40,6 +40,21 @@ GridConfig.impactSoundId = "rbxasset://sounds/snap.mp3"  -- short (~0.42s) percu
 GridConfig.impactSoundVolume = 0.8  -- reasonable level (not blown out)
 GridConfig.impactSoundRange = 90    -- RollOffMaxDistance (studs) the strike is audible within
 GridConfig.impactPitchJitter = 0.12 -- +/- PlaybackSpeed variance per hit for liveliness (0 = no jitter)
+-- Jump SQUEAK SFX: a short squeak played server-side from the JUMPING HUMAN's HumanoidRootPart on EVERY
+-- jump. Server-side (hooked off each character's Humanoid.Jumping in NineSquareServer) so it replicates to
+-- all clients (players + spectators) and is positional (emitted from the jumper, not the ball). Mirrors the
+-- impact-SFX pattern: a Sound template cloned per jump (so rapid jumps don't cut off), parented to the HRP,
+-- Debris-reaped after its tail, with a RANDOM PlaybackSpeed in [jumpSoundPitchMin, jumpSoundPitchMax] each
+-- jump for the "varied play speeds" feel. A short per-character cooldown debounces the repeating Jumping event
+-- (one sound per jump). Scope: HUMANS only (bots jump via a server-driven collider, not a Humanoid jump).
+-- `jumpSoundId` is a PLACEHOLDER built-in rbxasset for now (Scott uploads rubber-squeak.wav, then swaps in the
+-- uploaded rbxassetid:// here -- a ONE-LINE change, no other edits). The built-in placeholder always loads.
+GridConfig.jumpSoundId = "rbxasset://sounds/electronicpingshort.wav"  -- TEMP placeholder (built-in, always loads); swap to Scott's uploaded rubber-squeak.wav asset id
+GridConfig.jumpSoundVolume = 0.7    -- reasonable level (a little under the impact bump)
+GridConfig.jumpSoundRange = 70      -- RollOffMaxDistance (studs) the squeak is audible within
+GridConfig.jumpSoundPitchMin = 0.85 -- min PlaybackSpeed per jump (lower = deeper)  -- random in [min, max] each jump
+GridConfig.jumpSoundPitchMax = 1.2  -- max PlaybackSpeed per jump (higher = squeakier) -> varied playback speed per jump
+GridConfig.jumpSoundDebounce = 0.25 -- seconds per-character cooldown so the repeating Humanoid.Jumping event = ONE sound per jump
 GridConfig.floorRestitution = 0.55  -- ground bounciness: fraction of vertical speed kept per floor bounce
 GridConfig.floorFriction = 0.72     -- horizontal speed kept per floor bounce (so it rolls to a stop)
 GridConfig.restSpeedV = 8           -- settle once a floor bounce would rise slower than this (studs/s)

@@ -128,6 +128,49 @@ bc.onPlayerHit = function(_struckCell, _targetCell, _wasServe)
 	playImpact()
 end
 
+-- JUMP SQUEAK SFX (this task). A short squeak on EVERY human jump, emitted from the JUMPING player at a
+-- VARIED playback speed each jump -- so everyone hears it positionally (mirrors the impact-SFX pattern, but
+-- parented to the jumper's HumanoidRootPart instead of the ball). Server-side: we hook each human character's
+-- `Humanoid.Jumping` (wired in onJoin -> CharacterAdded below) so the Sound replicates to all clients and is
+-- 3D/positional. We CLONE a template per jump (so two quick jumps don't cut each other off), set a RANDOM
+-- PlaybackSpeed in [jumpSoundPitchMin, jumpSoundPitchMax] for the "varied play speeds" feel, and Debris-reap
+-- the clone after its tail. The repeating Humanoid.Jumping event is DEBOUNCED with a short per-character
+-- cooldown (jumpSoundDebounce) so one jump = one sound. Driven by GridConfig.jumpSoundId -- a built-in
+-- placeholder now; swapping in Scott's uploaded rubber-squeak.wav asset id is a one-value change. Bots jump
+-- via a server-driven collider (no Humanoid jump), so they're excluded by design. Audio only -- no physics.
+local jumpTemplate = Instance.new("Sound")
+jumpTemplate.Name = "JumpSound"
+jumpTemplate.SoundId = G.jumpSoundId
+jumpTemplate.Volume = G.jumpSoundVolume
+jumpTemplate.RollOffMaxDistance = G.jumpSoundRange
+jumpTemplate.RollOffMode = Enum.RollOffMode.InverseTapered
+local function playJump(hrp: BasePart)
+	local s = jumpTemplate:Clone()
+	-- Random PlaybackSpeed per jump (the "varied play speeds"): one-shot per jump, so math.random here is fine
+	-- (not a hot per-frame loop like the impact jitter). lerp min..max.
+	s.PlaybackSpeed = G.jumpSoundPitchMin + math.random() * (G.jumpSoundPitchMax - G.jumpSoundPitchMin)
+	s.Parent = hrp
+	s:Play()
+	Debris:AddItem(s, math.max(2, s.TimeLength + 0.5))
+end
+
+-- Hook a single human character's jump: play the squeak from its HRP on each Humanoid.Jumping, debounced to
+-- one-per-jump (the event fires repeatedly while rising). Called per CharacterAdded. Cleans up with the
+-- character (the Humanoid is destroyed on respawn/leave, so the connection drops with it).
+local function hookJumpSound(char: Model)
+	local humanoid = char:WaitForChild("Humanoid", 5)
+	local hrp = char:WaitForChild("HumanoidRootPart", 5)
+	if not (humanoid and humanoid:IsA("Humanoid") and hrp and hrp:IsA("BasePart")) then return end
+	local lastJumpT = 0
+	humanoid.Jumping:Connect(function(active: boolean)
+		if not active then return end                 -- Jumping fires (active=false) when the jump ends too
+		local now = os.clock()
+		if now - lastJumpT < G.jumpSoundDebounce then return end   -- debounce the repeating event -> one sound/jump
+		lastJumpT = now
+		playJump(hrp)
+	end)
+end
+
 -- NOTE: the rally loop (onLand -> fault attribution -> rotation -> next King serve, and onRest -> serve)
 -- is wired below, AFTER the RotationService exists -- it needs `rotation` and `serveNextRally`.
 
@@ -686,9 +729,10 @@ local function onJoin(plr: Player)
 	-- M5.6 HUD feed: welcome the watcher + tell the table someone is in the lobby.
 	fireHud(plr, "join", "Watching from the gallery \u{2014} tap Join Game to play", "neutral")
 	broadcastHud("join", plr.DisplayName .. " is watching from the gallery", "neutral")
-	-- Bind this player's character to its seat on (re)spawn.
-	if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
-	plr.CharacterAdded:Connect(function(char) placeAtCourtAndSync(plr, char) end)
+	-- Bind this player's character to its seat on (re)spawn, and hook its jump squeak (this task) -- the
+	-- Humanoid.Jumping handler plays the positional jump sound from the HRP for every jump (debounced).
+	if plr.Character then placeAtCourtAndSync(plr, plr.Character); hookJumpSound(plr.Character) end
+	plr.CharacterAdded:Connect(function(char) placeAtCourtAndSync(plr, char); hookJumpSound(char) end)
 end
 
 local function onLeave(plr: Player)
