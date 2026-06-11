@@ -88,7 +88,7 @@ function BallController.new()
 	ball.Color = Color3.fromRGB(235, 92, 74); ball.Material = Enum.Material.Plastic
 	ball.Parent = workspace:WaitForChild("NineSquare")
 	self.ball = ball
-	self.gravity = workspace.Gravity
+	self.gravity = workspace.Gravity * G.ballGravityScale  -- scaled effective gravity (slower/floatier ball; ONE g read by step, bot forecast, descent solves + serve)
 	self.phase = "Live"                 -- Live (hover) | Flight (rally) | Settling (post-land bounce) | Rest
 	self.restPoint = G.cellFramePoint("C")
 	self.p0 = self.restPoint

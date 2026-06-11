@@ -444,7 +444,7 @@ local function serveToTarget(targetCell: string)
 	local from = G.cellFramePoint("C")
 	local landCenter = G.cellCenter(targetCell)
 	local to = Vector3.new(landCenter.X, G.ballRadius, landCenter.Z)  -- the floor-resting point in the target square
-	local g = workspace.Gravity
+	local g = bc.gravity   -- the ball's SCALED effective gravity (ballGravityScale) so the serve arc matches BallController:step (no desync)
 	-- Peak height above the launch point so the ball clearly arcs up over the frame and drops in.
 	local peakY = from.Y + G.serveArcApex
 	local rise = math.max(peakY - from.Y, 1)

@@ -18,6 +18,16 @@ GridConfig.showHitSphere = true     -- debug: render the local player's contact 
 GridConfig.hitZoneYOffset = 0       -- contact sphere offset above the Head part (0 = centred on the head)
                                     --   reach at std-jump apex ~= Head_Y + yOffset + radius + ballRadius
                                     --   ~= (7.2 + ~1.5) + 0 + 1.6 + 2 ~= 12.3 >= frameHeight(11): still hittable
+-- Ball effective GRAVITY scale (slower / floatier ball -> easier to get under + time a hit). The ball's
+-- gravity is `workspace.Gravity * ballGravityScale` (BallController.new). LOWER g = slower vertical motion +
+-- MORE HANG TIME (and higher/longer arcs), so a player can position under the ball and time the strike. The
+-- ball stays a clean ANALYTIC projectile (p0 + v0*t - 1/2*g*t^2) -- NO per-step air drag, which would break
+-- the closed-form trajectory math the bot forecast (_forecast/_descentTimeToHeight) and the serve solve all
+-- depend on. CRITICAL: ONE gravity everywhere -- BallController:step, the bot's descent/forecast solves, and
+-- the King serve (serveToTarget) ALL read this scaled `bc.gravity`, so they re-solve consistently (no desync).
+-- Kept MODEST (0.8 = "a little") so the higher arc stays ~within the default camera view + bots still land
+-- in-court; if the peak rises too far, nudge botJumpVelocity / humanHitForceMult down or raise this toward 1.0.
+GridConfig.ballGravityScale = 0.8   -- multiplier on workspace.Gravity for the ball (1.0 = unchanged; <1 = slower/floatier, more hang time)
 GridConfig.ballRestitution = 0.6    -- PASSIVE bounce: how much of the ball's own incoming speed it keeps
                                     --   off a still player. <= 1 so a motionless player NEVER adds energy
                                     --   (the ball rebounds slower than it arrived, like any surface).
