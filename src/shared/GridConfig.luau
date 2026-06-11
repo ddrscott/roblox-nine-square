@@ -199,7 +199,7 @@ GridConfig.botContactBand = 3        -- studs around frameHeight that count as t
 -- human's, so the existing swept, velocity-proportional collision (`strikeVelocity`) resolves the bot hit.
 -- The aim emerges from the off-center contact: the bot stands on the FAR side of the ball from its aim cell
 -- so `n = unit(ball - center)` points toward the aim; the jump velocity supplies the force.
-GridConfig.botJumpVelocity = 16      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
+GridConfig.botJumpVelocity = 9       -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
                                      --   contact -> the velocity-proportional strike (hitGain) turns this into
                                      --   outgoing ball speed (paired with the off-center normal for the aim).
                                      --   60 sprayed every return out of bounds; 28 kept the strike inside the
@@ -214,6 +214,10 @@ GridConfig.botJumpVelocity = 16      -- upward speed (studs/s) the bot drives it
                                      --   20 that cycle peaked ~47.5 (ball top ~49.5, grazing the ceiling); 16 drops the
                                      --   cycle so the botLandPeakCap can hold the peak well under the ceiling while the
                                      --   strike still clears the pipe + sustains the rally.
+                                     --   Lowered 16 -> 9 to bring the rally arc inside the DEFAULT CAMERA's view (the
+                                     --   limit-cycle peak scales with this drive: jv20->peak~47.5, jv16->~41, ~1.6
+                                     --   studs/unit; jv9 targets a ~28-30 peak so the ball top stays under the camera's
+                                     --   ~32.75 visible top). Still well above pipeClearHeight(13) so rallies sustain.
 GridConfig.botOffCenterFrac = 0.50   -- 0..1: how far off-centre the bot stands, as a fraction of
                                      --   (hitZoneRadius + ballRadius). The stand centre is offset this far on
                                      --   the FAR side of the ball from the aim, so contact is clearly off-centre
@@ -256,10 +260,15 @@ GridConfig.botLandSteepenStep = 0.78 -- per pass, multiply the off-centre offset
                                      --   (lower, longer arc) when the forecast peak would near the ceiling
 GridConfig.botMinOffCenterFrac = 0.34 -- 0..1: FLOOR on the off-centre fraction the steepen pass may shrink to, so
                                      --   the contact keeps enough lateral tilt to steer toward the aim cell
-GridConfig.botLandPeakCap = 40       -- studs: max ball-CENTRE peak height the forecast arc may reach before the
-                                     --   loop flattens the strike. The gym ceiling is at ~49.5; with ballRadius 2
-                                     --   the ball TOP peaks ~cap+2, so 40 leaves ~7.5 studs of clearance -- the
-                                     --   ceiling fix holds with real margin (the runaway used to graze it at 47.5).
+GridConfig.botLandPeakCap = 28       -- studs: max ball-CENTRE peak height the forecast arc may reach before the
+                                     --   loop flattens the strike. Lowered 40 -> 28 to keep the volley inside the
+                                     --   DEFAULT CAMERA's view: at the zoomed-out court cam the visible top is ~32.75
+                                     --   at centre (dipping to ~27.5 over the far cells), so a ~40 peak (ball top ~42)
+                                     --   sailed 25% above the screen. Cap 28 (ball top ~30) keeps the typical rally on
+                                     --   screen; rare overshoots may still poke above the far-cell top -- acceptable.
+                                     --   (The gym ceiling at ~49.5 is now far above; this cap is a CAMERA bound, not a
+                                     --   ceiling bound.) Paired with the lower botJumpVelocity so the natural limit
+                                     --   cycle already sits near here and the flatten loop only trims overshoot.
 
 -- Lifelike bot idle motion (idle ready-stance + anticipatory ball tracking). Every bot that is NOT the
 -- active receiver (no live swing) gets a cheap, deterministic "alive" motion centred on its home stand:
