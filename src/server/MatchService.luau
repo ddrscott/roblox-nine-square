@@ -399,14 +399,17 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 
 	-- A flat cosmetic panel placed in a wall's plane. `axis` is "X" or "Z" (the wall's normal axis); `face`
 	-- is +/-1 (which way the interior face points); `u`/`v` are along-wall horizontal + vertical world coords.
-	-- For a Z-wall: world = (u, v, wallZ - face*off ... ); thickness runs along the normal axis. Returns the part.
+	-- For a Z-wall: world = (u, v, wallZ + face*off ... ); thickness runs along the normal axis. Returns the part.
+	-- NOTE: `face` is the INWARD direction (toward the court/origin) for the wall, so we ADD face*off to push the
+	-- decor OFF the interior face INTO the room (toward the court). A SUBTRACT here would bury the decor on the
+	-- EXTERIOR (park) side, behind the opaque wall, where players inside the gym can never see it.
 	local function decorPart(parent: Instance, name: string, axis: string, face: number, wallPlane: number,
 		u: number, v: number, longU: number, longV: number, thick: number, color: Color3, mat: Enum.Material)
 		local p = Instance.new("Part"); p.Anchored = true; p.Name = name
 		p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
 		p.Color = color; p.Material = mat
 		p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
-		local planePos = wallPlane - face * (off + thick / 2)   -- centre pushed off the face into the room by off
+		local planePos = wallPlane + face * (off + thick / 2)   -- centre pushed off the interior face INTO the room (toward court) by off
 		if axis == "Z" then
 			p.Size = Vector3.new(longU, longV, thick)
 			p.Position = Vector3.new(u, v, planePos)
@@ -426,7 +429,7 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 		local sg = Instance.new("SurfaceGui"); sg.Name = "DecorGui"
 		sg.Face = normalId
 		sg.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-		sg.PixelsPerStud = 24; sg.LightInfluence = 0.3
+		sg.PixelsPerStud = 24; sg.LightInfluence = 0   -- self-lit text so the bright gym PointLights/bloom don't wash it out from the court
 		sg.Adornee = part; sg.Parent = part
 		local lbl = Instance.new("TextLabel"); lbl.Name = "Text"
 		lbl.BackgroundTransparency = 1
@@ -449,7 +452,7 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 			w.CanCollide = false; w.CanQuery = false; w.CanTouch = false; w.CastShadow = false
 			w.Color = col; w.Material = Enum.Material.SmoothPlastic
 			w.Size = Vector3.new(0.2, 3.0, 2.0)   -- thin, pointing down (wedge slopes to a tip)
-			local planePos = wallPlane - face * (off + 0.2)
+			local planePos = wallPlane + face * (off + 0.2)
 			-- orient the wedge flat against the wall, point hanging down
 			local pos, rot
 			if axis == "Z" then
@@ -489,7 +492,8 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 		buildPadding(folder, "Z", face, wallZ, origin.X - hx + 3, origin.X + hx - 3)
 		-- Scoreboard-style sign (centred high). Dark body with amber LED text + a sub-line.
 		local sb = decorPart(folder, "Scoreboard", "Z", face, wallZ, origin.X, 38, 22, 9, 0.6, G.wallDecorScoreboardFill, Enum.Material.SmoothPlastic)
-		local top = decorLabel(sb, Enum.NormalId.Front, G.wallDecorScoreboardText, G.wallDecorScoreboardText3, Enum.Font.GothamBlack, true)
+		-- WallN interior face points +Z = the part's Back face (Roblox NormalId.Back = +Z); Front (-Z) would face the park.
+		local top = decorLabel(sb, Enum.NormalId.Back, G.wallDecorScoreboardText, G.wallDecorScoreboardText3, Enum.Font.GothamBlack, true)
 		top.Size = UDim2.fromScale(0.86, 0.5); top.Position = UDim2.fromScale(0.5, 0.32)
 		local subGui = sb:FindFirstChild("DecorGui")
 		local sub = Instance.new("TextLabel"); sub.Name = "Sub"; sub.BackgroundTransparency = 1
@@ -505,7 +509,7 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 		faceP.Shape = Enum.PartType.Cylinder
 		faceP.CFrame = CFrame.new(faceP.Position) * CFrame.Angles(0, math.rad(90), 0)
 		-- two clock hands (thin dark blocks) over the face
-		local hourPos = Vector3.new(origin.X - 22, 39.4, wallZ - face * (off + 0.45))
+		local hourPos = Vector3.new(origin.X - 22, 39.4, wallZ + face * (off + 0.45))
 		local h = Instance.new("Part"); h.Anchored = true; h.Name = "ClockHandHour"
 		h.CanCollide = false; h.CanQuery = false; h.CanTouch = false; h.CastShadow = false
 		h.Size = Vector3.new(0.4, 2.2, 0.15); h.Color = G.wallDecorClockRim; h.Material = Enum.Material.SmoothPlastic
@@ -513,7 +517,7 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 		local m = Instance.new("Part"); m.Anchored = true; m.Name = "ClockHandMin"
 		m.CanCollide = false; m.CanQuery = false; m.CanTouch = false; m.CastShadow = false
 		m.Size = Vector3.new(2.8, 0.4, 0.15); m.Color = G.wallDecorClockRim; m.Material = Enum.Material.SmoothPlastic
-		m.Position = Vector3.new(origin.X - 22 + 1.2, 38, wallZ - face * (off + 0.45)); m.Parent = folder
+		m.Position = Vector3.new(origin.X - 22 + 1.2, 38, wallZ + face * (off + 0.45)); m.Parent = folder
 		-- pennant bunting strung high across the wall
 		buildBunting(folder, "Z", face, wallZ, origin.X - hx + 5, origin.X + hx - 5, 46, 12)
 	end)
@@ -528,14 +532,15 @@ function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, 
 		for i = 1, 3 do
 			local bx = origin.X + (i - 2) * 20   -- -20, 0, +20
 			local b = decorPart(folder, "Banner_" .. i, "Z", face, wallZ, bx, 38, 8, 18, 0.5, G.wallDecorBannerColor, Enum.Material.Fabric)
-			local lbl = decorLabel(b, Enum.NormalId.Back, G.wallDecorBannerLabels[(i - 1) % #G.wallDecorBannerLabels + 1], G.wallDecorBannerText, Enum.Font.GothamBold, true)
+			-- WallS interior face points -Z = the part's Front face (Roblox NormalId.Front = -Z); Back (+Z) would face the park.
+			local lbl = decorLabel(b, Enum.NormalId.Front, G.wallDecorBannerLabels[(i - 1) % #G.wallDecorBannerLabels + 1], G.wallDecorBannerText, Enum.Font.GothamBold, true)
 			lbl.Size = UDim2.fromScale(0.8, 0.9)
 			-- a little pointed pennant tail under each banner (wedge)
 			local tail = Instance.new("WedgePart"); tail.Anchored = true; tail.Name = "BannerTail_" .. i
 			tail.CanCollide = false; tail.CanQuery = false; tail.CanTouch = false; tail.CastShadow = false
 			tail.Color = G.wallDecorBannerColor; tail.Material = Enum.Material.Fabric
 			tail.Size = Vector3.new(8, 3.5, 0.4)
-			tail.CFrame = CFrame.new(Vector3.new(bx, 28.3, wallZ - face * (off + 0.25))) * CFrame.Angles(math.rad(180), 0, 0)
+			tail.CFrame = CFrame.new(Vector3.new(bx, 28.3, wallZ + face * (off + 0.25))) * CFrame.Angles(math.rad(180), 0, 0)
 			tail.Parent = folder
 		end
 	end)
