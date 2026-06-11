@@ -1,5 +1,7 @@
 # Work Queue
 
+- [-] HUD refactor (standard + Studio-editable): StarterGui-authored, layout-driven, responsive, component-based — subsumes the corner-polish — see [hud-refactor-standard-studio-editable.md](hud-refactor-standard-studio-editable.md)
+- [~] Polish top-right cluster: readable STAMINA / less-bold Join / Spectating-as-label — SUPERSEDED by the HUD refactor (folded in) — see [fix-right-cluster-stamina-join-spectating.md](fix-right-cluster-stamina-join-spectating.md)
 - [x] Cut the HUMAN player's ball-impact force ~30% (too easy to launch OOB) — human-only mult in HitResolver, don't touch shared hitGain/bots — see [cut-human-hit-force-30pct.md](cut-human-hit-force-30pct.md)
 - [x] Shrink the seated "Leave → Spectate" button to a small unobtrusive button labeled just "Spectate" (don't promote leaving the game) — in src/client/NineSquareClient.client.luau lobby UI; verify seated state via screen_capture; Studio left in Edit
 - [x] Re-imagine the HUD: minimal + consistent (stats = Turns + TAK; drop rank-change toasts + rank pill; transient messaging) — see [hud-reimagine-minimal-consistent.md](hud-reimagine-minimal-consistent.md)
