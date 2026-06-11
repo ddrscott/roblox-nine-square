@@ -283,18 +283,17 @@ end
 
 local currentFocus: Vector3? = nil
 local function updateCamera()
-	cam.CameraType = Enum.CameraType.Scriptable
-	cam.FieldOfView = G.camBaseFOV
-	-- SPECTATOR (M5.2): a fixed high court-overlook looking straight down at the whole 9-square, so an
-	-- overflow player watches the match while they wait. (The mezzanine gallery view is M5.3; this is the
-	-- temporary overlook.) Eases via currentFocus so flipping in/out of spectator mode glides smoothly.
+	-- SPECTATOR / LOBBY: hand the camera to Roblox's default third-person (Custom) so a watching player can
+	-- ROAM the upper foyer freely + look around. The server spawns them FACING the court centre, so the
+	-- default camera starts looking toward the play area. The scripted court/follow camera below is for SEATED
+	-- players only (it's court-tuned + flattens focus to court height, which is wrong for a gallery roamer).
 	if isSpectating() then
-		local o = courtOrigin()
-		currentFocus = currentFocus and currentFocus:Lerp(o, G.camFollowSmooth) or o
-		local focus = currentFocus :: Vector3
-		cam.CFrame = CFrame.lookAt(focus + G.specOverlookEye, focus + G.specOverlookLook)
+		cam.CameraType = Enum.CameraType.Custom
+		currentFocus = nil   -- reset the eased focus so seating later glides from a fresh court target
 		return
 	end
+	cam.CameraType = Enum.CameraType.Scriptable
+	cam.FieldOfView = G.camBaseFOV
 	local target, farEye, farLook, nearEye, nearLook
 	local char = LocalPlayer.Character
 	local hrp = followMode and char and char:FindFirstChild("HumanoidRootPart")

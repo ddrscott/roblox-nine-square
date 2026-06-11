@@ -226,7 +226,11 @@ local function parkSpectator(plr: Player)
 	local char = plr.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if hrp and hrp:IsA("BasePart") then
-		hrp.CFrame = CFrame.new(G.origin + G.specSpawnOffset)
+		local pos = G.origin + G.specSpawnOffset
+		-- Face the court centre (horizontally) so the default (Custom) spectator camera starts looking toward
+		-- the play area. The gallery bench is decorative (its seats are disabled), so the player can roam freely.
+		local lookAt = Vector3.new(G.origin.X, pos.Y, G.origin.Z)
+		hrp.CFrame = (pos - lookAt).Magnitude > 1e-3 and CFrame.lookAt(pos, lookAt) or CFrame.new(pos)
 	end
 end
 

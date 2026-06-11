@@ -544,6 +544,11 @@ function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L:
 			-- opening (look -Z, toward the court) so seated spectators look at the match.
 			local lift = benchTemplate:GetAttribute("FootToPivotY") or 0
 			local b = benchTemplate:Clone(); b.Name = "GalBench"
+			-- The bench is DECOR only: disable its seats so a roaming spectator never auto-sits on spawn (which
+			-- left them stuck unable to walk). Spectators roam the foyer freely.
+			for _, d in ipairs(b:GetDescendants()) do
+				if d:IsA("Seat") or d:IsA("VehicleSeat") then d.Disabled = true end
+			end
 			b:PivotTo(CFrame.new(origin + Vector3.new(bx * 16, floorTop + lift, benchZ)) * CFrame.Angles(0, math.pi, 0))
 			b.Parent = gallery
 		else
