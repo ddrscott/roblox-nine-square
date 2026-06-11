@@ -208,6 +208,55 @@ GridConfig.spectatorsAreaFont = Enum.Font.GothamBold
 GridConfig.spectatorsAreaTextScaled = true          -- scale text to the SurfaceGui rect (legible at distance)
 
 -- ============================================================================================
+-- GYM INTERIOR WALL DECORATIONS (gym + playful "rec-center" mix). The four gym walls (WallN/WallS/WallE/
+-- WallW) around the court were bare; this decorates their INTERIOR faces with a tasteful mix -- gym/sporty
+-- (a scoreboard-style sign, a wall clock, championship banners, base wall-padding trim, a sports poster)
+-- AND playful (bright color-blocking mural panels, fun posters, colorful pennant bunting). Built once in
+-- MatchService.buildWallDecor (called from buildGym) + a one-time MCP pass on the persisted Gym so it shows
+-- now. Every decoration piece is COSMETIC ONLY: CanCollide=false + CanQuery=false + CanTouch=false, sits
+-- just off the wall face toward the court (NOT in the play volume), and lives in a `Decor` FOLDER parented
+-- UNDER that wall's part -- so it is NOT under NineSquare.Frame (never enters the ball/player collision sets)
+-- and the camera wall-fade can find + fade it WITH the wall (see NineSquareClient.updateWallFade: when a wall
+-- is obstructing it also lerps that wall's Decor descendants -- BaseParts -> Transparency, Decal/Texture ->
+-- .Transparency, SurfaceGui labels -> Text/ImageTransparency -- so banners/clock/posters never float in view).
+-- Tunables below (colours, offsets, copy) so the look is editable without hand-editing Studio.
+-- ============================================================================================
+GridConfig.wallDecorEnabled = true            -- master switch: build the gym wall decorations (false = skip entirely)
+GridConfig.wallDecorOffset = 0.5              -- studs a flat decoration sits OFF the wall face toward the court (clears the 0.8-thick wall, no z-fight; far short of the play volume)
+GridConfig.wallDecorPadHeight = 4             -- studs tall: the base wall-padding trim strip along the bottom of each wall (gym safety-pad look)
+GridConfig.wallDecorPadColor = Color3.fromRGB(40, 70, 130)     -- gym wall-pad blue (the classic navy gym crash-pad)
+GridConfig.wallDecorPadAccent = Color3.fromRGB(225, 170, 60)   -- a warm accent stripe along the pad top (rec-center pop)
+-- Color-blocking MURAL palette (playful) -- a row of bright flat panels painted on a wall (WallE) for a
+-- rec-center vibe. Cycled in order across the panels.
+GridConfig.wallDecorMuralColors = {
+	Color3.fromRGB(235, 90, 90),    -- red
+	Color3.fromRGB(245, 170, 55),   -- orange
+	Color3.fromRGB(95, 185, 110),   -- green
+	Color3.fromRGB(70, 150, 225),   -- blue
+	Color3.fromRGB(170, 110, 210),  -- purple
+}
+-- Pennant BUNTING palette (playful) -- a string of little triangular flags hung high on a wall. Cycled.
+GridConfig.wallDecorPennantColors = {
+	Color3.fromRGB(235, 90, 90),
+	Color3.fromRGB(245, 200, 70),
+	Color3.fromRGB(95, 185, 110),
+	Color3.fromRGB(70, 150, 225),
+	Color3.fromRGB(235, 120, 200),
+}
+GridConfig.wallDecorScoreboardText = "9 SQUARE"          -- gym scoreboard-style sign copy (top line)
+GridConfig.wallDecorScoreboardSub = "REC CENTER"         -- scoreboard sub-line
+GridConfig.wallDecorScoreboardFill = Color3.fromRGB(22, 26, 34)     -- dark scoreboard body
+GridConfig.wallDecorScoreboardText3 = Color3.fromRGB(255, 196, 64)  -- amber scoreboard LED text
+GridConfig.wallDecorBannerColor = Color3.fromRGB(120, 30, 40)       -- deep maroon championship banner felt
+GridConfig.wallDecorBannerText = Color3.fromRGB(245, 224, 150)      -- gold banner lettering
+GridConfig.wallDecorBannerLabels = { "CHAMPIONS", "2024", "2025" }  -- championship banner captions (cycled)
+GridConfig.wallDecorClockFace = Color3.fromRGB(245, 245, 240)       -- gym wall-clock face
+GridConfig.wallDecorClockRim = Color3.fromRGB(30, 34, 42)           -- clock rim/bezel
+GridConfig.wallDecorPosterText = "PLAY FAIR\nHAVE FUN"              -- playful motivational poster copy
+GridConfig.wallDecorPosterFill = Color3.fromRGB(250, 248, 240)      -- poster paper
+GridConfig.wallDecorPosterAccent = Color3.fromRGB(70, 150, 225)     -- poster accent / text
+
+-- ============================================================================================
 -- BALL ESCAPE / WEDGE SAFETY GUARDS. A degenerate surface reflection (the ball trapped inside a
 -- pipe/corner overlap, a near-zero/NaN contact normal, or repeated reflections in one frame) was
 -- observed to produce a RUNAWAY ball velocity that rocketed it to a huge Y (~13,072 studs). Because the

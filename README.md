@@ -178,6 +178,22 @@ M3 loop / rank HUD / camera are unchanged.
     `PrimaryPart` so it grounds + scales cleanly). `buildOutdoors` falls back to a simple code tree (trunk +
     foliage spheres) if the template is absent — so the build is robust either way. **To keep the nicer trees,
     `ReplicatedStorage.OutdoorTreeTemplate` must persist in the place.**
+- **Gym wall decorations (gym + playful rec-center mix) that fade with the wall**: `MatchService.buildWallDecor`
+  (called from `buildGym`, build-once + a one-time MCP pass on the persisted `Gym`) decorates the bare interior
+  faces of the four gym walls with a tasteful **gym/sporty + playful** mix — a **scoreboard-style sign** + a
+  **wall clock** + **pennant bunting** (`WallN`), **championship banners** (`WallS`, kept high above the
+  basketball hoop), a bright **color-blocking mural** + a poster (`WallE`, clear of the window gap), and
+  **pennant bunting** + a poster + base **wall-padding trim** (`WallW`/others). Every piece is **cosmetic only**:
+  `CanCollide=false` + `CanQuery=false` + `CanTouch=false`, sits a hair off the wall face toward the court
+  (`GridConfig.wallDecorOffset`, far short of the play volume), and lives in a **`WallDecor` folder parented
+  UNDER that wall's part** — so it is **NOT** under `NineSquare.Frame` (never enters the ball/player collision
+  sets) **and** the camera **wall-fade can find + fade it WITH the wall**. `NineSquareClient.updateWallFade` was
+  extended so when a wall is obstructing it also lerps that wall's `WallDecor` descendants toward the same goal
+  (BaseParts → `Transparency`, `Decal`/`Texture` → `.Transparency`, SurfaceGui labels → `TextTransparency`/
+  `ImageTransparency`) — so the whole decorated wall (structure + banners + clock + posters + signs) vanishes /
+  returns together and **nothing floats in view** when the wall is gone. Colours, offsets and copy are
+  `GridConfig` tunables (`wallDecor*`); set `wallDecorEnabled = false` to skip. All built from code (no
+  creator-store assets required), so nothing extra needs to persist for the decorations.
 
 ## M5 — multiplayer + lobby
 

@@ -324,6 +324,26 @@ local function wallPrefixOf(name: string): string?
 	end
 	return nil
 end
+-- Fade a wall's DECORATIONS along with the wall. Each decorated wall part carries a child `WallDecor` folder
+-- (built in MatchService.buildWallDecor) holding cosmetic banners/clock/scoreboard/posters/mural/pennants. The
+-- decor sits ON the wall face, so when the wall fades out (camera crossed outside it) the decor MUST vanish too
+-- or it floats in view. We lerp every visual in the folder toward the SAME goal as the wall: BaseParts ->
+-- Transparency; Decal/Texture -> .Transparency; SurfaceGui labels -> Text/ImageTransparency. (The glass panes +
+-- ball barriers are NOT under a WallDecor folder, so they keep their own resting transparency, untouched.)
+local function fadeDecor(folder: Instance, goal: number, k: number)
+	for _, d in ipairs(folder:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Transparency = d.Transparency + (goal - d.Transparency) * k
+		elseif d:IsA("Decal") or d:IsA("Texture") then
+			d.Transparency = d.Transparency + (goal - d.Transparency) * k
+		elseif d:IsA("TextLabel") or d:IsA("TextButton") then
+			-- the decor labels are background-transparent; fade the glyphs with the wall
+			d.TextTransparency = d.TextTransparency + (goal - d.TextTransparency) * k
+		elseif d:IsA("ImageLabel") or d:IsA("ImageButton") then
+			d.ImageTransparency = d.ImageTransparency + (goal - d.ImageTransparency) * k
+		end
+	end
+end
 local function updateWallFade(dt: number)
 	local gym = workspace:FindFirstChild("Gym")
 	if not gym then return end
@@ -339,6 +359,9 @@ local function updateWallFade(dt: number)
 				local obstructing = (eye[comp] - part.Position[comp]) * sign > -G.camWallFadeMargin
 				local goal = obstructing and G.camWallFadeTransparency or 0
 				part.Transparency = part.Transparency + (goal - part.Transparency) * k
+				-- fade this wall's decorations (if any) WITH the wall so nothing floats in view
+				local decor = part:FindFirstChild("WallDecor")
+				if decor then fadeDecor(decor, goal, k) end
 			end
 		end
 	end

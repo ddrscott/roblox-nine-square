@@ -263,6 +263,15 @@ function MatchService.buildGym(origin: Vector3)
 		end
 	end
 
+	-- ---- GYM INTERIOR WALL DECORATIONS (gym + playful "rec-center" mix) ---------------------------
+	-- Decorate the bare interior faces of the four gym walls (scoreboard sign, wall clock, championship
+	-- banners, base wall-padding trim, sports/playful posters, color-blocking mural, pennant bunting). Each
+	-- wall's decorations live in a `Decor` FOLDER parented UNDER that wall's part, so they are NOT under
+	-- NineSquare.Frame (out of the ball/player collision sets) AND the camera wall-fade fades them WITH the
+	-- wall (NineSquareClient.updateWallFade walks each wall's Decor descendants). Cosmetic only, off the wall
+	-- face toward the court but well short of the play volume. Build-once + a one-time MCP pass on the persisted Gym.
+	MatchService.buildWallDecor(gym, origin, W, L, H)
+
 	-- ---- M5.3 UPPER-FLOOR SPECTATOR GALLERY -------------------------------------------------------
 	-- A second level above the gym ceiling with a RING floor (opening over the court), short perimeter
 	-- walls, a roof, a spectator spawn, a railing around the opening, and creator-store decor. Spectators
@@ -369,6 +378,201 @@ function MatchService.buildWindowedWall(gym: Instance, origin: Vector3, prefix: 
 	guard.Locked = true
 	guard.Parent = gym
 	return gym
+end
+
+-- Decorate the interior faces of the four gym walls with a gym + playful "rec-center" mix. Idempotent: each
+-- wall's decorations live in a `Decor` FOLDER named "WallDecor" parented UNDER that wall's anchor part, and
+-- this function rebuilds a wall's Decor folder fresh only if it's MISSING -- so it runs build-once in buildGym
+-- AND as a one-time MCP pass on a persisted Gym (existing folders are preserved). Parenting Decor UNDER the
+-- wall part means it's NOT under NineSquare.Frame (out of the ball/player collision sets) and the camera
+-- wall-fade can find + fade it WITH the wall (NineSquareClient.updateWallFade walks each wall's Decor
+-- descendants). Every piece is CanCollide=false + CanQuery=false + CanTouch=false and sits a hair off the wall
+-- face toward the court (G.wallDecorOffset), far short of the play volume.
+--
+-- Per wall (interior face toward the court): an anchor part holds the Decor folder; flat decorations are
+-- placed in the wall's local plane. The wall normals: WallN(z=-hz) faces +Z, WallS(z=+hz) faces -Z,
+-- WallE(x=+hx) faces -X, WallW(x=-hx) faces +X.
+function MatchService.buildWallDecor(gym: Instance, origin: Vector3, W: number, L: number, H: number)
+	if not G.wallDecorEnabled then return end
+	local hx, hz = W / 2, L / 2
+	local off = G.wallDecorOffset
+
+	-- A flat cosmetic panel placed in a wall's plane. `axis` is "X" or "Z" (the wall's normal axis); `face`
+	-- is +/-1 (which way the interior face points); `u`/`v` are along-wall horizontal + vertical world coords.
+	-- For a Z-wall: world = (u, v, wallZ - face*off ... ); thickness runs along the normal axis. Returns the part.
+	local function decorPart(parent: Instance, name: string, axis: string, face: number, wallPlane: number,
+		u: number, v: number, longU: number, longV: number, thick: number, color: Color3, mat: Enum.Material)
+		local p = Instance.new("Part"); p.Anchored = true; p.Name = name
+		p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+		p.Color = color; p.Material = mat
+		p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+		local planePos = wallPlane - face * (off + thick / 2)   -- centre pushed off the face into the room by off
+		if axis == "Z" then
+			p.Size = Vector3.new(longU, longV, thick)
+			p.Position = Vector3.new(u, v, planePos)
+		else
+			p.Size = Vector3.new(thick, longV, longU)
+			p.Position = Vector3.new(planePos, v, u)
+		end
+		p.Parent = parent
+		return p
+	end
+
+	-- A SurfaceGui label on the interior face of a decor part. `normalId` is the part face pointing into the
+	-- room. Returns the TextLabel so the caller can tweak it. The SurfaceGui + label fade with the wall (the
+	-- client lerps SurfaceGui label Text/ImageTransparency under a Decor folder).
+	local function decorLabel(part: BasePart, normalId: Enum.NormalId, text: string, color: Color3,
+		font: Enum.Font, scaled: boolean): TextLabel
+		local sg = Instance.new("SurfaceGui"); sg.Name = "DecorGui"
+		sg.Face = normalId
+		sg.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		sg.PixelsPerStud = 24; sg.LightInfluence = 0.3
+		sg.Adornee = part; sg.Parent = part
+		local lbl = Instance.new("TextLabel"); lbl.Name = "Text"
+		lbl.BackgroundTransparency = 1
+		lbl.AnchorPoint = Vector2.new(0.5, 0.5); lbl.Position = UDim2.fromScale(0.5, 0.5)
+		lbl.Size = UDim2.fromScale(0.92, 0.84)
+		lbl.Font = font; lbl.TextScaled = scaled; lbl.TextColor3 = color
+		lbl.TextWrapped = true; lbl.Text = text
+		lbl.Parent = sg
+		return lbl
+	end
+
+	-- Pennant BUNTING: a row of small triangular flags (wedge parts) hung high along a wall, alternating colours.
+	local function buildBunting(parent: Instance, axis: string, face: number, wallPlane: number,
+		uStart: number, uEnd: number, v: number, count: number)
+		local span = uEnd - uStart
+		for i = 0, count - 1 do
+			local u = uStart + (span * (i + 0.5) / count)
+			local col = G.wallDecorPennantColors[(i % #G.wallDecorPennantColors) + 1]
+			local w = Instance.new("WedgePart"); w.Anchored = true; w.Name = "Pennant_" .. i
+			w.CanCollide = false; w.CanQuery = false; w.CanTouch = false; w.CastShadow = false
+			w.Color = col; w.Material = Enum.Material.SmoothPlastic
+			w.Size = Vector3.new(0.2, 3.0, 2.0)   -- thin, pointing down (wedge slopes to a tip)
+			local planePos = wallPlane - face * (off + 0.2)
+			-- orient the wedge flat against the wall, point hanging down
+			local pos, rot
+			if axis == "Z" then
+				pos = Vector3.new(u, v, planePos)
+				rot = CFrame.Angles(math.rad(180), 0, 0)   -- flip so the slope hangs down
+			else
+				pos = Vector3.new(planePos, v, u)
+				rot = CFrame.Angles(math.rad(180), math.rad(90), 0)
+			end
+			w.CFrame = CFrame.new(pos) * rot
+			w.Parent = parent
+		end
+	end
+
+	-- Get-or-create a wall's Decor folder under its anchor part, build into it via `build`, only if missing.
+	local function ensureDecor(anchorName: string, build: (Folder, BasePart) -> ())
+		local anchor = gym:FindFirstChild(anchorName)
+		if not (anchor and anchor:IsA("BasePart")) then return end
+		if anchor:FindFirstChild("WallDecor") then return end   -- preserve existing / don't duplicate
+		local folder = Instance.new("Folder"); folder.Name = "WallDecor"; folder.Parent = anchor
+		build(folder, anchor)
+	end
+
+	-- Base wall-padding trim strip helper (gym crash-pad look): a navy pad along the bottom + an accent stripe.
+	local function buildPadding(folder: Folder, axis: string, face: number, wallPlane: number, uStart: number, uEnd: number)
+		local longU = uEnd - uStart
+		local uMid = (uStart + uEnd) / 2
+		local padH = G.wallDecorPadHeight
+		decorPart(folder, "PadBase", axis, face, wallPlane, uMid, padH / 2, longU, padH, 0.4, G.wallDecorPadColor, Enum.Material.SmoothPlastic)
+		decorPart(folder, "PadStripe", axis, face, wallPlane, uMid, padH - 0.35, longU, 0.5, 0.45, G.wallDecorPadAccent, Enum.Material.SmoothPlastic)
+	end
+
+	-- ---- WallN (Z=-hz, faces +Z): scoreboard sign + wall clock + pennant bunting + base padding -------------
+	ensureDecor("WallN", function(folder)
+		local wallZ = origin.Z - hz
+		local face = 1   -- interior face points +Z
+		buildPadding(folder, "Z", face, wallZ, origin.X - hx + 3, origin.X + hx - 3)
+		-- Scoreboard-style sign (centred high). Dark body with amber LED text + a sub-line.
+		local sb = decorPart(folder, "Scoreboard", "Z", face, wallZ, origin.X, 38, 22, 9, 0.6, G.wallDecorScoreboardFill, Enum.Material.SmoothPlastic)
+		local top = decorLabel(sb, Enum.NormalId.Front, G.wallDecorScoreboardText, G.wallDecorScoreboardText3, Enum.Font.GothamBlack, true)
+		top.Size = UDim2.fromScale(0.86, 0.5); top.Position = UDim2.fromScale(0.5, 0.32)
+		local subGui = sb:FindFirstChild("DecorGui")
+		local sub = Instance.new("TextLabel"); sub.Name = "Sub"; sub.BackgroundTransparency = 1
+		sub.AnchorPoint = Vector2.new(0.5, 0.5); sub.Position = UDim2.fromScale(0.5, 0.74)
+		sub.Size = UDim2.fromScale(0.7, 0.26); sub.Font = Enum.Font.GothamBold; sub.TextScaled = true
+		sub.TextColor3 = Color3.fromRGB(120, 200, 235); sub.Text = G.wallDecorScoreboardSub; sub.Parent = subGui
+		-- Wall clock to the LEFT of the scoreboard: a round face on a dark rim, with simple hands.
+		local rim = decorPart(folder, "ClockRim", "Z", face, wallZ, origin.X - 22, 38, 8, 8, 0.5, G.wallDecorClockRim, Enum.Material.SmoothPlastic)
+		rim.Shape = Enum.PartType.Cylinder
+		-- a cylinder's circular faces are on local X; rotate so the round face points +Z (into the room)
+		rim.CFrame = CFrame.new(rim.Position) * CFrame.Angles(0, math.rad(90), 0)
+		local faceP = decorPart(folder, "ClockFace", "Z", face, wallZ, origin.X - 22, 38, 6.6, 6.6, 0.35, G.wallDecorClockFace, Enum.Material.SmoothPlastic)
+		faceP.Shape = Enum.PartType.Cylinder
+		faceP.CFrame = CFrame.new(faceP.Position) * CFrame.Angles(0, math.rad(90), 0)
+		-- two clock hands (thin dark blocks) over the face
+		local hourPos = Vector3.new(origin.X - 22, 39.4, wallZ - face * (off + 0.45))
+		local h = Instance.new("Part"); h.Anchored = true; h.Name = "ClockHandHour"
+		h.CanCollide = false; h.CanQuery = false; h.CanTouch = false; h.CastShadow = false
+		h.Size = Vector3.new(0.4, 2.2, 0.15); h.Color = G.wallDecorClockRim; h.Material = Enum.Material.SmoothPlastic
+		h.Position = hourPos; h.Parent = folder
+		local m = Instance.new("Part"); m.Anchored = true; m.Name = "ClockHandMin"
+		m.CanCollide = false; m.CanQuery = false; m.CanTouch = false; m.CastShadow = false
+		m.Size = Vector3.new(2.8, 0.4, 0.15); m.Color = G.wallDecorClockRim; m.Material = Enum.Material.SmoothPlastic
+		m.Position = Vector3.new(origin.X - 22 + 1.2, 38, wallZ - face * (off + 0.45)); m.Parent = folder
+		-- pennant bunting strung high across the wall
+		buildBunting(folder, "Z", face, wallZ, origin.X - hx + 5, origin.X + hx - 5, 46, 12)
+	end)
+
+	-- ---- WallS (Z=+hz, faces -Z): championship banners + a motivational poster + base padding ---------------
+	-- (the basketball backboard/hoop is at y~22; keep banners high above it and the poster off to the side)
+	ensureDecor("WallS", function(folder)
+		local wallZ = origin.Z + hz
+		local face = -1   -- interior face points -Z
+		buildPadding(folder, "Z", face, wallZ, origin.X - hx + 3, origin.X + hx - 3)
+		-- three tall championship banners hung high (clear of the backboard at y~22)
+		for i = 1, 3 do
+			local bx = origin.X + (i - 2) * 20   -- -20, 0, +20
+			local b = decorPart(folder, "Banner_" .. i, "Z", face, wallZ, bx, 38, 8, 18, 0.5, G.wallDecorBannerColor, Enum.Material.Fabric)
+			local lbl = decorLabel(b, Enum.NormalId.Back, G.wallDecorBannerLabels[(i - 1) % #G.wallDecorBannerLabels + 1], G.wallDecorBannerText, Enum.Font.GothamBold, true)
+			lbl.Size = UDim2.fromScale(0.8, 0.9)
+			-- a little pointed pennant tail under each banner (wedge)
+			local tail = Instance.new("WedgePart"); tail.Anchored = true; tail.Name = "BannerTail_" .. i
+			tail.CanCollide = false; tail.CanQuery = false; tail.CanTouch = false; tail.CastShadow = false
+			tail.Color = G.wallDecorBannerColor; tail.Material = Enum.Material.Fabric
+			tail.Size = Vector3.new(8, 3.5, 0.4)
+			tail.CFrame = CFrame.new(Vector3.new(bx, 28.3, wallZ - face * (off + 0.25))) * CFrame.Angles(math.rad(180), 0, 0)
+			tail.Parent = folder
+		end
+	end)
+
+	-- ---- WallE (X=+hx, faces -X): bright color-blocking MURAL + a fun poster (avoid the window gap y26.5-33.5) -
+	ensureDecor("WallE_Bottom", function(folder)
+		local wallX = origin.X + hx
+		local face = -1   -- interior face points -X
+		-- Color-blocking mural: a row of bright flat panels low on the wall (below the window), playful pop.
+		local n = #G.wallDecorMuralColors
+		local muralSpan = L - 14
+		local pw = muralSpan / n
+		for i = 0, n - 1 do
+			local z = origin.Z - muralSpan / 2 + pw * (i + 0.5)
+			local col = G.wallDecorMuralColors[(i % n) + 1]
+			decorPart(folder, "Mural_" .. i, "X", face, wallX, z, 12, pw - 0.6, 16, 0.4, col, Enum.Material.SmoothPlastic)
+		end
+		-- a fun poster up high near the N corner (clear of the window strip)
+		local poster = decorPart(folder, "Poster", "X", face, wallX, origin.Z - 22, 40, 11, 9, 0.4, G.wallDecorPosterFill, Enum.Material.SmoothPlastic)
+		-- WallE interior face points -X = the part's Left face (Roblox NormalId.Left = -X)
+		local pl = decorLabel(poster, Enum.NormalId.Left, G.wallDecorPosterText, G.wallDecorPosterAccent, Enum.Font.GothamBlack, true)
+		pl.Size = UDim2.fromScale(0.86, 0.8)
+	end)
+
+	-- ---- WallW (X=-hx, faces +X): pennant bunting + a sports poster + base padding (avoid the window gap) -----
+	ensureDecor("WallW_Bottom", function(folder)
+		local wallX = origin.X - hx
+		local face = 1   -- interior face points +X
+		buildPadding(folder, "X", face, wallX, origin.Z - hz + 5, origin.Z + hz - 5)
+		-- pennant bunting strung high
+		buildBunting(folder, "X", face, wallX, origin.Z - hz + 6, origin.Z + hz - 6, 44, 12)
+		-- a sports poster up high near the S corner (clear of the window strip)
+		local poster = decorPart(folder, "Poster", "X", face, wallX, origin.Z + 22, 40, 11, 9, 0.4, G.wallDecorPosterFill, Enum.Material.SmoothPlastic)
+		-- WallW interior face points +X = the part's Right face (Roblox NormalId.Right = +X)
+		local pl = decorLabel(poster, Enum.NormalId.Right, "TEAM\nSPIRIT", G.wallDecorBannerColor, Enum.Font.GothamBlack, true)
+		pl.Size = UDim2.fromScale(0.86, 0.8)
+	end)
 end
 
 -- Build the grassy outdoor backdrop (ground + hills + trees) around/below the gym. Build-once. Everything is
