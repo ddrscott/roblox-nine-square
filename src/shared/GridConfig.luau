@@ -246,6 +246,21 @@ GridConfig.skyColorBottom = Color3.fromRGB(190, 220, 245) -- pale blue at the ho
 GridConfig.atmosphereDensity = 0.30    -- subtle horizon haze for depth (0 = none); kept light so the day stays clear
 GridConfig.atmosphereHaze = 1.4        -- atmosphere haze amount (soft horizon falloff)
 
+-- ============================================================================================
+-- SIDE-WINDOW CUT-OUTS (real openings + glass). The gym's E/W side walls used to be SOLID slabs with a
+-- thin Glass strip GLUED on the inner face (WindowE/WindowW) -- decorative only, no light passed. Now each
+-- side wall is built as a FRAME of solid panels (bottom + top + two Z-end panels) around a genuine
+-- rectangular GAP, with a light-passing Glass pane set INSIDE the gap (no opaque part behind it), so outdoor
+-- light/sky reaches the interior. Same placement as the old window: centred at windowCenterY, windowHeight
+-- tall, windowLength long along Z, on each side wall (x = +/-W/2). The frame panels carry the WallE/WallW
+-- NAME PREFIX so the camera wall-fade (which now matches by prefix) still fades them when the eye clips.
+-- ============================================================================================
+GridConfig.windowCenterY = 30        -- world Y (studs) of the side-window opening centre (matches the old WindowE/W)
+GridConfig.windowHeight = 7          -- studs: vertical size of the opening (matches the old window strip)
+GridConfig.windowLength = 50         -- studs: length of the opening along Z (matches the old L-20 = 50)
+GridConfig.windowGlassTransparency = 0.55  -- 0..1: glass pane transparency (lets light through while reading as glass)
+GridConfig.windowGlassColor = Color3.fromRGB(170, 205, 230)  -- pale blue glass tint (matches the old window)
+
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
 

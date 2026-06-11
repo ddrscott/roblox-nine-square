@@ -239,14 +239,15 @@ function MatchService.buildGym(origin: Vector3)
 		block("CeilingE", Vector3.new(side, 1, op), origin + Vector3.new( (op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic).Locked = true
 		block("CeilingW", Vector3.new(side, 1, op), origin + Vector3.new(-(op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic).Locked = true
 	end
-	block("WallE", Vector3.new(0.8, H, L), origin + Vector3.new(hx, wy, 0), wall, Enum.Material.SmoothPlastic).Locked = true
-	block("WallW", Vector3.new(0.8, H, L), origin + Vector3.new(-hx, wy, 0), wall, Enum.Material.SmoothPlastic).Locked = true
+	-- N/S end walls: plain solid slabs (no windows on these).
 	block("WallN", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, -hz), wall, Enum.Material.SmoothPlastic).Locked = true
 	block("WallS", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, hz), wall, Enum.Material.SmoothPlastic).Locked = true
-	-- cosmetic window strips on the side walls
-	local glass = Color3.fromRGB(170, 205, 230)
-	block("WindowE", Vector3.new(0.3, 7, L - 20), origin + Vector3.new(hx - 0.5, 30, 0), glass, Enum.Material.Glass, 0.5)
-	block("WindowW", Vector3.new(0.3, 7, L - 20), origin + Vector3.new(-hx + 0.5, 30, 0), glass, Enum.Material.Glass, 0.5)
+	-- E/W SIDE WALLS with REAL window cut-outs: each is a FRAME of solid panels around a genuine gap (bottom +
+	-- top + two Z-end panels), with a light-passing Glass pane INSIDE the gap -- no opaque part behind it, so
+	-- outdoor light/sky reaches the interior. Panels carry the WallE/WallW name PREFIX so the camera wall-fade
+	-- (prefix match) still fades the whole windowed wall when the eye clips it.
+	MatchService.buildWindowedWall(gym, origin, "WallE", hx, wy, L, H, wall)
+	MatchService.buildWindowedWall(gym, origin, "WallW", -hx, wy, L, H, wall)
 	-- two simple basketball hoops on the end walls
 	for _, zsign in ipairs({ -1, 1 }) do
 		block("Backboard", Vector3.new(7, 4, 0.4), origin + Vector3.new(0, 22, zsign * (hz - 0.7)), Color3.fromRGB(245, 245, 245), Enum.Material.SmoothPlastic)
@@ -279,6 +280,56 @@ function MatchService.buildGym(origin: Vector3)
 	-- NineSquare.Frame), so it never enters the ball or player collision sets. Built once, alongside the gym.
 	MatchService.buildOutdoors(origin)
 
+	return gym
+end
+
+-- Build ONE side wall (E or W) with a REAL window cut-out. `prefix` is "WallE"/"WallW"; `xoff` is the wall's
+-- X position (+/-W/2); `wy` is its vertical centre (H/2); `L`/`H` are the interior length/height; `color` is
+-- the wall colour. The wall is a FRAME of solid panels (bottom + top + two Z-end panels) around a genuine
+-- rectangular GAP centred at G.windowCenterY, G.windowHeight tall, G.windowLength long along Z -- with NO
+-- opaque part behind the gap. A light-passing Glass pane is set inside the gap. Every panel + the glass is
+-- named with the `prefix` (e.g. "WallE_Bottom", "WallE_Glass") so the camera wall-fade (prefix match) fades
+-- the whole windowed wall when the eye clips it. Frame panels are Locked (click-through, like the shell);
+-- the glass pane is left UNLOCKED so it's easy to tweak. The wall is purely a gym shell part: CanCollide
+-- stays true (enclosure) but it lives OUTSIDE NineSquare.Frame, so the ball/player court collision is untouched.
+function MatchService.buildWindowedWall(gym: Instance, origin: Vector3, prefix: string, xoff: number, wy: number, L: number, H: number, color: Color3)
+	local th = 0.8                          -- wall thickness (matches the old solid side walls)
+	local cy = G.windowCenterY              -- window opening centre Y
+	local wh = G.windowHeight               -- window opening height
+	local wl = G.windowLength               -- window opening length along Z
+	local halfL, halfWl, halfWh = L / 2, wl / 2, wh / 2
+	local winBot, winTop = cy - halfWh, cy + halfWh   -- opening bottom/top in Y
+	local function panel(name: string, sizeYZ: Vector2, posYZ: Vector2)
+		local p = Instance.new("Part"); p.Anchored = true; p.Name = prefix .. name
+		p.Size = Vector3.new(th, sizeYZ.X, sizeYZ.Y)
+		p.Position = origin + Vector3.new(xoff, posYZ.X, posYZ.Y)
+		p.Color = color; p.Material = Enum.Material.SmoothPlastic
+		p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Locked = true                     -- click-through in Studio, like the rest of the shell
+		p.Parent = gym
+		return p
+	end
+	-- BOTTOM panel: floor (y=0) up to the opening bottom; full length on Z.
+	local botH = winBot
+	panel("_Bottom", Vector2.new(botH, L), Vector2.new(botH / 2, 0))
+	-- TOP panel: opening top up to the ceiling (y=H); full length on Z.
+	local topH = H - winTop
+	panel("_Top", Vector2.new(topH, L), Vector2.new(winTop + topH / 2, 0))
+	-- Two Z-END panels: fill the corners beyond the opening along Z, only across the opening's Y band.
+	local endLen = halfL - halfWl           -- length of each end panel along Z
+	if endLen > 0 then
+		panel("_EndN", Vector2.new(wh, endLen), Vector2.new(cy, -(halfWl + endLen / 2)))
+		panel("_EndS", Vector2.new(wh, endLen), Vector2.new(cy,  (halfWl + endLen / 2)))
+	end
+	-- GLASS pane filling the gap: light-passing (transparency), CastShadow off so it doesn't darken the
+	-- interior. Left UNLOCKED so it's easy to tweak. Named with the prefix so the wall-fade fades it too.
+	local glass = Instance.new("Part"); glass.Anchored = true; glass.Name = prefix .. "_Glass"
+	glass.Size = Vector3.new(0.3, wh, wl)
+	glass.Position = origin + Vector3.new(xoff, cy, 0)
+	glass.Color = G.windowGlassColor; glass.Material = Enum.Material.Glass
+	glass.Transparency = G.windowGlassTransparency; glass.CastShadow = false
+	glass.TopSurface = Enum.SurfaceType.Smooth; glass.BottomSurface = Enum.SurfaceType.Smooth
+	glass.Parent = gym
 	return gym
 end
 

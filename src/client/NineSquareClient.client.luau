@@ -330,24 +330,40 @@ end
 -- through at most one wall/ceiling at a time, so a per-wall side test (eye vs. the wall plane, plus a
 -- margin) is robust -- no raycasting needed. Floor, grid, frame, ball, player, and Glass windows are never
 -- touched (only the names below are considered).
-local WALL_NAMES = { "WallE", "WallW", "WallN", "WallS", "Ceiling" }
--- For each wall: the position component to test and the sign of "outside" (eye beyond the plane = obstructing).
+-- Matched by NAME PREFIX (not exact name): the E/W side walls are now FRAMES of panels around a real window
+-- gap (WallE_Bottom/_Top/_EndN/_EndS/_Glass, likewise WallW_*) and the ceiling is a ring (CeilingN/S/E/W), so
+-- a single FindFirstChild no longer suffices. We fade EVERY gym part whose name starts with one of these
+-- prefixes -- including the windowed-wall panels + their glass pane -- using each part's OWN position for the
+-- per-plane side test (all panels of a wall share that wall's plane, so the test is identical + correct).
+local WALL_PREFIXES = { "WallE", "WallW", "WallN", "WallS", "Ceiling" }
+-- For each prefix: the position component to test and the sign of "outside" (eye beyond the plane = obstructing).
 -- WallE is at +X, so the eye is outside when eye.X > wall.X (sign +1); WallW at -X uses sign -1; etc.
 local WALL_AXIS = { WallE = { "X", 1 }, WallW = { "X", -1 }, WallN = { "Z", -1 }, WallS = { "Z", 1 }, Ceiling = { "Y", 1 } }
+local function wallPrefixOf(name: string): string?
+	-- The windowed-wall GLASS panes (WallE_Glass / WallW_Glass) keep their own resting transparency; never
+	-- fade them (fading would restore them to OPAQUE when the eye is inside). Only the solid frame panels fade.
+	if string.sub(name, -6) == "_Glass" then return nil end
+	for _, p in ipairs(WALL_PREFIXES) do
+		if name == p or string.sub(name, 1, #p + 1) == p .. "_" then return p end
+	end
+	return nil
+end
 local function updateWallFade(dt: number)
 	local gym = workspace:FindFirstChild("Gym")
 	if not gym then return end
 	local eye = cam.CFrame.Position
 	local k = math.clamp(dt * G.camWallFadeSpeed, 0, 1)   -- frame-rate-independent lerp factor
-	for _, name in ipairs(WALL_NAMES) do
-		local wall = gym:FindFirstChild(name)
-		local axis = WALL_AXIS[name]
-		if wall and wall:IsA("BasePart") and axis then
-			local comp, sign = axis[1], axis[2]
-			-- eye position past the wall plane (toward outside), minus a margin so it fades a touch early
-			local obstructing = (eye[comp] - wall.Position[comp]) * sign > -G.camWallFadeMargin
-			local goal = obstructing and G.camWallFadeTransparency or 0
-			wall.Transparency = wall.Transparency + (goal - wall.Transparency) * k
+	for _, part in ipairs(gym:GetChildren()) do
+		if part:IsA("BasePart") then
+			local prefix = wallPrefixOf(part.Name)
+			local axis = prefix and WALL_AXIS[prefix]
+			if axis then
+				local comp, sign = axis[1], axis[2]
+				-- eye position past the wall plane (toward outside), minus a margin so it fades a touch early
+				local obstructing = (eye[comp] - part.Position[comp]) * sign > -G.camWallFadeMargin
+				local goal = obstructing and G.camWallFadeTransparency or 0
+				part.Transparency = part.Transparency + (goal - part.Transparency) * k
+			end
 		end
 	end
 end

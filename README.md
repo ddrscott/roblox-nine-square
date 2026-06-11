@@ -129,9 +129,21 @@ M3 loop / rank HUD / camera are unchanged.
     and falls back to a code bench otherwise — so the build is robust whether or not the template ships in
     the place. To keep the nicer benches, that template must persist in `ReplicatedStorage`. The railing
     around the opening is code-built (deterministic fall-guard) rather than asset-based.
+- **Side windows are REAL cut-outs (not decals)**: each E/W gym wall (`WallE`/`WallW`) is built by
+  `MatchService.buildWindowedWall` as a **frame of solid panels around a genuine rectangular gap** — a bottom
+  panel (`WallE_Bottom`), a top panel (`WallE_Top`), and two Z-end panels (`WallE_EndN`/`_EndS`) — with a
+  light-passing **Glass pane** (`WallE_Glass`, `Material=Glass`, `CastShadow=false`) set INSIDE the gap and NO
+  opaque part behind it, so outdoor light + sky actually reach the interior (the old approach glued a thin
+  glass strip onto a solid slab — purely decorative, no light passed). Placement/size + glass transparency are
+  `GridConfig` tunables (`windowCenterY`/`windowHeight`/`windowLength`/`windowGlassTransparency`/
+  `windowGlassColor`). The frame panels carry the `WallE`/`WallW` **name prefix** so the camera **wall-fade**
+  (now matched by prefix in `NineSquareClient`) still fades the whole windowed wall when the eye clips it; the
+  glass pane keeps its own resting transparency (the fade skips `*_Glass`). Frame panels are `Locked=true`
+  (click-through shell, like the rest of the gym); the glass pane is left unlocked. The windowed wall is a
+  pure gym-shell part (lives OUTSIDE `NineSquare.Frame`), so the ball/player court collision is untouched.
 - **Outdoor environment + clear-day sky**: `MatchService.buildOutdoors` (called from `buildGym`, build-once)
-  adds a backdrop so the side windows (`WindowE/W`) and the camera **wall-fade** (which makes a gym wall fully
-  transparent) reveal a **grassy park** instead of empty void / bare skybox. It builds a large grass ground
+  adds a backdrop so the side windows (now real cut-outs, above) and the camera **wall-fade** (which makes a
+  gym wall fully transparent) reveal a **grassy park** instead of empty void / bare skybox. It builds a large grass ground
   plane whose TOP sits just BELOW the gym floor (`y = -outdoorGroundDrop`, so the opaque wood floor still
   covers the court and the grass never shows inside the play surface), gentle low rolling hills, and scattered
   trees ringing the gym. The scatter is **deterministic** (fixed `GridConfig.outdoorScatterSeed`). Lighting is
