@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Orient grid: worst rank (9) to lower-right (SE) + upright floor numbers (camera common-sense) — see [orient-ranks-and-upright-numbers.md](orient-ranks-and-upright-numbers.md)
+- [x] Orient grid: worst rank (9) to lower-right (SE) + upright floor numbers (camera common-sense) — see [orient-ranks-and-upright-numbers.md](orient-ranks-and-upright-numbers.md)
 - [x] Outdoor terrain + clear-day sky (backdrop out the windows / through clipped walls; grassy park vibe) — see [outdoor-terrain-and-sky.md](outdoor-terrain-and-sky.md)
 - [x] Fix the OOB ball-escape wedge (ball rockets to huge Y, rotation never resolves) — see [oob-ball-escape-wedge-fix.md](oob-ball-escape-wedge-fix.md)
 - [x] Persistent player stats — best rank reached + turns held (DataStore) — see [persistent-player-stats.md](persistent-player-stats.md)

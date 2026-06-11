@@ -241,9 +241,18 @@ GridConfig.cells = {
 GridConfig.outerCells = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
 -- Rank -> cell (PRD §4.2 / M3 design §3): index = rank (1..9). King = rank 1 = "C", then the
--- clockwise ring outward. The human enters at rank 9 (NW); dummies hold ranks 1..8. Config-driven:
--- change this table and placement follows (cellForRank just indexes it).
-GridConfig.rankCells = { "C", "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+-- ring outward. Config-driven: change this table and placement follows (cellForRank just indexes it).
+--
+-- ORIENTED FOR THE DEFAULT COURT CAMERA (camFarEye on +Z looking toward -Z): on screen,
+-- right = +X (East), up/far = -Z (North), down/near = +Z (South). So lower-RIGHT = (+X,+Z) = SE.
+-- The worst/entry rank (rank 9, where a joining human enters) must land on SE = lower-right (camera
+-- common-sense), with the King throne at centre. The ring walks ADJACENT cells every rank so a fault
+-- rotation moves occupants only between neighbouring squares (no cross-grid teleport):
+--   rank advancement 9->1 walks SE->E->NE->N->NW->W->SW->S->C (up the right, across the top, down the
+--   left, across the bottom, into centre). Each consecutive pair is a neighbouring square; the only
+--   non-adjacent step is the intended dethroned-King jump C->SE (go to the back of the line at the
+--   entry corner). Verified: every consecutive rankCells pair differs by one cell-step.
+GridConfig.rankCells = { "C", "S", "SW", "W", "NW", "N", "NE", "E", "SE" }
 
 -- Bot occupant look. The 8 non-human squares are now REAL R15 rigs (default blocky "Rig Builder"
 -- dummy), one template cloned per rank. The rig is COSMETIC + server-authoritative: its
