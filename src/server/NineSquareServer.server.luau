@@ -173,6 +173,9 @@ end
 local function serveNextRally()
 	rallyArmed = false
 	serveClearPending = true   -- the upcoming serve's over-pipe clear is the serve itself, not a save -> swallow it
+	-- Clear last rally's save highlight so the pipe glow only ever shows the last save of the CURRENT rally.
+	lastSavedCell = nil
+	MatchService.clearSaveHighlight()
 	if rotation:isHumanKing() then
 		-- Human serves physically: park the ball hovering at C. rallyArmed flips true when they strike it.
 		bc:resetToServe()

@@ -207,8 +207,21 @@ function MatchService.highlightSavedCell(cell: string?)
 	for name, s in pairs(segs) do
 		local b = hi:FindFirstChild("Seg_" .. name)
 		if b and b:IsA("BasePart") then
-			b.Size = s.size; b.Position = s.pos; b.Color = G.saveHighlightColor; b.Transparency = 0
+			b.Size = s.size; b.Position = s.pos; b.Color = G.saveHighlightColor
+			b.Transparency = G.saveHighlightTransparency   -- dimmed: a faint "last save" glow, not a bright bar
 		end
+	end
+end
+
+-- Hide the SaveHighlight overlay (the last-saved pipe glow). Called on the re-serve / reset path so the
+-- highlight only shows the last save of the CURRENT rally and doesn't linger into the next one. Visual only.
+function MatchService.clearSaveHighlight()
+	local ns = workspace:FindFirstChild("NineSquare")
+	local hi = ns and ns:FindFirstChild("SaveHighlight")
+	if not hi then return end
+	for _, seg in ipairs({ "N", "S", "E", "W" }) do
+		local b = hi:FindFirstChild("Seg_" .. seg)
+		if b and b:IsA("BasePart") then b.Transparency = 1 end
 	end
 end
 

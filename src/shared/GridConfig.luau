@@ -195,7 +195,8 @@ GridConfig.botRestColliderY = 4.5    -- height (studs above the cell floor) of t
 -- and stay lit until the next save. The continuous Frame beams can't be lit per-cell, so MatchService
 -- builds a separate non-colliding `SaveHighlight` overlay -- 4 glowing neon edge-segments outlining the
 -- saved cell's border at frameHeight -- and repositions/shows it on each save. Visual only.
-GridConfig.saveHighlightColor = Color3.fromRGB(70, 255, 140)  -- a vivid green, distinct from the dark frame
+GridConfig.saveHighlightColor = Color3.fromRGB(64, 168, 104)  -- a soft, muted green (dimmed from a vivid 70,255,140) -- a hint, not a bright bar
+GridConfig.saveHighlightTransparency = 0.55  -- partial transparency on the (Neon) overlay so it reads as a faint "last save" glow, not a glaring bar; 0 = solid, 1 = invisible
 GridConfig.saveHighlightThickness = 0.9   -- edge-segment cross-section (a touch fatter than beamThickness so it reads as a glow over the pipe)
 GridConfig.saveHighlightYOffset = 0.15    -- studs above frameHeight so the overlay sits just proud of the frame beams (no z-fight)
 
