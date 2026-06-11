@@ -19,8 +19,27 @@ local StatsService = require(ns.StatsService)
 -- side windows + the camera wall-fade now reveal the outdoor park, so we set a bright clear-day Sky + a sun-up
 -- ClockTime here. Interior gym lighting is UNCHANGED (same Ambient lift + Bloom threshold that keep the gym
 -- readable and stop the lit ball blooming). Sky/Atmosphere live in GridConfig so they're tunable.
+-- BUILD-ONCE / APPLY-ONCE. Like buildArena/buildGym, lighting is now stamped ONCE so manual Studio tweaks to
+-- Lighting / Sky / Atmosphere PERSIST across Play instead of being re-clobbered every run. A sentinel attribute
+-- (Lighting.NineSquareLit) records that we've applied the clear-day look; once set we return early and leave
+-- everything tweakable. A fresh place (no sentinel) still self-builds the full lighting + Sky + Atmosphere.
 local function setupLighting()
 	local L = game:GetService("Lighting")
+	-- Apply-once sentinel: if we've already set the clear-day look, leave Lighting/Sky/Atmosphere alone so
+	-- hand-tweaks (e.g. a custom Sky or brightness) survive Play. Self-heal still covers a missing Sky/Atmosphere.
+	if L:GetAttribute("NineSquareLit") then
+		if not L:FindFirstChildWhichIsA("Sky") then
+			local sky = Instance.new("Sky"); sky.Name = "ClearDaySky"
+			sky.SunAngularSize = G.skySunAngularSize; sky.SkyboxOrientation = Vector3.new(0, 0, 0)
+			sky.CelestialBodiesShown = true; sky.Parent = L
+		end
+		if not L:FindFirstChildWhichIsA("Atmosphere") then
+			local atmos = Instance.new("Atmosphere")
+			atmos.Density = G.atmosphereDensity; atmos.Haze = G.atmosphereHaze
+			atmos.Color = G.skyColorBottom; atmos.Decay = Color3.fromRGB(106, 112, 125); atmos.Parent = L
+		end
+		return
+	end
 	L.GeographicLatitude = 23.5   -- cancels Roblox's ~23.5deg sun tilt: noon sun ends up near the zenith
 	L.ClockTime = G.outdoorClockTime   -- midday-ish (~14): bright, sun well up for a clear day
 	L.GlobalShadows = true
@@ -33,18 +52,18 @@ local function setupLighting()
 	local bloom = L:FindFirstChildWhichIsA("BloomEffect")
 	if bloom then bloom.Threshold = 3.5 end
 
-	-- Clear-day Sky: bright blue gradient, a visible sun disc, soft default clouds. Replace any existing Sky
-	-- so a re-run self-heals to the clear-day look (idempotent). Roblox's default Sky textures give the soft
-	-- clouds; we tune the sky gradient + sun size for a bright, readable clear day.
-	local oldSky = L:FindFirstChildWhichIsA("Sky")
-	if oldSky then oldSky:Destroy() end
-	local sky = Instance.new("Sky")
-	sky.Name = "ClearDaySky"
-	sky.SunAngularSize = G.skySunAngularSize
-	sky.SkyboxOrientation = Vector3.new(0, 0, 0)
-	-- bright clear-day cloud/sky gradient (uses Roblox's built-in skybox faces -> always load, no asset perms)
-	sky.CelestialBodiesShown = true
-	sky.Parent = L
+	-- Clear-day Sky: bright blue gradient, a visible sun disc, soft default clouds. Build-once -- create the
+	-- Sky only if one isn't already present, so a manual Sky tweak isn't clobbered on the first applied run.
+	-- Roblox's default Sky textures give the soft clouds; we tune sun size for a bright, readable clear day.
+	if not L:FindFirstChildWhichIsA("Sky") then
+		local sky = Instance.new("Sky")
+		sky.Name = "ClearDaySky"
+		sky.SunAngularSize = G.skySunAngularSize
+		sky.SkyboxOrientation = Vector3.new(0, 0, 0)
+		-- bright clear-day cloud/sky gradient (uses Roblox's built-in skybox faces -> always load, no asset perms)
+		sky.CelestialBodiesShown = true
+		sky.Parent = L
+	end
 
 	-- Subtle Atmosphere for horizon depth/haze so the distant ground/hills read as far away (kept light so the
 	-- day stays clear, not foggy). Idempotent: reuse an existing Atmosphere if present.
@@ -55,6 +74,9 @@ local function setupLighting()
 	atmos.Color = G.skyColorBottom
 	atmos.Decay = Color3.fromRGB(106, 112, 125)
 	-- NOTE: Lighting.Technology (ShadowMap/Future) cannot be set by scripts; set it once in Studio Properties.
+	-- Mark the clear-day look applied. Future Plays return early (above) and leave Lighting/Sky/Atmosphere
+	-- tweakable. Delete this attribute in Studio to force a one-time re-stamp of the defaults.
+	L:SetAttribute("NineSquareLit", true)
 end
 
 print("[NineSquare] server starting")

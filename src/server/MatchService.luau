@@ -6,14 +6,38 @@ local G = require(RS.GridConfig)
 
 local MatchService = {}
 
+-- BUILD-ONCE / SELF-HEAL. buildArena no longer wipes + rebuilds NineSquare every Play -- the saved place is
+-- the source of truth for how the court LOOKS, so manual Studio tweaks (color/size/material/position -- e.g.
+-- Scott's solid-white GridLines) PERSIST. We only (re)build a sub-group when it's MISSING (a fresh/empty
+-- place, or a deleted folder self-heals). `G.origin` IS still set every Play (runtime positioning reads it).
+-- Each critical sub-group (Floors / FloorNumbers / Frame / FrameLegs / GridLines / SaveHighlight) is gated
+-- by `ensureGroup`: if a folder by that name already exists under NineSquare we leave its children ALONE.
+-- Housekeeping (drop Baseplate, disable stray spawns, ensure CourtSpawn) stays idempotent + non-clobbering.
+local function ensureGroup(root: Instance, name: string, build: (Folder) -> ()): Folder
+	local existing = root:FindFirstChild(name)
+	if existing and existing:IsA("Folder") then return existing end  -- present -> preserve hand-tweaks
+	local f = Instance.new("Folder"); f.Name = name; f.Parent = root
+	build(f)
+	return f
+end
+
 function MatchService.buildArena(origin: Vector3)
+	-- ALWAYS set runtime state (cellCenter / cellAtPosition / ball + bot + player positioning read G.origin
+	-- at runtime), even when nothing is rebuilt. Origin is the stable hardcoded (0,0,200) so persisted
+	-- geometry always lines up with runtime positioning.
 	G.origin = origin
-	local old = workspace:FindFirstChild("NineSquare"); if old then old:Destroy() end
-	local root = Instance.new("Folder"); root.Name = "NineSquare"; root.Parent = workspace
+	-- Get-or-create the root folder; NEVER destroy an existing one (that's what reverted tweaks before).
+	local existingRoot = workspace:FindFirstChild("NineSquare")
+	local root: Folder
+	if existingRoot and existingRoot:IsA("Folder") then
+		root = existingRoot
+	else
+		root = Instance.new("Folder"); root.Name = "NineSquare"; root.Parent = workspace
+	end
 	-- Per-cell markers: invisible, non-colliding, thin. The gym's WoodPlanks floor is the ONE visible
 	-- floor; these only exist as the landing-highlight adornee + fault-flash target (BallController
 	-- toggles them briefly visible). Sat just above the wood so a flash never z-fights the floor.
-	local floors = Instance.new("Folder"); floors.Name = "Floors"; floors.Parent = root
+	ensureGroup(root, "Floors", function(floors)
 	for name in pairs(G.cells) do
 		local p = Instance.new("Part")
 		p.Anchored = true; p.CanCollide = false; p.CastShadow = false
@@ -22,12 +46,13 @@ function MatchService.buildArena(origin: Vector3)
 		p.Transparency = 1; p.Color = Color3.fromRGB(205, 45, 45)  -- only seen during a fault flash
 		p.Material = Enum.Material.SmoothPlastic; p.Name = "Floor_" .. name; p.Parent = floors
 	end
+	end)
 	-- Floor RANK NUMBERS (replaces the M5.6 over-grid nameplates): a large painted-court number centred on
 	-- each panel, facing UP, via a SurfaceGui on the panel's Top face. STATIC per cell (= rankForCell(cell)):
 	-- centre C reads "1" (the King throne), then 2..9 outward. Built on a DEDICATED thin part per cell (NOT
 	-- the Floor_ marker, which flashes red on a fault) -- CanCollide=false, CastShadow=false, OUTSIDE the
 	-- ball/player collision sets. The part itself is invisible; only the SurfaceGui number renders.
-	local numbers = Instance.new("Folder"); numbers.Name = "FloorNumbers"; numbers.Parent = root
+	ensureGroup(root, "FloorNumbers", function(numbers)
 	for name in pairs(G.cells) do
 		local rank = G.rankForCell(name)
 		if rank then
@@ -60,9 +85,12 @@ function MatchService.buildArena(origin: Vector3)
 			label.Text = tostring(rank); label.Parent = gui
 		end
 	end
+	end)
 
-	local frame = Instance.new("Folder"); frame.Name = "Frame"; frame.Parent = root
+	-- Frame: the overhead boundary beams. The ball COLLIDES against every BasePart under NineSquare.Frame
+	-- (BallController:_surfaces), so this group is functional, not just cosmetic -- it self-heals if deleted.
 	local span = 3 * G.squareSize
+	ensureGroup(root, "Frame", function(frame)
 	-- four boundary lines per axis at the cell edges: +/-0.5 and +/-1.5 squares
 	for _, m in ipairs({ -1.5, -0.5, 0.5, 1.5 }) do
 		local offs = m * G.squareSize
@@ -76,13 +104,14 @@ function MatchService.buildArena(origin: Vector3)
 			b.Color = Color3.fromRGB(40,40,45); b.Material = Enum.Material.Neon; b.Parent = frame
 		end
 	end
+	end)
 
 	-- Cosmetic corner support posts so the overhead frame "stands on" the court instead of hovering.
 	-- KEPT OUT of the Frame folder + CanCollide=false on purpose: BallController:_surfaces() collides the
 	-- ball against every BasePart under NineSquare.Frame, so these legs must NOT live there (ball feel
 	-- stays unchanged). Positions/size derive from GridConfig so they track tunable changes.
-	local legs = Instance.new("Folder"); legs.Name = "FrameLegs"; legs.Parent = root
 	local legOuter = 1.5 * G.squareSize  -- frame's outer corner offset on X and Z
+	ensureGroup(root, "FrameLegs", function(legs)
 	for _, sx in ipairs({ -1, 1 }) do
 		for _, sz in ipairs({ -1, 1 }) do
 			local leg = Instance.new("Part")
@@ -94,13 +123,15 @@ function MatchService.buildArena(origin: Vector3)
 			leg.Parent = legs
 		end
 	end
+	end)
 
 	-- Painted grid lines on the floor: a renderer-independent "shadow" of the frame, so the grid
 	-- reads on the floor in Play mode too (dynamic shadows often don't draw in Studio Play / low quality).
-	local lines = Instance.new("Folder"); lines.Name = "GridLines"; lines.Parent = root
 	-- Tuned to read as a soft SHADOW of the overhead frame, not bold paint: a slightly warm dark-grey
-	-- on the warm tan WoodPlanks, held mostly-transparent + narrow so it's just a hint of the grid.
+	-- on the warm tan WoodPlanks, held mostly-transparent + narrow so it's just a hint of the grid. With
+	-- build-once these are now freely recolorable in Studio (Scott set them solid white) and the tweak STAYS.
 	local lineW = 0.5
+	ensureGroup(root, "GridLines", function(lines)
 	for _, m in ipairs({ -1.5, -0.5, 0.5, 1.5 }) do
 		local offs = m * G.squareSize
 		local strips = {
@@ -115,6 +146,7 @@ function MatchService.buildArena(origin: Vector3)
 			s.Parent = lines
 		end
 	end
+	end)
 
 	-- SaveHighlight overlay: the overhead Frame beams are CONTINUOUS lines (not per-cell), so to light up
 	-- only the LAST-SAVED square's pipes we keep a SEPARATE 4-segment neon outline that we reposition over
@@ -122,7 +154,7 @@ function MatchService.buildArena(origin: Vector3)
 	-- KEPT OUT of NineSquare.Frame + CanCollide=false on purpose: BallController:_surfaces() collides the
 	-- ball against every BasePart under NineSquare.Frame, so this overlay must NOT live there (ball feel
 	-- stays unchanged). 4 segments named N/S (E-W edges) and E/W (N-S edges) so highlightSavedCell can move them.
-	local hi = Instance.new("Folder"); hi.Name = "SaveHighlight"; hi.Parent = root
+	ensureGroup(root, "SaveHighlight", function(hi)
 	for _, seg in ipairs({ "N", "S", "E", "W" }) do
 		local b = Instance.new("Part")
 		b.Anchored = true; b.CanCollide = false; b.CastShadow = false
@@ -130,6 +162,7 @@ function MatchService.buildArena(origin: Vector3)
 		b.Transparency = 1                                   -- hidden until a save lights it
 		b.Name = "Seg_" .. seg; b.Parent = hi
 	end
+	end)
 
 	-- The default Baseplate's top sits at y=0, coplanar with the gym floor -> z-fighting + a gray
 	-- 2048-stud plane poking past the court. Drop it far below (out of view); the enclosed gym is
@@ -140,17 +173,27 @@ function MatchService.buildArena(origin: Vector3)
 	end
 
 	-- Spawn pad at the center square, and disable any far/legacy spawns so players start in the court.
+	-- Idempotent + non-clobbering: we disable every OTHER spawn each Play (housekeeping that doesn't fight
+	-- tweaks), then self-heal the CourtSpawn only if it's missing -- so we never stack duplicate spawns and a
+	-- hand-moved/recolored CourtSpawn survives (we only re-assert Enabled, never rebuild it when present).
+	local existingSpawn = root:FindFirstChild("CourtSpawn")
 	for _, d in ipairs(workspace:GetDescendants()) do
-		if d:IsA("SpawnLocation") then d.Enabled = false end
+		if d:IsA("SpawnLocation") and d ~= existingSpawn then d.Enabled = false end
 	end
-	-- invisible, non-colliding spawn marker: you spawn at center and land on the center floor,
-	-- with no visible platform and nothing to occlude the ball's floor shadow.
-	local spawn = Instance.new("SpawnLocation")
-	spawn.Name = "CourtSpawn"; spawn.Anchored = true; spawn.Neutral = true; spawn.Enabled = true
-	spawn.Size = Vector3.new(6, 1, 6)
-	spawn.Position = G.cellCenter("C") + Vector3.new(0, 0.5, 0)
-	spawn.Transparency = 1; spawn.CanCollide = false
-	spawn.Parent = root
+	local spawn: SpawnLocation
+	if existingSpawn and existingSpawn:IsA("SpawnLocation") then
+		spawn = existingSpawn
+	else
+		-- invisible, non-colliding spawn marker: you spawn at center and land on the center floor,
+		-- with no visible platform and nothing to occlude the ball's floor shadow.
+		spawn = Instance.new("SpawnLocation")
+		spawn.Name = "CourtSpawn"; spawn.Anchored = true; spawn.Neutral = true
+		spawn.Size = Vector3.new(6, 1, 6)
+		spawn.Position = G.cellCenter("C") + Vector3.new(0, 0.5, 0)
+		spawn.Transparency = 1; spawn.CanCollide = false
+		spawn.Parent = root
+	end
+	spawn.Enabled = true
 	return root
 end
 

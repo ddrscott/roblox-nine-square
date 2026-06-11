@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Build-once / self-heal world so Studio tweaks persist (kids can adjust parts; GridLines stays white) — see [build-once-tweakable-world.md](build-once-tweakable-world.md)
+- [x] Build-once / self-heal world so Studio tweaks persist (kids can adjust parts; GridLines stays white) — see [build-once-tweakable-world.md](build-once-tweakable-world.md)
 - [x] Orient grid: worst rank (9) to lower-right (SE) + upright floor numbers (camera common-sense) — see [orient-ranks-and-upright-numbers.md](orient-ranks-and-upright-numbers.md)
 - [x] Outdoor terrain + clear-day sky (backdrop out the windows / through clipped walls; grassy park vibe) — see [outdoor-terrain-and-sky.md](outdoor-terrain-and-sky.md)
 - [x] Fix the OOB ball-escape wedge (ball rockets to huge Y, rotation never resolves) — see [oob-ball-escape-wedge-fix.md](oob-ball-escape-wedge-fix.md)

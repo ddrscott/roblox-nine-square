@@ -87,6 +87,19 @@ M3 loop / rank HUD / camera are unchanged.
   the 9 squares is *out-of-bounds*. Both flash the square + play the oof sound, then re-serve.
 - **Scene**: an enclosed gym (`MatchService.buildGym`, build-once) with painted floor grid lines so
   the grid reads in Play even when dynamic shadows don't render.
+- **Build-once / self-heal world (tweak in Studio, it sticks)**: the arena, gym, gallery, and outdoors are
+  **built once** — the **saved place (`.rbxl`) is the source of truth for how everything LOOKS.** `buildArena`
+  no longer wipes + rebuilds `workspace.NineSquare` each Play; it only sets `G.origin` (runtime positioning)
+  and then **builds only the sub-groups that are MISSING** (`ensureGroup` per `Floors` / `FloorNumbers` /
+  `Frame` / `FrameLegs` / `GridLines` / `SaveHighlight` + a self-healed `CourtSpawn`). `setupLighting` is
+  **apply-once** behind a `Lighting.NineSquareLit` attribute sentinel (Sky/Atmosphere self-heal only if
+  missing). **So: tweak any part in Studio (color, size, material, position) or the lighting/sky, then
+  Publish/Save — the scripts won't overwrite it.** (Verified: GridLines set solid white in Edit stays white
+  after Play; deleting `NineSquare`/Sky and the sentinel rebuilds the full world on Play.) Kids can freely
+  re-color/move parts; they should avoid **DELETING** the functional ones — the `Frame` beams (the ball
+  collides off these via `BallController._surfaces`) and the `Floor_*` markers (fault-flash targets) — but
+  even those **self-heal** (rebuild) if removed. To force a one-time re-stamp of the defaults, delete the
+  `Lighting.NineSquareLit` attribute (lighting) or the relevant `NineSquare` sub-folder (geometry).
 - **Upper-floor spectator gallery (M5.3)**: `MatchService.buildGallery` (called from `buildGym`) adds a
   mezzanine ABOVE the gym ceiling. A square OPENING (`GridConfig.galleryOpening`) is punched through BOTH
   the gym ceiling (now a 4-panel ring: `CeilingN/S/E/W`) and the gallery floor ring (`GalFloorN/S/E/W`),
@@ -307,7 +320,8 @@ the Roblox account (open it from Studio on the Mac).
 4. Deploy `src/*.luau` into Studio with the `multi_edit` tool onto the fixed instance paths
    (mapping table at the top of the M1 plan); `multi_edit` creates a script if the path doesn't
    exist yet. Use `script_read` / `script_grep` to inspect, and `execute_luau` for one-off setup.
-   The server bootstrap rebuilds the court/gym on Play.
+   The server bootstrap **self-heals** the court/gym on Play (build-once: it only builds what's MISSING, so
+   manual Studio tweaks to existing parts persist — see "Build-once / self-heal world" above).
 
 **Note:** unlike the old community plugin, the official server **also works during Play/Test** —
 `start_stop_play`, `console_output`, `screen_capture`, and `playtest_subagent` let you launch and
