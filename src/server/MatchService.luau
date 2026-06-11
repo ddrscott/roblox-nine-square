@@ -35,13 +35,11 @@ function MatchService.buildArena(origin: Vector3)
 			p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CastShadow = false
 			p.Size = Vector3.new(G.squareSize - 0.5, 0.1, G.squareSize - 0.5)
 			-- UPRIGHT from the default court camera (eye on +Z looking toward -Z): a Top-face SurfaceGui on an
-			-- UNROTATED part renders its text with the digit's TOP toward world +Z (toward the viewer/near
-			-- edge) -> the number reads UPSIDE-DOWN on screen. Rotating the part 180 deg about Y spins the
-			-- Top-face text 180 deg in-plane (a clean rotation, NOT a mirror -- the SurfaceGui never mirrors)
-			-- so the digit's top now points toward -Z (the far edge / screen-up) and reads right-side-up.
-			-- Verified in Studio against the court-camera orientation.
+			-- UNROTATED part renders its text with the digit's TOP toward world +Z. 270 deg about Y (a 180
+			-- to face the far edge, then +90 CCW per Scott's eye) lands the digit upright on screen -- a clean
+			-- in-plane spin, NOT a mirror (the SurfaceGui never mirrors). Verified against the court camera.
 			p.CFrame = CFrame.new(G.cellCenter(name) + Vector3.new(0, G.floorNumberYOffset, 0))
-				* CFrame.Angles(0, math.rad(180), 0)
+				* CFrame.Angles(0, math.rad(270), 0)
 			p.Transparency = 1  -- the panel is invisible; the SurfaceGui number is what shows
 			p.Name = "FloorNum_" .. name; p.Parent = numbers
 
