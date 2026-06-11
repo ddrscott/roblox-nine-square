@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] BUG: ball escapes the building (likely through the cut-out windows) + rally never resets — contain it + harden the watchdog — see [ball-escapes-building-rally-never-resets.md](ball-escapes-building-rally-never-resets.md)
+- [x] BUG: ball escapes the building (likely through the cut-out windows) + rally never resets — contain it + harden the watchdog — see [ball-escapes-building-rally-never-resets.md](ball-escapes-building-rally-never-resets.md)
 - [ ] Move the stamina meter above the scoreboard + make it shorter — see [stamina-meter-above-scoreboard.md](stamina-meter-above-scoreboard.md)
 - [x] Move the rank pill + status/event feed from top-center to the LEFT (clear the play area) — see [move-rank-status-to-left.md](move-rank-status-to-left.md)
 - [x] UI pass: buttons look like buttons, labels like labels ("Spectating" isn't a button) + consistency — see [ui-buttons-vs-labels-consistency.md](ui-buttons-vs-labels-consistency.md)

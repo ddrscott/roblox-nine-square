@@ -330,6 +330,24 @@ function MatchService.buildWindowedWall(gym: Instance, origin: Vector3, prefix: 
 	glass.Transparency = G.windowGlassTransparency; glass.CastShadow = false
 	glass.TopSurface = Enum.SurfaceType.Smooth; glass.BottomSurface = Enum.SurfaceType.Smooth
 	glass.Parent = gym
+	-- BALL-BARRIER across the gap (CONTAIN the ball). The glass is light-passing + EXCLUDED from the ball's
+	-- surface collision and the frame panels only ring the opening, so a hard hit toward the window used to
+	-- fly straight through into the outdoors (escape -> rally hang). This invisible slab fills the opening (+
+	-- margin) so the ball bounces off the FULL wall extent: it is SmoothPlastic (so BallController._surfaces
+	-- INCLUDES it -- only Glass/Neon + "Floor" are skipped) and named with the prefix (joins the wall-fade
+	-- set). Transparency=1 + CastShadow=false keeps the window visually OPEN (light + view still pass);
+	-- CanCollide=FALSE keeps it OUT of the PLAYER collision -- the ball collides anyway because _collide is a
+	-- pure sphere-vs-box test that ignores CanCollide. Sized a hair larger than the gap (windowBarrierMargin)
+	-- so there is no leak seam at the opening edges.
+	local bMargin = G.windowBarrierMargin
+	local barrier = Instance.new("Part"); barrier.Anchored = true; barrier.Name = prefix .. "_Barrier"
+	barrier.Size = Vector3.new(G.windowBarrierThickness, wh + bMargin, wl + bMargin)
+	barrier.Position = origin + Vector3.new(xoff, cy, 0)
+	barrier.Material = Enum.Material.SmoothPlastic
+	barrier.Transparency = 1; barrier.CastShadow = false
+	barrier.CanCollide = false; barrier.CanQuery = false; barrier.CanTouch = false
+	barrier.Locked = true
+	barrier.Parent = gym
 	return gym
 end
 

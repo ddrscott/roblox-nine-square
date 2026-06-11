@@ -386,7 +386,10 @@ local WALL_AXIS = { WallE = { "X", 1 }, WallW = { "X", -1 }, WallN = { "Z", -1 }
 local function wallPrefixOf(name: string): string?
 	-- The windowed-wall GLASS panes (WallE_Glass / WallW_Glass) keep their own resting transparency; never
 	-- fade them (fading would restore them to OPAQUE when the eye is inside). Only the solid frame panels fade.
-	if string.sub(name, -6) == "_Glass" then return nil end
+	-- The invisible ball-BARRIER (WallE_Barrier / WallW_Barrier) that seals each window gap to the ball must
+	-- likewise NEVER fade -- it is Transparency=1 by design (window stays visually open); fading would lerp it
+	-- toward opaque when the eye is inside and make the barrier visible across the open window.
+	if string.sub(name, -6) == "_Glass" or string.sub(name, -8) == "_Barrier" then return nil end
 	for _, p in ipairs(WALL_PREFIXES) do
 		if name == p or string.sub(name, 1, #p + 1) == p .. "_" then return p end
 	end

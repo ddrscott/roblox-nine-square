@@ -189,10 +189,17 @@ GridConfig.playVolCeilingMargin = 12  -- studs above the gym ceiling the ball ma
                                     --   (a clean rally peaks ~32, far below the ~50 ceiling -> never triggers)
 GridConfig.playVolFloorMargin = 6   -- studs below the floor (y=0) before "escaped" (a resting ball sits at
                                     --   y=ballRadius; this catches a ball that tunnelled through the ground)
-GridConfig.playVolXZMargin = 40     -- studs beyond the court's outer edge (|XZ|) before "escaped". Court
-                                    --   extent is 1.5*squareSize (=21); the gym walls sit a bit past that, so
-                                    --   a generous margin means only a ball that blew clean past the arena
-                                    --   trips it -- a normal OOB landing (still inside the gym) does not.
+GridConfig.gymHalfExtent = 35       -- world |X|,|Z| (studs) of the gym INTERIOR wall planes (== MatchService W/2 = L/2 = 35).
+                                    --   The play volume is now the GYM INTERIOR, not a loose court+margin box: a ball that
+                                    --   leaves the gym (e.g. through a side window before fix A seals it, or any seam) is
+                                    --   IMMEDIATELY out of volume -> the watchdog force-resolves it. A normal OOB landing
+                                    --   sits well inside (court edge ~21 << 35), so legit play never trips it. Keep in sync
+                                    --   with MatchService W/L (=70). playVolXZMargin pads it a hair so a legit bounce that
+                                    --   grazes the wall plane (ball centre ~ wall - ballRadius) isn't falsely flagged.
+GridConfig.playVolXZMargin = 4      -- studs beyond the gym interior wall plane (|XZ|) before "escaped". Small: the volume is
+                                    --   the gym INTERIOR now (gymHalfExtent), so this is just slack for a ball resting against
+                                    --   the inside of a wall (centre ~ 35 - ballRadius), NOT a loose court margin. A ball that
+                                    --   actually left the gym is past gymHalfExtent + this -> caught immediately.
 GridConfig.ballSettleTimeout = 7    -- seconds a rally may run before the watchdog force-resolves it. The ball
                                     --   normally lands + settles to rest in ~2-4s; 7s is generous slack so a
                                     --   long legit rally never false-triggers, but a ball that will NEVER
@@ -260,6 +267,20 @@ GridConfig.windowHeight = 7          -- studs: vertical size of the opening (mat
 GridConfig.windowLength = 50         -- studs: length of the opening along Z (matches the old L-20 = 50)
 GridConfig.windowGlassTransparency = 0.55  -- 0..1: glass pane transparency (lets light through while reading as glass)
 GridConfig.windowGlassColor = Color3.fromRGB(170, 205, 230)  -- pale blue glass tint (matches the old window)
+-- WINDOW BALL-BARRIER (contain the ball). The window gap is a real opening: the glass pane is light-passing
+-- and EXCLUDED from the ball's surface collision (BallController._surfaces skips Glass + Neon), and the
+-- WallE/WallW frame panels only ring the gap -- so a hard hit toward a side window used to fly STRAIGHT
+-- THROUGH the opening into the outdoors (the documented escape -> rally hang). We seal each opening to the
+-- BALL ONLY with an invisible barrier slab co-located with the glass, spanning the gap (+ a margin so a
+-- glancing hit at the edge can't slip past). It is Transparency=1 + CastShadow=false (light + the view still
+-- pass through the open window -- it stays visually open) and CanCollide=FALSE so it is OUT of the PLAYER
+-- collision; the ball collides with it anyway because BallController._collide is a pure geometric
+-- sphere-vs-box test that ignores CanCollide (it only skips parts named "Floor" or made of Glass/Neon). The
+-- barrier is SmoothPlastic + named with the WallE/WallW prefix so it joins the wall-fade set and the ball
+-- bounces off it exactly like the solid wall around it. windowBarrierMargin pads the gap on Y + Z so the
+-- whole opening (and a hair beyond) is covered with no leak seam.
+GridConfig.windowBarrierMargin = 3      -- studs added to the opening's height + length for the ball-barrier (no edge leak)
+GridConfig.windowBarrierThickness = 0.8 -- studs (X): barrier slab thickness, matches the wall so the bounce plane lines up
 
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
@@ -631,16 +652,19 @@ GridConfig.uiStyle = {
 	accentNeutral = Color3.fromRGB(225, 230, 238),   -- plain toast
 }
 
--- Is a ball world position OUTSIDE the sane play volume (escaped)? True when it's above the gym ceiling +
--- margin, below the floor - margin, or its |XZ| (relative to the court origin) is beyond the court's outer
--- edge + margin. A normal rally never leaves this volume (peak ~32 << ceiling+margin; an OOB landing still
--- sits inside the gym). The watchdog uses this to recover a ball that's been flung clean out of the arena.
+-- Is a ball world position OUTSIDE the sane play volume (escaped)? The volume is now the GYM INTERIOR: true
+-- when the ball is above the gym ceiling + margin, below the floor - margin, or its |XZ| (relative to the
+-- court origin) is beyond the gym interior wall plane + a small slack. Tightened from the old loose
+-- court+40 box: a ball that LEAVES THE GYM (through a side window, the ceiling opening, or any seam) is now
+-- IMMEDIATELY out of volume, so the watchdog force-resolves it at once -- the rally can never hang on an
+-- escaped ball that's technically still inside a too-large volume. A normal rally never leaves the gym
+-- (peak ~32 << ceiling; an OOB landing sits at court edge ~21 << gymHalfExtent 35), so legit play never trips.
 function GridConfig.ballOutOfPlayVolume(pos: Vector3): boolean
 	if pos.Y > GridConfig.gymCeilingY + GridConfig.playVolCeilingMargin then return true end
 	if pos.Y < -GridConfig.playVolFloorMargin then return true end
 	local rel = pos - GridConfig.origin
-	local courtExtent = 1.5 * GridConfig.squareSize + GridConfig.playVolXZMargin
-	if math.abs(rel.X) > courtExtent or math.abs(rel.Z) > courtExtent then return true end
+	local gymExtent = GridConfig.gymHalfExtent + GridConfig.playVolXZMargin
+	if math.abs(rel.X) > gymExtent or math.abs(rel.Z) > gymExtent then return true end
 	return false
 end
 

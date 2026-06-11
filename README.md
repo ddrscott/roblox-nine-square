@@ -141,6 +141,19 @@ M3 loop / rank HUD / camera are unchanged.
   glass pane keeps its own resting transparency (the fade skips `*_Glass`). Frame panels are `Locked=true`
   (click-through shell, like the rest of the gym); the glass pane is left unlocked. The windowed wall is a
   pure gym-shell part (lives OUTSIDE `NineSquare.Frame`), so the ball/player court collision is untouched.
+  - **Invisible ball-barrier seals each window to the BALL** (`WallE_Barrier`/`WallW_Barrier`): the glass pane
+    is light-passing and **excluded** from the ball's surface collision (`BallController._surfaces` skips
+    `Glass`/`Neon`), and the frame panels only ring the gap — so a hard hit toward a side window used to fly
+    **straight through the opening into the outdoors** (the escape that hung the rally). Each opening is now
+    sealed to the **ball only** by an invisible slab co-located with the glass, spanning the gap +
+    `windowBarrierMargin` (so a glancing edge hit can't slip past). It is `Transparency=1` + `CastShadow=false`
+    (the window stays **visually open** — light + the view still pass) and `CanCollide=false` (OUT of the
+    **player** collision); the ball collides with it anyway because `BallController._collide` is a pure
+    sphere-vs-box test that ignores `CanCollide` (it only skips `Floor`/`Glass`/`Neon`). It carries the
+    `WallE`/`WallW` prefix so it joins the wall-fade set, but the fade **skips** `*_Barrier` too (fading would
+    make the invisible barrier visible when the eye is inside). Tunables: `windowBarrierMargin`,
+    `windowBarrierThickness`. Build-once: created in `buildWindowedWall`; a one-time MCP pass stamped the two
+    barriers onto the already-built `Gym` in the saved place.
 - **Outdoor environment + clear-day sky**: `MatchService.buildOutdoors` (called from `buildGym`, build-once)
   adds a backdrop so the side windows (now real cut-outs, above) and the camera **wall-fade** (which makes a
   gym wall fully transparent) reveal a **grassy park** instead of empty void / bare skybox. It builds a large grass ground
@@ -297,13 +310,20 @@ client never writes a stat. Bots are excluded (no `UserId`; they never persist).
      it to Y~13k. The degenerate reflection itself is also hardened (a near-zero / trapped-inside-surface
      contact is ejected without adding energy instead of re-reflecting to a runaway). Normal outgoing speed is
      ~55–130 studs/s, so the clamp never bites legit play.
-  2. **Play-volume + settle watchdog** — each Heartbeat, while a rally is in play, the server checks whether the
-     ball has left a sane play volume (above the gym ceiling + margin, below the floor, or `|XZ|` past the court
-     + margin) **or** has run past `GridConfig.ballSettleTimeout` (7 s) without reaching rest. On either, it
-     **force-resolves** exactly like the normal OOB path — attributes the fault to the hitter
-     (`struckCell`/`ownerCell`), applies the deferred rotation, and re-serves — so the loop **always** recovers
-     and never waits forever on an `onRest` that won't come. Verified in Studio: the watchdog fires on a
-     non-settling rally and the game continues; normal rallies never trip it.
+  2. **Play-volume + settle watchdog** — each Heartbeat, while a ball is in motion, the server checks whether the
+     ball has left a sane play volume **or** an armed rally has run past `GridConfig.ballSettleTimeout` (7 s)
+     without reaching rest. On either, it **force-resolves** exactly like the normal OOB path — attributes the
+     fault to the hitter (`struckCell`/`ownerCell`), applies the deferred rotation, and re-serves — so the loop
+     **always** recovers and never waits forever on an `onRest` that won't come. Verified in Studio: the watchdog
+     fires on an out-of-volume / non-settling rally and the game continues; normal rallies never trip it.
+     - The play volume is now the **gym interior** (`GridConfig.gymHalfExtent` 35 + a small `playVolXZMargin`
+       slack), not a loose court+40 box — so a ball that *leaves the gym* (a side window before the barrier
+       sealed it, the ceiling opening, any seam) is **immediately** out of volume and force-resolved at once,
+       instead of being left to fall/bounce away in a too-large volume (the old loose box let an escaped ball
+       sit "in volume" → the rally hung). The out-of-volume check also runs regardless of `rallyArmed` for any
+       in-motion ball, so a stray `onLand` on the global floor plane *outside* the gym can't let an escaped ball
+       slip past the guard. (Containment fix A — the **window ball-barriers** above — keeps the ball in the gym
+       in the first place, so the re-served ball stays contained and there's no re-escape loop.)
 - **Pipe/wall collision is dormant.** `BallController:_collide` correctly bounces the ball off the
   frame pipes + gym walls, BUT with the current high apex (~24) vs frame height (11) the ball arcs
   4–6 studs clear of every pipe and never reaches the walls — so it visually passes through the

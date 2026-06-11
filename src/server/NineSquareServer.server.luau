@@ -626,13 +626,20 @@ RunService.Heartbeat:Connect(function(dt)
 		rallyStartT = workspace:GetServerTimeNow()   -- arm the settle watchdog from the moment it enters play
 	end
 
-	-- ESCAPE / NON-SETTLE WATCHDOG: while a rally is in play, recover it if the ball left the sane play
-	-- volume OR has run past the settle timeout without resting (so a runaway can never wedge the loop by
-	-- never firing onRest). Only checks armed, in-motion rallies; an idle/parked ball (Live/Rest) is skipped.
-	if rallyArmed and not resolvingRally and (bc.phase == "Flight" or bc.phase == "Settling") then
+	-- ESCAPE / NON-SETTLE WATCHDOG: recover the rally if the ball left the sane play volume (the GYM INTERIOR
+	-- now) OR has run past the settle timeout without resting -- so a runaway/escaped ball can never wedge the
+	-- loop by never firing onRest. Two guards, deliberately split so the phase/rallyArmed quirk can't let an
+	-- escaped ball slip past:
+	--   * OUT-OF-VOLUME is checked for any in-motion OR mid-resolve ball (Flight/Settling) REGARDLESS of
+	--     rallyArmed. A ball that left the gym must ALWAYS force-resolve: even if a stray onLand on the global
+	--     floor plane outside the gym already cleared rallyArmed (leaving a Settling ball bouncing in the
+	--     outdoors), this still catches it and recovers -- the escaped ball is never left to fall/bounce away.
+	--   * NON-SETTLE timeout only applies to an ARMED rally (a real in-play rally that should have ended).
+	-- An idle/parked ball (Live/Rest) is skipped; resolvingRally guards against double-resolving.
+	if not resolvingRally and (bc.phase == "Flight" or bc.phase == "Settling") then
 		if G.ballOutOfPlayVolume(bc.ball.Position) then
 			forceResolveRally("ball left play volume")
-		elseif rallyStartT and (workspace:GetServerTimeNow() - rallyStartT) > G.ballSettleTimeout then
+		elseif rallyArmed and rallyStartT and (workspace:GetServerTimeNow() - rallyStartT) > G.ballSettleTimeout then
 			forceResolveRally("rally exceeded settle timeout")
 		end
 	end
