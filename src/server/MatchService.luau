@@ -22,6 +22,40 @@ function MatchService.buildArena(origin: Vector3)
 		p.Transparency = 1; p.Color = Color3.fromRGB(205, 45, 45)  -- only seen during a fault flash
 		p.Material = Enum.Material.SmoothPlastic; p.Name = "Floor_" .. name; p.Parent = floors
 	end
+	-- Floor RANK NUMBERS (replaces the M5.6 over-grid nameplates): a large painted-court number centred on
+	-- each panel, facing UP, via a SurfaceGui on the panel's Top face. STATIC per cell (= rankForCell(cell)):
+	-- centre C reads "1" (the King throne), then 2..9 outward. Built on a DEDICATED thin part per cell (NOT
+	-- the Floor_ marker, which flashes red on a fault) -- CanCollide=false, CastShadow=false, OUTSIDE the
+	-- ball/player collision sets. The part itself is invisible; only the SurfaceGui number renders.
+	local numbers = Instance.new("Folder"); numbers.Name = "FloorNumbers"; numbers.Parent = root
+	for name in pairs(G.cells) do
+		local rank = G.rankForCell(name)
+		if rank then
+			local p = Instance.new("Part")
+			p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CastShadow = false
+			p.Size = Vector3.new(G.squareSize - 0.5, 0.1, G.squareSize - 0.5)
+			p.Position = G.cellCenter(name) + Vector3.new(0, G.floorNumberYOffset, 0)
+			p.Transparency = 1  -- the panel is invisible; the SurfaceGui number is what shows
+			p.Name = "FloorNum_" .. name; p.Parent = numbers
+
+			local gui = Instance.new("SurfaceGui")
+			gui.Name = "Number"; gui.Face = Enum.NormalId.Top
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			gui.PixelsPerStud = 50; gui.LightInfluence = 0
+			gui.Adornee = p; gui.Parent = p
+
+			local label = Instance.new("TextLabel")
+			label.Name = "Label"; label.BackgroundTransparency = 1
+			-- Centred, sized to a fraction of the panel so it fills most of the cell without overpowering the grid.
+			label.AnchorPoint = Vector2.new(0.5, 0.5); label.Position = UDim2.fromScale(0.5, 0.5)
+			label.Size = UDim2.fromScale(G.floorNumberSizeFrac, G.floorNumberSizeFrac)
+			label.Font = Enum.Font.GothamBlack; label.TextScaled = true
+			label.TextColor3 = (rank == 1) and G.floorNumberKingColor or G.floorNumberColor
+			label.TextTransparency = G.floorNumberTransparency
+			label.Text = tostring(rank); label.Parent = gui
+		end
+	end
+
 	local frame = Instance.new("Folder"); frame.Name = "Frame"; frame.Parent = root
 	local span = 3 * G.squareSize
 	-- four boundary lines per axis at the cell edges: +/-0.5 and +/-1.5 squares

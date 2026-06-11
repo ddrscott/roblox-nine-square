@@ -394,18 +394,30 @@ GridConfig.saveHighlightTransparency = 0.55  -- partial transparency on the (Neo
 GridConfig.saveHighlightThickness = 0.9   -- edge-segment cross-section (a touch fatter than beamThickness so it reads as a glow over the pipe)
 GridConfig.saveHighlightYOffset = 0.15    -- studs above frameHeight so the overlay sits just proud of the frame beams (no z-fight)
 
--- ── Seat nameplates (M5.6) ──────────────────────────────────────────────────────────────────────
--- A BillboardGui floats over each of the 9 seats showing WHO occupies it (a human's name or "Bot") so a
--- table of friends can tell themselves apart and read the rotation. The King's plate is gold + crowned.
--- The plates are server-built+driven (RotationService owns the occupancy model) under a fixed anchor per
--- cell, so they replicate to every client automatically and never depend on client trust. Cosmetic only:
--- the anchors are non-colliding, non-querying, invisible parts OUTSIDE the ball/player collision sets.
-GridConfig.nameplateHeight = GridConfig.frameHeight + 3   -- studs above the cell floor the plate floats at (above the frame pipes)
-GridConfig.nameplateSize = Vector2.new(7, 1.6)            -- BillboardGui size in studs (width, height)
-GridConfig.nameplateKingColor = Color3.fromRGB(255, 210, 80)   -- King plate text/stroke gold (matches the RankHud KING colour)
-GridConfig.nameplateHumanColor = Color3.fromRGB(120, 220, 255) -- a seated human's plate text (matches the rank pill cyan)
-GridConfig.nameplateBotColor = Color3.fromRGB(190, 175, 230)   -- a bot's plate text (a muted violet -- clearly "not a person")
-GridConfig.nameplateMaxDistance = 220                     -- studs the plate stays visible to (covers the gallery overlook)
+-- ── Floor rank numbers (replaces the M5.6 over-grid nameplates) ───────────────────────────────────
+-- A large painted-court RANK NUMBER is drawn on each of the 9 floor panels, facing UP, via a SurfaceGui
+-- on the panel's Top face + a big TextLabel. The number = GridConfig.rankForCell(cell): centre C = 1 (the
+-- King throne), then outward 2..9 per rankCells. STATIC per panel (rank<->cell is fixed; occupants rotate,
+-- the numbers don't). Built once with the arena in MatchService.buildArena; never enters the ball/player
+-- collision sets. Colour/size/opacity tunable so it reads from the court camera without overpowering the grid.
+GridConfig.floorNumberColor = Color3.fromRGB(64, 52, 40)  -- warm dark-grey, matches the painted GridLines (a court number, not bold paint)
+GridConfig.floorNumberSizeFrac = 0.62  -- 0..1: the number's height as a fraction of the panel edge (fills most of the cell, leaves margin to the grid lines)
+GridConfig.floorNumberTransparency = 0.45  -- 0 = solid, 1 = invisible; partial so it reads as a faint painted number over the wood
+GridConfig.floorNumberKingColor = Color3.fromRGB(150, 120, 48)  -- the centre "1" (King throne) tinted gold so the throne reads on the floor
+GridConfig.floorNumberYOffset = 0.08   -- studs above the floor the number-panel sits (just proud of the wood, no z-fight)
+
+-- ── Occupant jersey labels (attached to the rig, travels with the occupant) ───────────────────────
+-- Each occupant wears a BillboardGui "jersey" on its rig (Head), so the label MOVES with them as they
+-- rotate through ranks (no per-cell relabel). Humans show their DisplayName; bots show a stable LETTER
+-- (A, B, C, ...) assigned per bot so it's consistent while that bot is on the board. The KING (rank 1)
+-- is marked clearly (gold tint + crown glyph). Server-built + server-authoritative off `byRank`, so it
+-- replicates to every client (players + gallery spectators) and never trusts the client.
+GridConfig.jerseyHeight = 3.2          -- studs above the rig Head the jersey floats (clear of the head, readable from the high cam)
+GridConfig.jerseySize = Vector2.new(6, 1.4)               -- BillboardGui size in studs (width, height)
+GridConfig.jerseyKingColor = Color3.fromRGB(255, 210, 80) -- King jersey text gold (matches the RankHud KING colour)
+GridConfig.jerseyHumanColor = Color3.fromRGB(120, 220, 255) -- a seated human's jersey text (rank-pill cyan)
+GridConfig.jerseyBotColor = Color3.fromRGB(190, 175, 230)   -- a bot's jersey text (muted violet -- clearly "not a person")
+GridConfig.jerseyMaxDistance = 220                       -- studs the jersey stays visible to (covers the gallery overlook)
 
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]

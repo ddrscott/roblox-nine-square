@@ -88,8 +88,9 @@ export type RotationService = typeof(setmetatable(
 		_setHumanRank: ((player: Player, rank: number) -> ())?,  -- injected: replicate a player's rank
 		_backfillHook: ((rank: number, cell: string) -> Occupant?)?, -- injected: M5.2 leave override (default bot)
 		_dummyFolder: Folder?,                   -- workspace.NineSquare.Dummies (holds every bot rig)
-		_nameplateFolder: Folder?,               -- workspace.NineSquare.Nameplates (one plate per seat, M5.6)
-		_nameplates: { [number]: BillboardGui },  -- rank -> that seat's nameplate gui (M5.6)
+		_botLetters: { [string]: string },       -- bot id -> stable jersey letter (A, B, C, ...) while on the board
+		_letterSeq: number,                      -- monotonic counter -> the next bot jersey letter
+		_jerseyConns: { [Player]: RBXScriptConnection }?,  -- per-human CharacterAdded -> re-attach the jersey on respawn
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
 	},
 	RotationService
@@ -108,8 +109,9 @@ function RotationService.new(placeHuman: (player: Player, cell: string) -> ()): 
 		_botSeq = 0,
 		_placeHuman = placeHuman,
 		_dummyFolder = nil,
-		_nameplateFolder = nil,
-		_nameplates = {},
+		_botLetters = {},
+		_letterSeq = 0,
+		_jerseyConns = {},
 	}, RotationService)
 
 	-- Fresh "Dummies" folder for the rigs (rebuilt each construction, like the arena builders).
@@ -122,97 +124,117 @@ function RotationService.new(placeHuman: (player: Player, cell: string) -> ()): 
 		warn("[Rotation] no workspace.NineSquare folder; build the arena before bot rigs")
 	end
 
-	-- Seed all 9 seats with bots (each gets its own rig).
+	-- Seed all 9 seats with bots (each gets its own rig + jersey letter).
 	for rank = 1, RANKS do
 		self.byRank[rank] = self:_makeBot(rank)
 	end
 
-	-- M5.6: build the 9 seat nameplates (server-built -> replicate to every client). Then label them.
-	self:_buildNameplates()
-	self:_refreshNameplates()
+	-- Mark the King jersey (rank 1) now that all seats are filled.
+	self:_refreshJerseys()
 	return self
 end
 
 -- ============================================================================================
--- M5.6 -- SEAT NAMEPLATES. A BillboardGui floats over each of the 9 cells showing WHO sits there (a
--- human's display name or "Bot"); the King's plate is gold + crowned. The plates are SERVER-built and
--- SERVER-driven off `byRank` (the authoritative occupancy model), so they replicate to every client for
--- free and never trust the client for who's King / who's in a square. The anchors are fixed per cell
--- (one per rank's home square) -- they do NOT track the moving rig/character, they just label the seat --
--- and are non-colliding / non-querying / invisible, OUTSIDE the ball+player collision sets (cosmetic only).
+-- OCCUPANT JERSEY LABELS (replaces the M5.6 over-grid nameplates). A BillboardGui "jersey" is attached
+-- to each occupant's RIG (a human's character Head or a bot's rig Head), so the label MOVES with the
+-- occupant as it rotates through cells (no per-cell relabel -- it's on the occupant, not the square).
+-- HUMANS show their DisplayName; BOTS show a stable LETTER (A, B, C, ...) assigned per bot so it's
+-- consistent while that bot is on the board. The KING (rank 1) is marked clearly (gold tint + crown glyph).
+-- Server-built + server-authoritative off `byRank`, so it replicates to every client (players + gallery
+-- spectators) and never trusts the client. Cosmetic only: the BillboardGui is non-colliding GUI, OUTSIDE
+-- the ball/player collision sets.
 -- ============================================================================================
 
--- Build the 9 fixed plate anchors + their BillboardGuis (one per cell). Called once in .new(); the text
--- is (re)set by _refreshNameplates whenever occupancy changes (join/leave/auto-seat/rotation).
-function RotationService._buildNameplates(self: RotationService)
-	local ns = workspace:FindFirstChild("NineSquare")
-	if not ns then return end
-	local old = ns:FindFirstChild("Nameplates"); if old then old:Destroy() end
-	local folder = Instance.new("Folder"); folder.Name = "Nameplates"; folder.Parent = ns
-	self._nameplateFolder = folder
-	self._nameplates = {}
+-- Assign the next stable jersey LETTER (A, B, C, ... then AA, AB, ... past 26) to a bot id. Stable while
+-- the bot is on the board (kept in _botLetters until the bot is destroyed/displaced), so its label never
+-- changes mid-game as it rotates ranks.
+function RotationService._assignBotLetter(self: RotationService, id: string): string
+	local existing = self._botLetters[id]
+	if existing then return existing end
+	local n = self._letterSeq
+	self._letterSeq += 1
+	-- bijective base-26: 0->A, 25->Z, 26->AA, ...
+	local letter = ""
+	repeat
+		letter = string.char(65 + (n % 26)) .. letter
+		n = math.floor(n / 26) - 1
+	until n < 0
+	self._botLetters[id] = letter
+	return letter
+end
 
-	for rank = 1, RANKS do
-		local cell = G.cellForRank(rank)
-		-- A tiny invisible anchor at the cell's centre, up at nameplate height -- the plate's adornee.
-		local anchor = Instance.new("Part")
-		anchor.Name = "PlateAnchor_" .. tostring(rank)
-		anchor.Size = Vector3.new(0.2, 0.2, 0.2)
-		anchor.Transparency = 1; anchor.Anchored = true; anchor.CanCollide = false; anchor.CanQuery = false
-		anchor.CastShadow = false
-		anchor.Position = G.cellCenter(cell) + Vector3.new(0, G.nameplateHeight, 0)
-		anchor.Parent = folder
+-- Find the Head (or PrimaryPart) of an occupant's rig/character to adorn the jersey to. Bots use their
+-- rig Model; humans use their live Character. nil if the rig/character isn't present yet.
+local function occupantHead(occ: Occupant, rig: Model?): BasePart?
+	local model: Model? = nil
+	if occ.kind == "bot" then
+		model = rig
+	elseif occ.player then
+		model = occ.player.Character
+	end
+	if not model then return nil end
+	local head = model:FindFirstChild("Head")
+	if head and head:IsA("BasePart") then return head end
+	return model.PrimaryPart
+end
 
-		local gui = Instance.new("BillboardGui")
-		gui.Name = "Plate_" .. tostring(rank)
-		gui.Size = UDim2.fromScale(G.nameplateSize.X, G.nameplateSize.Y)
-		gui.StudsOffsetWorldSpace = Vector3.new(0, 0, 0)
+-- Create (or fetch) the jersey BillboardGui parented to `head`. One per rig/character; reused on refresh.
+local function ensureJersey(head: BasePart): TextLabel
+	local gui = head:FindFirstChild("Jersey") :: BillboardGui?
+	if not gui then
+		gui = Instance.new("BillboardGui")
+		gui.Name = "Jersey"
+		gui.Size = UDim2.fromScale(G.jerseySize.X, G.jerseySize.Y)
+		gui.StudsOffset = Vector3.new(0, G.jerseyHeight, 0)
 		gui.AlwaysOnTop = false
-		gui.MaxDistance = G.nameplateMaxDistance
+		gui.MaxDistance = G.jerseyMaxDistance
 		gui.LightInfluence = 0
-		gui.Adornee = anchor
-		gui.Parent = anchor
+		gui.Adornee = head
+		gui.Parent = head
 
 		local label = Instance.new("TextLabel")
 		label.Name = "Label"; label.BackgroundTransparency = 1
 		label.Size = UDim2.fromScale(1, 1); label.Font = Enum.Font.GothamBold
-		label.TextScaled = true; label.TextColor3 = G.nameplateBotColor
-		label.Text = "Bot"; label.Parent = gui
+		label.TextScaled = true; label.Text = ""
+		label.Parent = gui
 		local stroke = Instance.new("UIStroke")
 		stroke.Thickness = 2.5; stroke.Color = Color3.fromRGB(10, 12, 16); stroke.Transparency = 0.15
 		stroke.Parent = label
+	end
+	return gui:FindFirstChild("Label") :: TextLabel
+end
 
-		self._nameplates[rank] = gui
+-- (Re)label ONE occupant's jersey from its rank: human -> DisplayName, bot -> its stable letter; the King
+-- (rank 1) gets a crown glyph prefix + gold text so the throne reads at a glance. Safe if the rig/character
+-- isn't present yet (a human awaiting CharacterAdded) -- it relabels on the next refresh.
+function RotationService._refreshJerseyFor(self: RotationService, occ: Occupant)
+	local rig = (occ.kind == "bot") and self._dummyParts[occ.id] or nil
+	local head = occupantHead(occ, rig)
+	if not head then return end
+	local label = ensureJersey(head)
+
+	local who: string
+	if occ.kind == "human" and occ.player then
+		who = occ.player.DisplayName
+	else
+		who = self:_assignBotLetter(occ.id)
+	end
+
+	if occ.rank == 1 then
+		label.Text = "\u{1F451} " .. who          -- crown glyph + occupant on the throne
+		label.TextColor3 = G.jerseyKingColor
+	else
+		label.Text = who
+		label.TextColor3 = (occ.kind == "human") and G.jerseyHumanColor or G.jerseyBotColor
 	end
 end
 
--- (Re)label every seat plate from the current occupancy: human -> display name, bot -> "Bot"; the King
--- (rank 1) gets a gold crown prefix + gold text so the throne is unmistakable from any client. Called on
--- every occupancy change (placeAll / join / leave / auto-seat / rotation). Server-authoritative; the text
--- comes from `byRank` (no client input). Safe if the plates haven't been built (e.g. arena missing).
-function RotationService._refreshNameplates(self: RotationService)
+-- Relabel EVERY occupant's jersey (King mark, human names, bot letters). Called on any occupancy/rank
+-- change (placeAll / join / leave / auto-seat / rotation) so the King mark follows the throne.
+function RotationService._refreshJerseys(self: RotationService)
 	for rank = 1, RANKS do
-		local gui = self._nameplates[rank]
-		if gui then
-			local label = gui:FindFirstChild("Label") :: TextLabel?
-			if label then
-				local occ = self.byRank[rank]
-				local isKing = (rank == 1)
-				local who: string
-				if occ and occ.kind == "human" and occ.player then
-					who = occ.player.DisplayName
-				else
-					who = "Bot"
-				end
-				if isKing then
-					label.Text = "\u{1F451} " .. who          -- crown glyph + occupant on the throne
-					label.TextColor3 = G.nameplateKingColor
-				else
-					label.Text = who
-					label.TextColor3 = (occ and occ.kind == "human") and G.nameplateHumanColor or G.nameplateBotColor
-				end
-			end
-		end
+		local occ = self.byRank[rank]
+		if occ then self:_refreshJerseyFor(occ) end
 	end
 end
 
@@ -319,6 +341,7 @@ function RotationService._destroyBot(self: RotationService, occ: Occupant)
 	if rig then rig:Destroy() end
 	self._dummyParts[occ.id] = nil
 	self._rigState[occ.id] = nil
+	self._botLetters[occ.id] = nil   -- free this bot's jersey letter (it's off the board)
 end
 
 -- Drive a rig: place its anchored HumanoidRootPart at `hrpCF` and update the layered animation from the
@@ -553,7 +576,7 @@ function RotationService.placeAll(self: RotationService)
 		if occ then self:_placeOccupant(occ) end
 	end
 	self:_syncHumanRank()
-	self:_refreshNameplates()
+	self:_refreshJerseys()
 end
 
 -- ============================================================================================
@@ -603,8 +626,21 @@ function RotationService.seatHuman(self: RotationService, player: Player): numbe
 	print(("[Rotation] JOIN: %s seated at entry rank %d (%s); displaced bot %s")
 		:format(player.Name, rank, occ.cell, displaced.id))
 	self:_placeOccupant(occ)
+	-- (Re)attach this human's jersey on every (re)spawn: the BillboardGui lives on the character Head,
+	-- so a fresh character needs the label re-created. The occupant record is the live `byRank` slot, so
+	-- whatever rank/cell this player holds when a character spawns is reflected (incl. the King mark).
+	-- A label attach only -- never touches placement/seating/rotation. Connected once per seated player.
+	if not self._jerseyConns then self._jerseyConns = {} end
+	if not self._jerseyConns[player] then
+		self._jerseyConns[player] = player.CharacterAdded:Connect(function(char)
+			char:WaitForChild("Head", 5)
+			local current = self:rankOfPlayer(player)
+			if current then self:_refreshJerseyFor(self.byRank[current]) end
+		end)
+	end
+	if player.Character then self:_refreshJerseyFor(occ) end
 	self:_syncHumanRank()
-	self:_refreshNameplates()
+	self:_refreshJerseys()
 	return rank
 end
 
@@ -617,6 +653,12 @@ function RotationService.unseatHuman(self: RotationService, player: Player): Occ
 	local rank = self:rankOfPlayer(player)
 	if not rank then return nil end
 	local cell = G.cellForRank(rank)
+
+	-- Drop this human's jersey CharacterAdded hook (the character/jersey go with the leaver).
+	if self._jerseyConns and self._jerseyConns[player] then
+		self._jerseyConns[player]:Disconnect()
+		self._jerseyConns[player] = nil
+	end
 
 	-- (1) Hook first (spectator queue). It returns a ready occupant to seat, or nil to fall through to a bot.
 	local replacement: Occupant? = nil
@@ -638,7 +680,7 @@ function RotationService.unseatHuman(self: RotationService, player: Player): Occ
 		:format(player.Name, rank, cell, replacement.kind, replacement.id))
 	self:_placeOccupant(replacement)
 	self:_syncHumanRank()
-	self:_refreshNameplates()
+	self:_refreshJerseys()
 	return replacement
 end
 
@@ -685,6 +727,7 @@ function RotationService.placePlayer(self: RotationService, player: Player)
 		if occ and occ.kind == "human" and occ.player == player then
 			self:_placeOccupant(occ)
 			if self._setHumanRank then self._setHumanRank(player, occ.rank) end
+			self:_refreshJerseyFor(occ)   -- (re)attach the jersey to the fresh character Head
 			return
 		end
 	end
