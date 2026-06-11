@@ -29,7 +29,6 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local G = require(RS.GridConfig)
-local UI = G.uiStyle    -- shared HUD style language (label/panel colours, corners, hairline)
 
 local player = Players.LocalPlayer
 
@@ -47,54 +46,21 @@ local function spend(cost: number)
 end
 
 -- ---------------------------------------------------------------------------------------------------
--- HUD: a slim stamina bar in the TOP-RIGHT cluster, directly ABOVE the scoreboard (the stats panel /
--- built-in player list both sit at the top-right, just under the CoreGui topbar). RIGHT-anchored,
--- shorter than before (was a wide 260x16 bottom-centre bar) and sized to the scoreboard's width so it
--- reads as the topmost chip of that right column. Placement/size only -- the fill/drain + show/hide
--- behaviour below is unchanged. The scoreboard begins at GuiInset.Top + a small margin, so to sit ABOVE
--- it WITHOUT overlapping (and without moving it) we IgnoreGuiInset (true-screen coords) and pin the bar's
--- BOTTOM a hair ABOVE the inset line -- i.e. in the FREE right region of the topbar (the player-list
--- icon is hidden on the mobile compact HUD), so it's never clipped. All sizes/offsets come from
--- GridConfig.uiStyle + the stamina-bar tunables (single source of truth).
+-- HUD: BIND the stamina fill to the StarterGui-authored stamina bar (no layout built here). The bar is
+-- authored in the `NineSquareHUD` TopRight cluster (StaminaBar > Track > Fill, with a readable caption),
+-- laid out + scaled by the standard HUD system (HudBuilder). This script only drives the Fill's width +
+-- colour off the local stamina pool -- the dash/flip/stamina LOGIC below is unchanged. If the authored
+-- bar is absent (fresh place) HudBuilder self-heals the default tree, so this binding always resolves.
 -- ---------------------------------------------------------------------------------------------------
-local GuiService = game:GetService("GuiService")
-local gui = Instance.new("ScreenGui")
-gui.Name = "MovementHUD"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true
-gui.Parent = player:WaitForChild("PlayerGui")
-
-local barBg = Instance.new("Frame")
-barBg.Name = "StaminaBar"; barBg.AnchorPoint = Vector2.new(1, 1)   -- pin by the BOTTOM-right so it tucks just above the inset line
-barBg.Size = UDim2.fromOffset(G.staminaBarWidth, G.staminaBarHeight)
-barBg.BackgroundColor3 = UI.labelBg; barBg.BackgroundTransparency = UI.labelBgTransparency
-barBg.BorderSizePixel = 0; barBg.Parent = gui
-local bgCorner = Instance.new("UICorner"); bgCorner.CornerRadius = UDim.new(0, UI.labelCorner); bgCorner.Parent = barBg
-local bgStroke = Instance.new("UIStroke"); bgStroke.Thickness = UI.panelHairlineThickness
-bgStroke.Color = UI.panelHairlineColor; bgStroke.Transparency = UI.panelHairlineTransparency; bgStroke.Parent = barBg
-
--- Keep the bar's bottom pinned just above the CoreGui inset line (true-screen coords): the scoreboard
--- starts at inset.Top + its own margin, so this lands the bar directly ABOVE the scoreboard with a small
--- gap, never overlapping it. Re-evaluated whenever the inset changes (topbar appears/resizes).
-local function placeBar()
-	local insetTop = GuiService:GetGuiInset().Y
-	barBg.Position = UDim2.new(1, -G.staminaBarRightMargin, 0, insetTop - G.staminaBarTop)
-end
-placeBar()
-GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(placeBar)
-
-local barFill = Instance.new("Frame")
-barFill.Name = "Fill"; barFill.Position = UDim2.fromOffset(2, 2)
-barFill.Size = UDim2.new(1, -4, 1, -4); barFill.BorderSizePixel = 0
-barFill.BackgroundColor3 = Color3.fromRGB(120, 220, 255); barFill.Parent = barBg
-local fillCorner = Instance.new("UICorner"); fillCorner.CornerRadius = UDim.new(0, 6); fillCorner.Parent = barFill
-
-local label = Instance.new("TextLabel")
-label.BackgroundTransparency = 1; label.Size = UDim2.fromScale(1, 1)
-label.Font = UI.labelFont; label.TextSize = 10; label.Text = "STAMINA"
-label.TextColor3 = UI.labelText; label.TextTransparency = 0.1; label.Parent = barBg
+local HudBuilder = require(RS:WaitForChild("HudBuilder"))
+local playerGui = player:WaitForChild("PlayerGui")
+local hud = HudBuilder.get(playerGui)
+local track = hud:WaitForChild("TopRight"):WaitForChild("StaminaBar"):WaitForChild("Track")
+local barFill = track:WaitForChild("Fill") :: Frame
 
 local function updateHud()
 	local frac = stamina / G.staminaMax
-	barFill.Size = UDim2.new(frac, -4 * frac, 1, -4)
+	barFill.Size = UDim2.fromScale(frac, 1)
 	-- dim toward red when low, blue when full
 	barFill.BackgroundColor3 = (frac < 0.34) and Color3.fromRGB(255, 110, 90) or Color3.fromRGB(120, 220, 255)
 end

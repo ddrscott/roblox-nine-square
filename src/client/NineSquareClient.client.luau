@@ -70,99 +70,36 @@ local function isSeated(): boolean
 	return type(rank) == "number" and rank > 0
 end
 
--- ── LOBBY / SEAT UI -- a single RIGHT-anchored column UNDER the scoreboard (this task) ─────────────────
--- The Join Game button, the new Leave button, and the Spectating/queue pill all used to sit bottom-CENTRE,
--- covering the court view. They now live in ONE right-anchored ScreenGui, stacked vertically just BELOW the
--- scoreboard (the stats panel / player-list is top-right), so nothing blocks the centre of the screen and the
--- column stays clear of the bottom-right camera-mode toggle + the default touch jump button. Visibility is
--- mutually exclusive off the server-replicated attributes (the client only reflects + requests):
---   * SPECTATING + not queued (QueuePos 0) -> Join Game button (tappable) + Spectating pill
---   * SPECTATING + queued (QueuePos N)      -> "In queue (#N)" button (disabled) + Spectating pill
---   * SEATED (Rank>0, Spectating false)     -> Leave button only (return to the gallery lobby)
--- Layout switches to compact widths/heights on a touch/portrait session.
+-- ── LOBBY / SEAT UI -- BIND to the StarterGui-authored HUD (no layout built here) ──────────────────────
+-- The Join Game button, the small Spectate (leave) button, and the Spectating/queue label are AUTHORED in
+-- the StarterGui `NineSquareHUD` TopRight cluster (Studio-editable; self-healed by HudBuilder if absent),
+-- stacked under the stamina bar + scoreboard via a UIListLayout so they never collide. This script only
+-- RESOLVES them by name + binds state -- it builds no layout. Visibility is mutually exclusive off the
+-- server-replicated attributes (the client only reflects + requests):
+--   * SPECTATING + not queued (QueuePos 0) -> Join Game button (tappable) + Spectating label
+--   * SPECTATING + queued (QueuePos N)      -> "In queue (#N)" button (disabled) + Spectating label
+--   * SEATED (Rank>0, Spectating false)     -> small Spectate button only (return to the gallery lobby)
 local JoinRequest = Remotes:WaitForChild("JoinRequest")
 local LeaveRequest = Remotes:WaitForChild("LeaveRequest")
 
-local lobbyIsMobile = (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled)
-	or (cam.ViewportSize.Y > 0 and (cam.ViewportSize.X / cam.ViewportSize.Y) <= G.mobileStatsAspectMax)
-local colW = lobbyIsMobile and G.lobbyUIWidthMobile or G.lobbyUIWidth
-local btnH = lobbyIsMobile and G.lobbyUIButtonHeightMobile or G.lobbyUIButtonHeight
-local pillH = lobbyIsMobile and G.lobbyUIPillHeightMobile or G.lobbyUIPillHeight
-local btnTxt = lobbyIsMobile and G.lobbyUITextSizeMobile or G.lobbyUITextSize
-local pillTxt = lobbyIsMobile and G.lobbyUIPillTextSizeMobile or G.lobbyUIPillTextSize
--- The seated "Spectate" button is intentionally small + unobtrusive (its own compact dims), NOT the big
--- Join-Game CTA size -- we don't want to promote leaving the game.
-local leaveW = lobbyIsMobile and G.lobbyUILeaveWidthMobile or G.lobbyUILeaveWidth
-local leaveH = lobbyIsMobile and G.lobbyUILeaveHeightMobile or G.lobbyUILeaveHeight
-local leaveTxt = lobbyIsMobile and G.lobbyUILeaveTextSizeMobile or G.lobbyUILeaveTextSize
-
-local lobbyGui = Instance.new("ScreenGui")
-lobbyGui.Name = "LobbyHud"; lobbyGui.ResetOnSpawn = false; lobbyGui.IgnoreGuiInset = false
-lobbyGui.Enabled = false; lobbyGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
--- Right-anchored column. A top-anchored vertical list growing DOWN from below the scoreboard reserve.
-local lobbyCol = Instance.new("Frame")
-lobbyCol.Name = "Column"; lobbyCol.AnchorPoint = Vector2.new(1, 0)
-lobbyCol.Position = UDim2.new(1, -G.lobbyUISideMargin, 0, G.lobbyUITopReserve)
-lobbyCol.Size = UDim2.fromOffset(colW, btnH + pillH + G.lobbyUIGap)
-lobbyCol.BackgroundTransparency = 1; lobbyCol.Parent = lobbyGui
-local colLayout = Instance.new("UIListLayout")
-colLayout.FillDirection = Enum.FillDirection.Vertical
-colLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-colLayout.SortOrder = Enum.SortOrder.LayoutOrder
-colLayout.Padding = UDim.new(0, G.lobbyUIGap); colLayout.Parent = lobbyCol
-
--- Shared HUD style language (buttons look tappable; labels look static). Centralised in GridConfig so both
--- client HUD scripts stay consistent + tweakable.
+-- Shared HUD style language (buttons look tappable; labels look static). Centralised in GridConfig.
 local UI = G.uiStyle
 
--- Join / In-queue BUTTON (shown to a SPECTATING watcher). Solid green GO fill, stroke edge, bold, AutoButtonColor.
-local joinBtn = Instance.new("TextButton")
-joinBtn.Name = "JoinBtn"; joinBtn.LayoutOrder = 1
-joinBtn.Size = UDim2.fromOffset(colW, btnH)
-joinBtn.BackgroundColor3 = UI.buttonGoFill; joinBtn.BackgroundTransparency = UI.buttonBgTransparency
-joinBtn.BorderSizePixel = 0; joinBtn.AutoButtonColor = true
-joinBtn.Font = UI.buttonFont; joinBtn.TextSize = btnTxt
-joinBtn.TextColor3 = UI.buttonText; joinBtn.Text = "Join Game"; joinBtn.Parent = lobbyCol
-local joinCorner = Instance.new("UICorner"); joinCorner.CornerRadius = UDim.new(0, UI.buttonCorner); joinCorner.Parent = joinBtn
-local joinStroke = Instance.new("UIStroke"); joinStroke.Thickness = UI.buttonStrokeThickness
-joinStroke.Color = UI.buttonGoStroke; joinStroke.Transparency = UI.buttonStrokeTransparency; joinStroke.Parent = joinBtn
-
--- "Spectate" BUTTON (shown to a SEATED player) -- a deliberately SMALL, unobtrusive button (we don't promote
--- leaving the game, so this is NOT a big red CTA): compact size, small font, quiet NEUTRAL fill. It's still a
--- real, tappable button (AutoButtonColor + hairline stroke) that fires the same LeaveRequest -- behaviour is
--- unchanged; it's just low-key. Right-aligned in the column so it sits clear of the scoreboard / camera toggle.
-local leaveBtn = Instance.new("TextButton")
-leaveBtn.Name = "LeaveBtn"; leaveBtn.LayoutOrder = 2
-leaveBtn.Size = UDim2.fromOffset(leaveW, leaveH)
-leaveBtn.BackgroundColor3 = UI.buttonNeutralFill; leaveBtn.BackgroundTransparency = UI.buttonBgTransparency
-leaveBtn.BorderSizePixel = 0; leaveBtn.AutoButtonColor = true
-leaveBtn.Font = UI.labelFont; leaveBtn.TextSize = leaveTxt
-leaveBtn.TextColor3 = UI.buttonText; leaveBtn.Text = "Spectate"; leaveBtn.Parent = lobbyCol
-local leaveCorner = Instance.new("UICorner"); leaveCorner.CornerRadius = UDim.new(0, UI.labelCorner); leaveCorner.Parent = leaveBtn
-local leaveStroke = Instance.new("UIStroke"); leaveStroke.Thickness = 1
-leaveStroke.Color = UI.buttonNeutralStroke; leaveStroke.Transparency = UI.buttonStrokeTransparency; leaveStroke.Parent = leaveBtn
-
--- Spectating / queue LABEL (shown to a SPECTATING watcher, beneath the Join button). Deliberately NOT a button:
--- flat low-opacity banner, NO stroke edge, lighter (Medium) font, accent-tinted TEXT only. Reports state; not tappable.
-local specPill = Instance.new("Frame")
-specPill.Name = "SpecLabel"; specPill.LayoutOrder = 3
-specPill.Size = UDim2.fromOffset(colW, pillH)
-specPill.BackgroundColor3 = UI.labelBg; specPill.BackgroundTransparency = UI.labelBgTransparency
-specPill.BorderSizePixel = 0; specPill.Parent = lobbyCol
-local specCorner = Instance.new("UICorner"); specCorner.CornerRadius = UDim.new(0, UI.labelCorner); specCorner.Parent = specPill
-local specLabel = Instance.new("TextLabel")
-specLabel.BackgroundTransparency = 1; specLabel.Size = UDim2.fromScale(1, 1)
-specLabel.Font = UI.labelFont; specLabel.TextSize = pillTxt
-specLabel.TextColor3 = UI.labelText; specLabel.Text = "Spectating"; specLabel.Parent = specPill
+local HudBuilder = require(RS:WaitForChild("HudBuilder"))
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local hud = HudBuilder.get(playerGui)               -- the authored StarterGui HUD (self-healed if absent)
+local topRight = hud:WaitForChild("TopRight")
+local joinBtn = topRight:WaitForChild("JoinBtn") :: TextButton
+local joinStroke = joinBtn:WaitForChild("Edge") :: UIStroke
+local leaveBtn = topRight:WaitForChild("LeaveBtn") :: TextButton
+local specLabelFrame = topRight:WaitForChild("SpecLabel")
+local specLabel = specLabelFrame:WaitForChild("Text") :: TextLabel
 
 local function renderLobbyHud()
 	local spectating = isSpectating()
 	local seated = isSeated()
-	-- The whole column is only shown when there's something to show (spectating OR seated).
-	lobbyGui.Enabled = spectating or seated
 	joinBtn.Visible = spectating
-	specPill.Visible = spectating
+	specLabelFrame.Visible = spectating
 	leaveBtn.Visible = seated
 	if spectating then
 		local pos = LocalPlayer:GetAttribute("QueuePos")

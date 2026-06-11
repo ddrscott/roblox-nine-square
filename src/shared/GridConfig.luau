@@ -623,11 +623,7 @@ GridConfig.statsAutosaveInterval = 120          -- seconds between periodic auto
 -- anchored stats readout (Best / King Turns / Turns, read live from the LocalPlayer's leaderstats) instead --
 -- desktop keeps the normal built-in list untouched. These tune that mobile-only panel (display/layout only;
 -- the stat VALUES are server-authoritative and unchanged).
-GridConfig.mobileStatsAspectMax = 1.25          -- treat a viewport with aspect (X/Y) <= this as a "small/portrait" screen that gets the compact HUD (so phone-emulated portrait also triggers, not just real touch)
-GridConfig.mobileStatsWidth = 132               -- px width of the compact right-anchored stats panel
-GridConfig.mobileStatsRowHeight = 22            -- px height per stat row
-GridConfig.mobileStatsMargin = 8                -- px gap from the right/top screen edges (clear of the central play view + the CoreGui topbar)
-GridConfig.mobileStatsTextSize = 13             -- px font size for the compact rows (small but readable on a phone)
+GridConfig.mobileStatsAspectMax = 1.25          -- treat a viewport with aspect (X/Y) <= this as a "small/portrait" screen (used by the responsive HUD scale floor + to hide the bulky built-in PlayerList on phones; the scoreboard itself is now the authored, scale-driven Scoreboard panel -- no separate mobile px panel)
 
 -- ── TRANSIENT NOTICE FEED (client). The top-LEFT notice feed is now TRIMMED to the few moments that matter
 -- (a brief "You're in" on seating, a queue note, the King moment -- the server no longer fires join/leave or
@@ -653,46 +649,28 @@ GridConfig.toastFadeTime = 0.25                 -- seconds for the in/out opacit
 GridConfig.toastBgTransparency = 0.55           -- background transparency while visible (more see-through than a persistent label's 0.45)
 GridConfig.toastTextTransparency = 0.1          -- text transparency while visible (still legible, a touch soft)
 
--- ── STAMINA METER placement (the player-movement HUD fill bar) ─────────────────────────────────────
--- The stamina bar (dash/flip energy) lives in the MovementHUD. It used to sit BOTTOM-CENTRE (260x16),
--- drawing the eye into the play view. We now park it in the TOP-RIGHT cluster, directly ABOVE the
--- scoreboard (the stats panel / built-in player list), RIGHT-anchored and SHORTER so it reads as the
--- topmost slim chip of that right-side column. Placement/size ONLY -- the stamina pool + dash/flip
--- gating/values are unchanged. The MovementHUD respects the CoreGui inset, so y is measured BELOW the
--- topbar; the bar sits at the very top of the inset region and the scoreboard begins just under it.
-GridConfig.staminaBarWidth = 132                -- px width -- matches the compact stats panel so it lines up over the scoreboard
-GridConfig.staminaBarHeight = 14                -- px height -- slim, still fits the small "STAMINA" caption + reads as a fill bar (was 16)
-GridConfig.staminaBarRightMargin = 8            -- px gap from the RIGHT screen edge (matches mobileStatsMargin so it aligns with the scoreboard)
-GridConfig.staminaBarTop = 2                     -- px the bar's BOTTOM sits ABOVE the CoreGui inset line (true-screen) -- the scoreboard starts just below the inset, so this lands the bar directly above it without overlap
+-- NOTE: the old fixed-pixel HUD placement/size tunables (staminaBar*, lobbyUI*, mobileStats panel dims) are
+-- GONE. The stamina bar, scoreboard, Join/Spectate buttons + Spectating label are now AUTHORED in the
+-- StarterGui `NineSquareHUD` tree (HudBuilder), laid out with UIListLayout/UIPadding + scale-based UDim2 and
+-- sized by the responsive UIScale below -- there are no per-device fixed-pixel swaps to tune anymore.
 
--- ── LOBBY UI placement (Join Game / Leave-Spectate button + Spectating pill) ───────────────────────────
--- The lobby/spectator UI used to sit bottom-CENTRE, covering the court view. We now RIGHT-ANCHOR it and
--- stack it vertically BENEATH the scoreboard (the stats panel is top-right), so it's out of the central
--- view and clear of the bottom-right camera-mode toggle + the default touch jump button. These tune that
--- right-side column (the scoreboard reserve at the top, the column width + element heights + gaps). The
--- client picks the COMPACT (mobile) sizes on a touch/portrait session and the roomier ones on desktop.
-GridConfig.lobbyUISideMargin = 12               -- px gap from the RIGHT screen edge for the lobby column
-GridConfig.lobbyUITopReserve = 78               -- px reserved at the top for the scoreboard (stats panel / player-list) so the column starts BELOW it (trimmed: the scoreboard is now 2 rows -- Turns + TAK -- not 3)
-GridConfig.lobbyUIGap = 8                        -- px vertical gap between the join button + the spectating pill
-GridConfig.lobbyUIWidth = 190                   -- px width of the join/leave button (desktop)
-GridConfig.lobbyUIButtonHeight = 48             -- px height of the join/leave button (desktop)
-GridConfig.lobbyUIPillHeight = 38               -- px height of the spectating/queue pill (desktop)
-GridConfig.lobbyUIWidthMobile = 132             -- px width on mobile (matches the compact stats panel so the column lines up)
-GridConfig.lobbyUIButtonHeightMobile = 42       -- px button height on mobile
-GridConfig.lobbyUIPillHeightMobile = 32         -- px pill height on mobile
-GridConfig.lobbyUITextSize = 20                 -- px button text size (desktop)
-GridConfig.lobbyUITextSizeMobile = 15           -- px button text size (mobile)
-GridConfig.lobbyUIPillTextSize = 16             -- px pill text size (desktop)
-GridConfig.lobbyUIPillTextSizeMobile = 13       -- px pill text size (mobile)
--- The seated "Spectate" button is deliberately SMALL + low-key (we don't promote leaving the game): a tiny
--- unobtrusive button, much smaller than the big "Join Game" CTA. It still fires LeaveRequest -- it's a real,
--- tappable button, just quiet (compact size, small font, neutral fill -- see uiStyle.buttonNeutral*).
-GridConfig.lobbyUILeaveWidth = 88               -- px width of the seated Spectate button (desktop) -- small
-GridConfig.lobbyUILeaveHeight = 26              -- px height of the seated Spectate button (desktop) -- short
-GridConfig.lobbyUILeaveTextSize = 13            -- px text size of the seated Spectate button (desktop)
-GridConfig.lobbyUILeaveWidthMobile = 76         -- px width on mobile -- compact
-GridConfig.lobbyUILeaveHeightMobile = 24        -- px height on mobile
-GridConfig.lobbyUILeaveTextSizeMobile = 12      -- px text size on mobile
+-- ── RESPONSIVE HUD (StarterGui-authored, layout + scale driven) ─────────────────────────────────────
+-- The HUD is authored as SAVED instances under StarterGui (a ScreenGui `NineSquareHUD`, Studio-editable;
+-- mirrored + self-healed by ReplicatedStorage.HudBuilder). It is laid out with REAL layout objects --
+-- corner-anchored clusters using UIListLayout + UIPadding (so contents reflow + never overlap) -- and sized
+-- with SCALE-based UDim2 + a UISizeConstraint clamp, under a top-level UIScale (`HudScale`) driven off the
+-- viewport by HudBuilder.applyScale. ONE layout scales across phones + desktop -- NO per-device fixed-pixel
+-- swaps. These tune the cluster widths (scale + min/max px clamp) and the global UIScale curve.
+GridConfig.hudReferenceWidth = 1280     -- design reference viewport width (px): UIScale = viewportWidth / this, clamped
+GridConfig.hudMinScale = 0.62           -- floor on the global HUD UIScale (so a tiny window stays legible)
+GridConfig.hudMaxScale = 1.35           -- ceiling on the global HUD UIScale (so it doesn't balloon on a huge monitor)
+GridConfig.hudMinScaleMobile = 0.9      -- extra floor on a narrow/PORTRAIT viewport so the corner stays thumb-tappable
+GridConfig.hudRightWidthScale = 0.22    -- top-right cluster width as a fraction of the viewport width (before the px clamp)
+GridConfig.hudRightMinWidth = 150       -- px floor on the top-right cluster width
+GridConfig.hudRightMaxWidth = 230       -- px ceiling on the top-right cluster width
+GridConfig.hudLeftWidthScale = 0.28     -- top-left (toast feed + KING chip) width as a fraction of the viewport width
+GridConfig.hudLeftMinWidth = 160        -- px floor on the top-left cluster width
+GridConfig.hudLeftMaxWidth = 320        -- px ceiling on the top-left cluster width
 
 -- ── HUD STYLE LANGUAGE (buttons vs labels) ─────────────────────────────────────────────────────────
 -- A single source of truth for the HUD's visual language so interactive vs informational elements read

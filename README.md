@@ -111,6 +111,12 @@ M3 loop / rank HUD / camera are unchanged.
   collides off these via `BallController._surfaces`) and the `Floor_*` markers (fault-flash targets) — but
   even those **self-heal** (rebuild) if removed. To force a one-time re-stamp of the defaults, delete the
   `Lighting.NineSquareLit` attribute (lighting) or the relevant `NineSquare` sub-folder (geometry).
+  - **The HUD follows the same model.** `StarterGui.NineSquareHUD` is an **authored, saved instance tree in the
+    place** (like `BotRigTemplate` / `OutdoorTreeTemplate` — **it must persist in the saved `.rbxl`** for the
+    designed layout to ship; the editor-authored tree is the source of truth for how the HUD LOOKS). Client
+    scripts only **bind** to it and **self-heal** a default tree (via `HudBuilder`) only if it's MISSING — so
+    Studio GUI-editor tweaks stick across Play→Edit and a fresh place still works. (Verified: the authored
+    `NineSquareHUD` survives a Play→Edit cycle un-clobbered.)
 - **Upper-floor spectator gallery (M5.3)**: `MatchService.buildGallery` (called from `buildGym`) adds a
   mezzanine ABOVE the gym ceiling. A square OPENING (`GridConfig.galleryOpening`) is punched through BOTH
   the gym ceiling (now a 4-panel ring: `CeilingN/S/E/W`) and the gallery floor ring (`GalFloorN/S/E/W`),
@@ -382,13 +388,46 @@ Verify over MCP: `start_stop_play`, `get_console_output` for the `[NineSquare]` 
   king-of-the-hill loop; merges human + bot colliders into `bc:step`; owns the **M5.1/M5.2 join/leave +
   spectator FIFO queue**, the **M5.4 trust boundary**, and the **trimmed `HudEvent` feed** — fires only a
   brief "You're in" on seating, a queue note, and the King moment; no join/leave or rank-change toasts).
+- `src/shared/HudBuilder.luau` — the **HUD's single source of truth** (see "HUD architecture" below):
+  `buildInto` constructs the default `NineSquareHUD` tree (mirrors the StarterGui-authored instances),
+  `get(playerGui)` resolves the authored HUD (self-healing a default if a fresh place lacks it), `applyScale`
+  drives the responsive top-level `UIScale` off the viewport.
 - `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera, **spectator overlook
-  camera + queue HUD** ("Spectating — #N in line / NEXT UP!").
-- `src/client/RankHud.client.luau` — subtle top-left **KING chip** (only while you hold rank 1; no generic rank
-  pill) + King-square indicator + the **transient notice feed** (renders `HudEvent` notes: small,
-  semi-transparent, fade-in/hold/fade-out) + the compact mobile **Turns/TAK scoreboard**.
-- `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side, server-validated).
+  camera**, and **binds** the authored HUD's **Join Game / Spectate buttons + Spectating label** (no layout
+  built here — `WaitForChild` + state binding only).
+- `src/client/RankHud.client.luau` — **binds** the authored HUD: drives the responsive `UIScale`, the top-left
+  **KING chip** (only while you hold rank 1), the **transient notice feed** (`HudEvent` notes into the authored
+  `ToastHolder`), the **Turns/TAK scoreboard** (mirrors `leaderstats`), + the King-square 3D indicator. Hides
+  the bulky built-in PlayerList on phones.
+- `src/client/Movement.client.luau` — dash, double-jump flip, stamina (client-side, server-validated); **binds**
+  the stamina fill to the authored HUD's stamina bar.
 - `docs/` — PRD, specs, plans.
+
+## HUD architecture (StarterGui-authored, layout/scale-driven, Studio-editable)
+
+The HUD is built the **standard Roblox way** and is **Studio-editable**:
+
+- **Authored in `StarterGui`.** A `ScreenGui` `NineSquareHUD` with named component frames lives as **saved
+  instances** in the place (editable in the Studio GUI editor). StarterGui clones it into each player's
+  `PlayerGui` on spawn (standard). **Build-once / self-heal** like the world build: `HudBuilder.get` returns the
+  authored tree **as-is** if present (so Studio tweaks persist across Play→Edit), and only **self-builds a
+  default** tree if a fresh place is missing it. `HudBuilder.buildInto` is authored to **mirror** the saved
+  instances exactly, so a self-healed HUD is identical to the editor-authored one.
+- **Layout containers, not fixed offsets.** Each corner cluster is anchored to a screen corner and arranged by
+  **`UIListLayout` + `UIPadding`** so contents **reflow and never overlap**:
+  - **top-RIGHT** (`TopRight`): stamina bar → scoreboard (Turns + TAK) → Join Game button → small Spectate
+    button → Spectating label, stacked by a `UIListLayout`.
+  - **top-LEFT** (`TopLeft`): the KING chip + the transient toast feed (`ToastHolder`), stacked top-down.
+- **Resolution-independent.** Widths are **Scale-based `UDim2`** clamped by a `UISizeConstraint`, under a
+  top-level **`UIScale` (`HudScale`)** driven off the viewport by `HudBuilder.applyScale` — **one layout scales**
+  across phones + desktop (`hud*Scale`/`hud*Width` tunables in `GridConfig`). **No per-device fixed-pixel hacks.**
+- **Consistent component language** (`GridConfig.uiStyle`): a **button** always reads tappable (solid fill,
+  AutoButtonColor, stroke edge) and a **label/panel** always reads static (flat low-opacity bg, no stroke or a
+  faint hairline, lighter font). Join Game is a calmer **medium-weight** button; Spectate is small + low-key;
+  Spectating + the scoreboard + the KING chip are labels; the stamina bar shows a readable **caption above the
+  fill track**.
+- **Client scripts only BIND** (text / bar fill / `Visible` / `button.Activated` → `JoinRequest`/`LeaveRequest`)
+  — same data, same remotes, same events; only the GUI construction + layout changed.
 
 ## Continuing on another machine (e.g. Mac)
 
