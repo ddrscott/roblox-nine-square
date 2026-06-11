@@ -155,6 +155,35 @@ GridConfig.botMissChance = 0.18      -- chance a bot fails to return the ball (-
                                      --   ride a clean rally upward and realistically climb to King.
 GridConfig.botContactBand = 3        -- studs around frameHeight that count as the bot's contact window (descending)
 
+-- PHYSICAL bot hits (rework). Bots no longer artificially `bc:launch`; instead each bot that intercepts a
+-- descending ball gets a real moving hit-sphere collider `{center, radius=hitZoneRadius, vel}` -- the SAME
+-- shape the human carries -- which the server drives to an OFF-CENTER stand position relative to the ball
+-- and then JUMPS up into the contact point. That collider is fed to `bc:step(dt, colliders)` alongside the
+-- human's, so the existing swept, velocity-proportional collision (`strikeVelocity`) resolves the bot hit.
+-- The aim emerges from the off-center contact: the bot stands on the FAR side of the ball from its aim cell
+-- so `n = unit(ball - center)` points toward the aim; the jump velocity supplies the force.
+GridConfig.botJumpVelocity = 28      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
+                                     --   contact -> the velocity-proportional strike (hitGain) turns this into
+                                     --   outgoing ball speed (paired with the off-center normal for the aim).
+                                     --   60 sprayed every return out of bounds; 28 keeps the strike inside the
+                                     --   court (lands in/near the aim cell) so bot->C->bot rallies sustain while
+                                     --   still clearing the pipe (a save). Higher = flatter/longer -> more OOB.
+GridConfig.botOffCenterFrac = 0.55   -- 0..1: how far off-centre the bot stands, as a fraction of
+                                     --   (hitZoneRadius + ballRadius). The stand centre is offset this far on
+                                     --   the FAR side of the ball from the aim, so contact is clearly off-centre
+                                     --   (steers the ball toward the aim) but the spheres still overlap to strike
+GridConfig.botMoveSpeed = 34         -- studs/s the bot slides its feet/collider laterally to the launch point
+                                     --   during the descent (visible repositioning before the drive)
+GridConfig.botStandoff = 3.0         -- studs the bot's drive STARTS behind its off-centre stand (further along
+                                     --   -aimDir): the collider sweeps launchPoint -> contactPoint, so colVel
+                                     --   carries this much horizontal travel toward the aim -> the strike's
+                                     --   line of centres tilts toward the aim cell (not a vertical-only pop).
+                                     --   Lower = steeper/shorter strike (lands nearer C); higher = flatter/longer
+GridConfig.botJumpLeadTime = 0.0     -- seconds to begin the jump EARLY before the predicted contact time, so the
+                                     --   collider is rising THROUGH the ball at contact (0 = reach contact exactly)
+GridConfig.botRestColliderY = 4.5    -- height (studs above the cell floor) of the bot's hit-sphere at rest /
+                                     --   ground (its "head" height before the jump); the jump rises from here
+
 -- Save highlight (last-saved square). A "save" = a (non-serve, non-self-fault) contact that clears the
 -- ball OUT of the hitter's square. On each save the overhead frame pipes of the struck square light up
 -- and stay lit until the next save. The continuous Frame beams can't be lit per-cell, so MatchService

@@ -80,10 +80,12 @@ end
 rotation:placeAll()
 print("[NineSquare] rotation occupancy ready (human rank 9 / " .. tostring(rotation:humanCell()) .. ", dummies ranks 1..8)")
 
--- M4 step 1: the bot volley resolver. Each Heartbeat (after bc:step) it intercepts a descending Flight
--- ball at the contact window over a BOT-occupied square and either volleys it onward (outer->C / King->
--- outer) or misses -> floor fault -> rotation. Server-authoritative; the human's physical volley is
--- untouched. Constructed here because it needs the live `rotation` + `bc`.
+-- Bot hitter (physical rework). Each Heartbeat (BEFORE bc:step) the bots driver commits a swing for a
+-- descent toward a bot square, slides the bot's hit-sphere collider to an OFF-CENTER stand position and
+-- jumps it into the ball; those bot colliders are merged with the human's and fed to bc:step, so the SAME
+-- swept, velocity-proportional collision resolves bot hits. The aim emerges from the off-center contact
+-- (outer bot -> C / King -> outer); a miss under-jumps -> no contact -> floor fault -> rotation. No
+-- artificial bc:launch. Constructed here because it needs the live `rotation` + `bc`.
 local bots = BotController.new(rotation, bc)
 
 -- Last-saved-square pipe highlight (visual). A "save" = the ball LEGALLY clears the hitter's square OVER a
@@ -259,10 +261,16 @@ end
 -- approach (so a descending player can't pull a rising ball down) and bounces the ball off the sphere
 -- exactly like it bounces off the pipes/walls/floor. No more proximity trigger or time cooldown.
 RunService.Heartbeat:Connect(function(dt)
-	bc:step(dt, HitResolver.playerColliders())
-	-- M4: after physics, let the bots resolve a volley/miss over their squares (server-authoritative).
-	-- A bot volley calls bc:launch (keeps the rally armed); a miss lets the ball fall -> onLand fault.
-	bots:resolve()
+	-- First drive the bots: each active swing slides its hit-sphere to its off-center stand + jumps into
+	-- the ball, returning this frame's bot colliders. We combine them with the human's moving hit-spheres
+	-- and hand the WHOLE list to bc:step, so the same swept collision resolves both. A bot hit thus flies
+	-- via the real physical strike (no bc:launch); a missed/under-jumped swing makes no contact -> the ball
+	-- falls -> onLand fault. The human's volley is unchanged.
+	local colliders = HitResolver.playerColliders()
+	for _, c in ipairs(bots:update(dt)) do
+		table.insert(colliders, c)
+	end
+	bc:step(dt, colliders)
 	-- Arm the rally the instant the ball enters Flight (a human King's physical jump-serve, or any volley):
 	-- onLand only scores when a rally is armed. The dummy-King auto-serve arms itself in serveNextRally.
 	if bc.phase == "Flight" and not rallyArmed then

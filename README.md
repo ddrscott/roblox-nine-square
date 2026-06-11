@@ -10,13 +10,23 @@ server** (`StudioMCP`, which ships inside Roblox Studio).
 2026-06-10). M1 greybox is tagged `m1-greybox`; M2 folded into the M1 contact model; M3 built the
 grid + rotation + dethrone. **M5 (networking hardening / anti-cheat) is next.** Solo play in the place
 **"9 Square Beta"** is now a full game: the 8 non-human squares are **bots** that serve (when King) and
-**volley** incoming balls with a simple aim rule (outer → center C; King → a random outer square),
-**missing** at a tuned rate (`botMissChance = 0.18`) so faults rotate the grid. Bots have cheap
-**stylised humanoid bodies** (torso + head + arms) that **hop** on a volley and recolour gold when they
-hold the throne — kept `CanCollide = false` and out of `BallController._surfaces`, so the hit stays
-server-resolved. Real rallies happen (bot ↔ center ↔ bot), the human climbs the ranks and can reach
-**King**, and a bot-King fault fires the **dethrone**. The M1 physical volley + M3 loop / rank HUD /
-camera are unchanged. Acceptance results are in the M4 design spec (§ "M4 Acceptance"); M3/M1 in theirs.
+**physically hit** incoming balls — bots are now **real hitters**, not an artificial launch. Each bot
+that intercepts a descending ball gets a moving **hit-sphere collider** (the same `{center, radius, vel}`
+shape the human carries), driven to an **off-center stand** relative to the ball and then **driven up and
+INTO the ball along the aim line** (a jump/run toward the contact point). That collider is fed into
+`bc:step(dt, colliders)` alongside the human's, so the **same swept, velocity-proportional collision**
+(`BallController:strikeVelocity`) resolves the bot hit. The **aim emerges from the off-center contact**:
+the bot stands on the far side of the ball from its aim cell so `n = unit(ball − center)` points toward
+the aim (outer bot → center C; King → a random outer square), and the jump velocity supplies the force.
+Bots **miss** at a tuned rate (`botMissChance = 0.18`, under-driving so the spheres never overlap) → the
+ball falls → floor fault → the grid rotates. Bots have cheap **stylised humanoid bodies** (torso + head +
+arms) kept synced to the collider so they visibly **move their feet + leap into the ball**, recoloured
+gold on the throne — `CanCollide = false` and out of `BallController._surfaces`, so the hit is the
+abstract collider's, not the body's. Real rallies happen (bot ↔ center ↔ bot), the human climbs the ranks
+and can reach **King**, and a bot-King fault fires the **dethrone**. The **human's volley, the swept
+collision/physics, the over-pipe save/ownership, rotation timing, and the dethrone are unchanged** — bots
+now go *through* the existing collision. Tunables (`botJumpVelocity`, `botStandoff`, `botOffCenterFrac`,
+`botRestColliderY`, `botMoveSpeed`) live in `GridConfig`. M3 loop / rank HUD / camera are unchanged.
 
 ## Docs
 
@@ -75,10 +85,13 @@ camera are unchanged. Acceptance results are in the M4 design spec (§ "M4 Accep
 ## Layout
 
 - `src/shared/GridConfig.luau` — dimensions + pure grid/contact math (all tunables).
-- `src/server/` — `BallController` (ball physics/arcs/collision), `MatchService` (builds gym + court,
-  player-cell lookup), `HitResolver` (contact normal), `RotationService` (9-rank occupancy + bot bodies
-  + rotation/dethrone), `BotController` (per-Heartbeat bot volley/miss with the aim rule),
-  `NineSquareServer` (bootstrap + Heartbeat + the king-of-the-hill loop).
+- `src/server/` — `BallController` (ball physics/arcs/collision + the swept player/bot hit-sphere
+  collision), `MatchService` (builds gym + court, player-cell lookup), `HitResolver` (the human's moving
+  hit-sphere colliders), `RotationService` (9-rank occupancy + bot bodies + `driveOccupant`/`restOccupant`
+  body sync + rotation/dethrone), `BotController` (per-Heartbeat physical bot hitter: predicts the contact,
+  drives an off-center hit-sphere collider into the ball along the aim line, misses by under-driving;
+  returns colliders merged into `bc:step`), `NineSquareServer` (bootstrap + Heartbeat + the king-of-the-hill
+  loop; merges human + bot colliders into `bc:step`).
 - `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera.
 - `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side).
 - `docs/` — PRD, specs, plans.

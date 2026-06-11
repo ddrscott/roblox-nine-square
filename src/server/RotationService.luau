@@ -271,6 +271,72 @@ function RotationService.hopOccupant(self: RotationService, id: string, contactP
 	end)
 end
 
+-- PHYSICAL-HIT body drive (bot hit rework). The bot is now a REAL physical hitter: BotController drives a
+-- moving hit-sphere collider (center, vel) to an off-centre stand position and jumps it into the ball, and
+-- the SAME swept collision the human uses resolves the strike. This method keeps the bot BODY synced to that
+-- collider so the player SEES the bot move its feet + leap into the ball: it pivots the torso so the body's
+-- "contact area" (head) sits at the collider's centre `headWorld`, leaning toward `leanTarget` (the ball) so
+-- it reads as a reach/strike rather than a stiff float. Cosmetic only (CanCollide stays false) -- the hit is
+-- the collider's, not the body's. `armRaise` (0..1) swings the near arm up for the strike pose at the apex.
+function RotationService.driveOccupant(self: RotationService, id: string, headWorld: Vector3, leanTarget: Vector3?, armRaise: number?)
+	local body = self._dummyParts[id]
+	if not body or not body.PrimaryPart then return end
+
+	-- The head sits this far above the torso centre (mirror of buildBotBody's headOff). To place the HEAD at
+	-- headWorld we pivot the torso headOff below it.
+	local headOff = G.botTorsoSize.Y / 2 + G.botHeadSize / 2 + 0.15
+	local torsoPos = headWorld - Vector3.new(0, headOff, 0)
+
+	-- Lean the torso toward the ball (capped) so the body tilts INTO the strike. Build the CFrame facing the
+	-- lean direction with a forward pitch.
+	local cf = CFrame.new(torsoPos)
+	if leanTarget then
+		local horiz = Vector3.new(leanTarget.X - headWorld.X, 0, leanTarget.Z - headWorld.Z)
+		if horiz.Magnitude > 1e-3 then
+			local leanDir = horiz.Unit
+			local tiltAxis = Vector3.new(0, 1, 0):Cross(leanDir)
+			if tiltAxis.Magnitude > 1e-3 then
+				cf = CFrame.new(torsoPos) * CFrame.fromAxisAngle(tiltAxis.Unit, math.rad(G.botLeapTiltDeg))
+			end
+		end
+	end
+	body:PivotTo(cf)
+
+	-- Swing both arms up for the reach when armRaise is high (strike pose). Re-CFrame relative to the live
+	-- torso so they track the lean. The rest arm offsets are recomputed from the body config (no captured rest).
+	local raise = math.clamp(armRaise or 0, 0, 1)
+	local armX = G.botTorsoSize.X / 2 + G.botArmSize.X / 2 + 0.1
+	local armY = G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2
+	local swing = CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -math.rad(G.botLeapArmRaiseDeg) * raise)
+	local armL = body:FindFirstChild("ArmL") :: BasePart?
+	local armR = body:FindFirstChild("ArmR") :: BasePart?
+	if armL then armL.CFrame = cf * (CFrame.new(-armX, armY, 0) * swing) end
+	if armR then armR.CFrame = cf * (CFrame.new(armX, armY, 0) * swing) end
+end
+
+-- Snap a bot body back to its resting stand in its current cell (feet on the floor, arms down). Called when
+-- a swing ends so the body never drifts from the collider's rest pose.
+function RotationService.restOccupant(self: RotationService, id: string)
+	local body = self._dummyParts[id]
+	if not body then return end
+	for rank = 1, RANKS do
+		local occ = self.byRank[rank]
+		if occ and occ.id == id then
+			self:_standBot(body, G.cellForRank(occ.rank), occ.rank)
+			return
+		end
+	end
+end
+
+-- The world cell the bot `id` currently stands in (for the collider's rest position). nil if not a bot.
+function RotationService.occupantCell(self: RotationService, id: string): string?
+	for rank = 1, RANKS do
+		local occ = self.byRank[rank]
+		if occ and occ.id == id then return G.cellForRank(occ.rank) end
+	end
+	return nil
+end
+
 -- Replicate the human's CURRENT rank to their client (server-authoritative; the client only displays).
 -- Finds the human occupant and pushes its rank via the injected setter (a player attribute in the server).
 function RotationService._syncHumanRank(self: RotationService)

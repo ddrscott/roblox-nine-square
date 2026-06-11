@@ -133,6 +133,12 @@ function BallController:launch(fromPoint: Vector3, v0: Vector3)
 	self:resync()
 end
 
+-- The server clock the ball's motion is parameterised on (== the startT reference). Exposed so the bot
+-- driver can time its jump against the ball's arc using the exact same clock. Read-only; no physics change.
+function BallController:_serverNow(): number
+	return workspace:GetServerTimeNow()
+end
+
 -- The ball's instantaneous velocity right now (zero unless it's in motion).
 function BallController:currentVelocity(): Vector3
 	if self.phase == "Flight" or self.phase == "Settling" then
