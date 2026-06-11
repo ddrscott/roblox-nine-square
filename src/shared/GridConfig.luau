@@ -93,9 +93,28 @@ GridConfig.camWallFadeMargin = 6           -- studs of slack so a wall fades jus
 -- specOverlookEye/Look are offsets (from the court origin) for the spectator camera -- higher + further back
 -- than the player court cam so the whole 9-square reads. specSpawnOffset is where a spectator's character is
 -- parked (clear of the court collision sets) until they're auto-seated; the real gallery spawn arrives in M5.3.
-GridConfig.specOverlookEye = Vector3.new(0, 58, 52)    -- spectator camera offset from the court origin (high, behind)
-GridConfig.specOverlookLook = Vector3.new(0, 4, 0)     -- spectator camera look-at offset (slightly above the floor)
-GridConfig.specSpawnOffset = Vector3.new(0, 34, 46)    -- where a spectator's HRP is parked (clear of the court / temp overlook)
+-- M5.3 wires these to the real upper-floor GALLERY (built in MatchService.buildGym). The spectator now
+-- spawns/parks ON the gallery floor (south side, clear of the opening) and the overlook camera looks
+-- straight DOWN through the gallery + ceiling opening onto the 9-square. galleryFloorY drives both the
+-- spawn height and the camera eye height so they track the gallery build (offsets are from the origin).
+GridConfig.specOverlookEye = Vector3.new(0, 60, 30)    -- spectator camera offset from the court origin (gallery height, south of the opening, looking down)
+GridConfig.specOverlookLook = Vector3.new(0, 4, 0)     -- spectator camera look-at offset (the court floor below the opening)
+GridConfig.specSpawnOffset = Vector3.new(0, 57, 30)    -- where a spectator's HRP is parked: on the gallery floor, south edge of the opening (galleryFloorY + ~3 foot-to-root; |z| past galleryOpening/2)
+
+-- M5.3 Upper-floor spectator gallery (3D-asset build). A second level ABOVE the existing gym ceiling with a
+-- rectangular OPENING punched through BOTH the gym ceiling AND the gallery floor over the court ("knock out
+-- a window") so spectators standing on the gallery look straight DOWN onto the 9-square. Built as a RING of
+-- 4 panels (N/S/E/W) around the central hole, plus short perimeter walls, a roof, a creator-store railing
+-- around the opening, benches, and decor. ALL of it is purely environmental: CanCollide is true ONLY on the
+-- gallery floor ring + perimeter walls (so spectators can stand/walk), and the whole gallery lives OUTSIDE
+-- NineSquare.Frame so it never enters BallController._surfaces or the court collision. Heights/sizes are
+-- tunable so Scott can nudge the gallery without hand-editing Studio.
+GridConfig.galleryOpening = 46          -- studs: edge of the square opening over the court (court span is 42, so 46 clears the 9-square + frame with margin)
+GridConfig.galleryFloorY = 54           -- studs: top of the gallery floor (y), above the gym ceiling (gym H = 50)
+GridConfig.galleryFloorThickness = 1    -- gallery floor slab thickness
+GridConfig.galleryWallHeight = 18       -- studs: height of the gallery's short perimeter walls (above galleryFloorY)
+GridConfig.galleryRailHeight = 3.5      -- studs: height of the safety railing ringing the opening (so spectators don't fall through)
+GridConfig.galleryRailInset = 0.5       -- studs the railing sits OUTSIDE the opening edge (a hair, so it rings the hole)
 
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)

@@ -77,6 +77,24 @@ M3 loop / rank HUD / camera are unchanged.
   the 9 squares is *out-of-bounds*. Both flash the square + play the oof sound, then re-serve.
 - **Scene**: an enclosed gym (`MatchService.buildGym`, build-once) with painted floor grid lines so
   the grid reads in Play even when dynamic shadows don't render.
+- **Upper-floor spectator gallery (M5.3)**: `MatchService.buildGallery` (called from `buildGym`) adds a
+  mezzanine ABOVE the gym ceiling. A square OPENING (`GridConfig.galleryOpening`) is punched through BOTH
+  the gym ceiling (now a 4-panel ring: `CeilingN/S/E/W`) and the gallery floor ring (`GalFloorN/S/E/W`),
+  so spectators standing on the gallery look straight DOWN onto the 9-square. Includes short perimeter
+  walls, a roof, ceiling lights, a safety railing ringing the opening (`GalRail*`), bench seating, and a
+  hidden `GallerySpawn`. M5.2 spectators are parked here via `GridConfig.specSpawnOffset` and watch from
+  the overlook camera (`specOverlookEye/Look`) looking down through the opening. The whole gallery sits
+  ABOVE the gym (`galleryFloorY` > gym `H`), lives OUTSIDE `NineSquare.Frame`, and never enters the ball
+  (`BallController._surfaces`) or court collision — so seated-player cameras, the wall-fade occlusion, and
+  the 1-human+8-bot gameplay baseline are all unaffected. All gallery dimensions are `GridConfig` tunables
+  (`gallery*`) so they can be nudged without hand-editing Studio.
+  - **Asset persistence**: the structural gallery is built entirely from code (always rebuilds on Play, no
+    place dependency). The bench *seating* uses a creator-store 3D model cloned from
+    `ReplicatedStorage.GalleryBenchTemplate` (inserted once via the Studio MCP, normalized with a
+    `FootToPivotY` attribute + a `PrimaryPart` so it grounds cleanly). `buildGallery` clones it IF present
+    and falls back to a code bench otherwise — so the build is robust whether or not the template ships in
+    the place. To keep the nicer benches, that template must persist in `ReplicatedStorage`. The railing
+    around the opening is code-built (deterministic fall-guard) rather than asset-based.
 
 ## Known issues / next steps
 

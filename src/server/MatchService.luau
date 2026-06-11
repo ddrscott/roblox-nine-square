@@ -134,7 +134,23 @@ function MatchService.buildGym(origin: Vector3)
 	local ceil = Color3.fromRGB(150, 150, 162)
 	-- the single visible floor: top flush at the logical floor (y=0), where the ball lands + players stand
 	block("Floor", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, -0.5, 0), wood, Enum.Material.WoodPlanks)
-	block("Ceiling", Vector3.new(W + 8, 1, L + 8), origin + Vector3.new(0, H, 0), ceil, Enum.Material.SmoothPlastic)
+	-- Ceiling with a rectangular OPENING over the court (the "window" spectators look down through). Built as
+	-- a RING of 4 panels around the central hole instead of one solid slab so the gallery above sees the
+	-- court. The opening matches the gallery floor opening (G.galleryOpening) so the sightline is unbroken.
+	-- The ring panels stay CanCollide=true (overhead, far above play) -- they never enter the court collision
+	-- (not under NineSquare.Frame) and the hole keeps them off the ball's arc.
+	do
+		local op = G.galleryOpening
+		local cs = W + 8                                  -- full ceiling span (matches the old solid slab)
+		local side = (cs - op) / 2                        -- width of each N/S panel band
+		local Hy = H
+		-- N / S panels run full width on X, fill the band beyond the opening on Z
+		block("CeilingN", Vector3.new(cs, 1, side), origin + Vector3.new(0, Hy, -(op + side) / 2), ceil, Enum.Material.SmoothPlastic)
+		block("CeilingS", Vector3.new(cs, 1, side), origin + Vector3.new(0, Hy,  (op + side) / 2), ceil, Enum.Material.SmoothPlastic)
+		-- E / W panels fill the band beyond the opening on X, only as deep as the opening (corners covered by N/S)
+		block("CeilingE", Vector3.new(side, 1, op), origin + Vector3.new( (op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic)
+		block("CeilingW", Vector3.new(side, 1, op), origin + Vector3.new(-(op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic)
+	end
 	block("WallE", Vector3.new(0.8, H, L), origin + Vector3.new(hx, wy, 0), wall, Enum.Material.SmoothPlastic)
 	block("WallW", Vector3.new(0.8, H, L), origin + Vector3.new(-hx, wy, 0), wall, Enum.Material.SmoothPlastic)
 	block("WallN", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, -hz), wall, Enum.Material.SmoothPlastic)
@@ -157,7 +173,131 @@ function MatchService.buildGym(origin: Vector3)
 			local pl = Instance.new("PointLight"); pl.Brightness = 1.8; pl.Range = 45; pl.Color = Color3.fromRGB(255, 250, 235); pl.Parent = lp
 		end
 	end
+
+	-- ---- M5.3 UPPER-FLOOR SPECTATOR GALLERY -------------------------------------------------------
+	-- A second level above the gym ceiling with a RING floor (opening over the court), short perimeter
+	-- walls, a roof, a spectator spawn, a railing around the opening, and creator-store decor. Spectators
+	-- (M5.2) spawn here (GridConfig.specSpawnOffset) and watch the match straight down through the opening.
+	-- Everything is environmental: the floor ring + walls collide (so you can stand/walk) but live OUTSIDE
+	-- NineSquare.Frame, so the ball never collides with any of it (BallController._surfaces only collides
+	-- parts under NineSquare.Frame). It sits ABOVE the gym (galleryFloorY > H) so it can't block a seated
+	-- player's court camera or the wall-fade occlusion (those operate on the gym walls/ceiling below).
+	MatchService.buildGallery(origin, gym, W, L)
+
 	return gym
+end
+
+-- Build the upper-floor spectator gallery into `gym`. Separated so the dimensions/positions read clearly
+-- and Scott can re-run just this from the GridConfig tunables. Idempotent within buildGym's build-once.
+function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L: number)
+	local op = G.galleryOpening
+	local fy = G.galleryFloorY
+	local fth = G.galleryFloorThickness
+	local cs = W + 8                                  -- gallery span = ceiling span (sits directly above)
+	local side = (cs - op) / 2                        -- width of each N/S floor band beyond the opening
+	local floorTop = fy
+	local floorMid = floorTop - fth / 2               -- part centre so its TOP is at galleryFloorY
+	local woodG = Color3.fromRGB(180, 140, 92)        -- gallery floor: a slightly cooler wood than the court
+	local wallG = Color3.fromRGB(210, 204, 188)
+	local roofG = Color3.fromRGB(140, 140, 152)
+
+	local gallery = Instance.new("Folder"); gallery.Name = "Gallery"; gallery.Parent = gym
+	local function gpart(name, size, pos, color, mat, collide)
+		local p = Instance.new("Part"); p.Anchored = true; p.Name = name
+		p.Size = size; p.Position = pos; p.Color = color; p.Material = mat
+		p.CanCollide = collide; p.CastShadow = false
+		p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Parent = gallery
+		return p
+	end
+
+	-- Floor RING (4 panels around the opening) -- the walkable mezzanine. Collides so spectators stand on it.
+	gpart("GalFloorN", Vector3.new(cs, fth, side), origin + Vector3.new(0, floorMid, -(op + side) / 2), woodG, Enum.Material.WoodPlanks, true)
+	gpart("GalFloorS", Vector3.new(cs, fth, side), origin + Vector3.new(0, floorMid,  (op + side) / 2), woodG, Enum.Material.WoodPlanks, true)
+	gpart("GalFloorE", Vector3.new(side, fth, op), origin + Vector3.new( (op + side) / 2, floorMid, 0), woodG, Enum.Material.WoodPlanks, true)
+	gpart("GalFloorW", Vector3.new(side, fth, op), origin + Vector3.new(-(op + side) / 2, floorMid, 0), woodG, Enum.Material.WoodPlanks, true)
+
+	-- Short perimeter walls + roof so the gallery reads as an enclosed upper room (not a floating slab).
+	local wh = G.galleryWallHeight
+	local wmid = floorTop + wh / 2
+	gpart("GalWallE", Vector3.new(0.8, wh, cs), origin + Vector3.new(cs / 2, wmid, 0), wallG, Enum.Material.SmoothPlastic, true)
+	gpart("GalWallW", Vector3.new(0.8, wh, cs), origin + Vector3.new(-cs / 2, wmid, 0), wallG, Enum.Material.SmoothPlastic, true)
+	gpart("GalWallN", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, -cs / 2), wallG, Enum.Material.SmoothPlastic, true)
+	gpart("GalWallS", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, cs / 2), wallG, Enum.Material.SmoothPlastic, true)
+	gpart("GalRoof", Vector3.new(cs + 2, 1, cs + 2), origin + Vector3.new(0, floorTop + wh, 0), roofG, Enum.Material.SmoothPlastic, true)
+
+	-- A couple of soft lights so the gallery isn't a dark box.
+	for _, dx in ipairs({ -1, 1 }) do
+		local lp = gpart("GalLight", Vector3.new(6, 0.4, 6), origin + Vector3.new(dx * (op / 2 + side / 2), floorTop + wh - 0.6, 0), Color3.fromRGB(255, 255, 235), Enum.Material.Neon, false)
+		local pl = Instance.new("PointLight"); pl.Brightness = 1.4; pl.Range = 34; pl.Color = Color3.fromRGB(255, 250, 235); pl.Parent = lp
+	end
+
+	-- Railing ring around the OPENING so spectators don't walk off into the court below. Built from code as
+	-- a fallback; if a creator-store railing TEMPLATE exists in ReplicatedStorage (inserted via the MCP and
+	-- renamed), it's cloned along each edge instead for a nicer look. Either way it's CanCollide so it blocks
+	-- the fall but is OUTSIDE NineSquare.Frame (never touches the ball).
+	local rh = G.galleryRailHeight
+	local rinset = G.galleryRailInset
+	local railLen = op + 2 * rinset
+	local railHalf = op / 2 + rinset
+	local railMid = floorTop + rh / 2
+	local railColor = Color3.fromRGB(90, 96, 110)
+	local railTemplate = RS:FindFirstChild("GalleryRailTemplate")
+	local benchTemplate = RS:FindFirstChild("GalleryBenchTemplate")
+	local function buildRail(name, size, pos)
+		if railTemplate then
+			local r = railTemplate:Clone()
+			r.Name = name
+			if r:IsA("Model") and r.PrimaryPart then
+				r:PivotTo(CFrame.new(pos))
+			elseif r:IsA("BasePart") then
+				r.Position = pos
+			end
+			r.Parent = gallery
+		else
+			gpart(name, size, pos, railColor, Enum.Material.Metal, true)
+		end
+	end
+	-- 4 rail segments framing the opening (N/S run along X; E/W run along Z)
+	buildRail("GalRailN", Vector3.new(railLen, rh, 0.4), origin + Vector3.new(0, railMid, -railHalf))
+	buildRail("GalRailS", Vector3.new(railLen, rh, 0.4), origin + Vector3.new(0, railMid,  railHalf))
+	buildRail("GalRailE", Vector3.new(0.4, rh, railLen), origin + Vector3.new( railHalf, railMid, 0))
+	buildRail("GalRailW", Vector3.new(0.4, rh, railLen), origin + Vector3.new(-railHalf, railMid, 0))
+
+	-- Bench/bleacher seating along the back (south) wall so spectators have somewhere to sit + watch. Uses a
+	-- creator-store bench template if inserted (GalleryBenchTemplate); else a simple code bench. Non-colliding
+	-- decor seating (CanCollide false so it never wedges a spectator) -- purely cosmetic.
+	local benchZ = cs / 2 - 6
+	for _, bx in ipairs({ -1, 0, 1 }) do
+		if benchTemplate and benchTemplate:IsA("Model") and benchTemplate.PrimaryPart then
+			-- creator-store bench: the template is normalized so its FEET sit at the model bottom; FootToPivotY
+			-- (stored on the template when it was inserted) is the pivot's height above the feet, so placing the
+			-- pivot at floorTop + FootToPivotY drops the bench cleanly onto the gallery floor. Face it toward the
+			-- opening (look -Z, toward the court) so seated spectators look at the match.
+			local lift = benchTemplate:GetAttribute("FootToPivotY") or 0
+			local b = benchTemplate:Clone(); b.Name = "GalBench"
+			b:PivotTo(CFrame.new(origin + Vector3.new(bx * 16, floorTop + lift, benchZ)) * CFrame.Angles(0, math.pi, 0))
+			b.Parent = gallery
+		else
+			-- code fallback bench (used if the creator-store template wasn't inserted into ReplicatedStorage)
+			local bpos = origin + Vector3.new(bx * 16, floorTop + 1.5, benchZ)
+			gpart("GalBench", Vector3.new(10, 1, 2.4), bpos, Color3.fromRGB(150, 110, 70), Enum.Material.Wood, false)
+			gpart("GalBenchBack", Vector3.new(10, 3, 0.5), bpos + Vector3.new(0, 1.7, -1.0), Color3.fromRGB(150, 110, 70), Enum.Material.Wood, false)
+		end
+	end
+
+	-- Spectator spawn IN the gallery: a SpawnLocation on the south floor band (clear of the opening) so M5.2
+	-- spectators appear up here and can walk + watch through the opening. Neutral + non-team so it doesn't
+	-- override the court spawn for seated players (the server teleports seated humans to their cell anyway;
+	-- spectators are parked here by parkSpectator using the matching GridConfig.specSpawnOffset).
+	local sspawn = Instance.new("SpawnLocation")
+	sspawn.Name = "GallerySpawn"; sspawn.Anchored = true; sspawn.Neutral = true; sspawn.Enabled = false
+	sspawn.Size = Vector3.new(8, 1, 6)
+	sspawn.Position = origin + Vector3.new(0, floorTop + 0.5, op / 2 + side / 2)
+	sspawn.Transparency = 1; sspawn.CanCollide = false
+	sspawn.Parent = gallery
+
+	return gallery
 end
 
 -- Per-cell flash generation tokens. Each flashCell call bumps the cell's token and captures it; only the
