@@ -247,4 +247,75 @@ function BotController.update(self, dt: number): { BotCollider }
 	return colliders
 end
 
+-- LIFELIKE IDLE motion (idle ready-stance + anticipatory ball tracking). Call AFTER :update each Heartbeat.
+-- For every bot occupant that is NOT mid-swing (the active receiver, handled by :update/driveOccupant), this
+-- drives a cheap, DETERMINISTIC "alive" motion via rotation:idleOccupant so the whole grid reads as live, not
+-- just the receiver:
+--   * a continuous toe-bob (vertical) + an elliptical weight-sway (XZ) around the bot's home stand, and
+--   * an occasional READY STEP -- a short out-and-back shuffle to a spot ~botIdleStepDist from home, and
+--   * an anticipatory LEAN/step toward the live ball's XZ (a fraction of the budget) so the grid reacts.
+-- Every phase is seeded from the bot's RANK (no Math.random / os.time randomness in the loop -- just a
+-- continuous clock for the oscillation), so bots don't move in lockstep. The XZ offset is CLAMPED to
+-- (squareSize/2 - botIdleClampMargin) so a bot never drifts out of its square / over a pipe. `ballXZ` is the
+-- live ball's XZ (or nil when the ball is dead) -- tracking only engages while the ball is live.
+function BotController.update_idle(self, dt: number, ballXZ: Vector3?)
+	local rotation = self._rotation
+	local now = os.clock()
+	local clampMax = G.squareSize / 2 - G.botIdleClampMargin
+
+	for rank = 1, 9 do
+		local occ = rotation.byRank[rank]
+		if occ and occ.isDummy and not self._swings[occ.id] then
+			-- Per-bot deterministic phase seed from the rank so the 8 bots are out of sync.
+			local seed = occ.rank * 1.2345
+
+			-- Continuous toe-bob (raised |sin| so the body bobs UP from rest, never sinks below the floor).
+			local bob = math.abs(math.sin(now * G.botIdleBobSpeed + seed)) * G.botIdleBobHeight
+
+			-- Elliptical weight-sway around home (different X/Z rates for an organic shift, not a circle).
+			local sx = math.sin(now * G.botIdleSwaySpeed + seed) * G.botIdleSwayRadius
+			local sz = math.cos(now * G.botIdleSwaySpeed * 0.8 + seed * 1.7) * G.botIdleSwayRadius
+
+			-- Ready step: a short out-and-back shuffle once per botIdleStepInterval. The step direction is
+			-- derived deterministically from the (advancing) step index + rank, so feet actually move to a new
+			-- spot and return -- no RNG. Within the step window we ease out then back (sin over 0..pi).
+			local cycle = now / G.botIdleStepInterval + seed
+			local stepIdx = math.floor(cycle)
+			local frac = cycle - stepIdx                     -- 0..1 through the current interval
+			local stepX, stepZ = 0, 0
+			local stepWindow = G.botIdleStepDur / G.botIdleStepInterval
+			if frac < stepWindow then
+				local s = math.sin((frac / stepWindow) * math.pi)   -- 0 -> 1 -> 0 out-and-back
+				-- Deterministic direction for this step from the step index + rank (8 compass-ish dirs).
+				local ang = (stepIdx * 2.39996 + seed)               -- golden-angle-ish spread, deterministic
+				stepX = math.cos(ang) * G.botIdleStepDist * s
+				stepZ = math.sin(ang) * G.botIdleStepDist * s
+			end
+
+			local offX = sx + stepX
+			local offZ = sz + stepZ
+
+			-- Anticipatory ball-tracking: bias a fraction of the budget toward the live ball's XZ so the bot
+			-- leans/steps INTO the rally. Capped so tracking never alone pushes the bot out of its square.
+			local leanTarget: Vector3? = nil
+			if ballXZ then
+				local home = G.cellCenter(G.cellForRank(occ.rank))
+				local toBall = Vector3.new(ballXZ.X - home.X, 0, ballXZ.Z - home.Z)
+				if toBall.Magnitude > 1e-3 then
+					local dir = toBall.Unit
+					offX += dir.X * G.botTrackLeanFrac * clampMax
+					offZ += dir.Z * G.botTrackLeanFrac * clampMax
+					leanTarget = ballXZ
+				end
+			end
+
+			-- Clamp the XZ offset inside the cell so the bot can never drift over a pipe / out of position.
+			offX = math.clamp(offX, -clampMax, clampMax)
+			offZ = math.clamp(offZ, -clampMax, clampMax)
+
+			rotation:idleOccupant(occ.id, Vector3.new(offX, 0, offZ), bob, leanTarget)
+		end
+	end
+end
+
 return BotController

@@ -274,6 +274,13 @@ RunService.Heartbeat:Connect(function(dt)
 		table.insert(colliders, c)
 	end
 	bc:step(dt, colliders)
+	-- Lifelike idle: AFTER the swing update + bc:step, drive every NON-receiver bot's idle ready-stance
+	-- (toe-bob + weight-sway + occasional ready steps) and lean it toward the LIVE ball, so the whole grid
+	-- reads as alive instead of frozen. Receivers (mid-swing) are skipped inside update_idle -- their
+	-- intercept + jump stays the dominant motion. Ball is "live" for tracking during Flight/Settling.
+	local ballLive = (bc.phase == "Flight" or bc.phase == "Settling")
+	local ballXZ = ballLive and Vector3.new(bc.ball.Position.X, 0, bc.ball.Position.Z) or nil
+	bots:update_idle(dt, ballXZ)
 	-- Arm the rally the instant the ball enters Flight (a human King's physical jump-serve, or any volley):
 	-- onLand only scores when a rally is armed. The dummy-King auto-serve arms itself in serveNextRally.
 	if bc.phase == "Flight" and not rallyArmed then

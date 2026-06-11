@@ -328,6 +328,44 @@ function RotationService.restOccupant(self: RotationService, id: string)
 	end
 end
 
+-- IDLE ready-stance + anticipatory tracking (lifelike bot motion). Drives a bot body that is NOT the active
+-- receiver so it reads as ALIVE instead of frozen: it pivots the body to its home stand plus a small XZ
+-- `offsetXZ` (the sway + ready-step + ball-lean, computed deterministically per bot in BotController) and a
+-- vertical `bobY` (the toe-bob), optionally tilting the torso toward `leanTarget` (the live ball) so the body
+-- subtly faces the rally. BotController clamps `offsetXZ` inside the cell, so the body never drifts out of its
+-- square. Cosmetic only (CanCollide stays false); yields cleanly to driveOccupant/restOccupant when this bot
+-- becomes the receiver (those overwrite the pivot the same frame). Arms are left at their rest offsets.
+function RotationService.idleOccupant(self: RotationService, id: string, offsetXZ: Vector3, bobY: number, leanTarget: Vector3?)
+	local body = self._dummyParts[id]
+	if not body or not body.PrimaryPart then return end
+	-- Find the bot's home torso position (feet on the floor of its current cell), same as _standBot.
+	local cell = self:occupantCell(id)
+	if not cell then return end
+	local home = G.cellCenter(cell) + Vector3.new(0, botTorsoY(), 0)
+	local torsoPos = home + Vector3.new(offsetXZ.X, bobY, offsetXZ.Z)
+
+	local cf = CFrame.new(torsoPos)
+	if leanTarget then
+		local horiz = Vector3.new(leanTarget.X - torsoPos.X, 0, leanTarget.Z - torsoPos.Z)
+		if horiz.Magnitude > 1e-3 then
+			local leanDir = horiz.Unit
+			local tiltAxis = Vector3.new(0, 1, 0):Cross(leanDir)
+			if tiltAxis.Magnitude > 1e-3 then
+				cf = CFrame.new(torsoPos) * CFrame.fromAxisAngle(tiltAxis.Unit, math.rad(G.botIdleLeanDeg))
+			end
+		end
+	end
+	body:PivotTo(cf)
+
+	-- Keep the arms hanging at their rest offsets relative to the (now leaning) torso so they track the body.
+	local armX = G.botTorsoSize.X / 2 + G.botArmSize.X / 2 + 0.1
+	local armY = G.botTorsoSize.Y / 2 - G.botArmSize.Y / 2
+	local armL = body:FindFirstChild("ArmL") :: BasePart?
+	local armR = body:FindFirstChild("ArmR") :: BasePart?
+	if armL then armL.CFrame = cf * CFrame.new(-armX, armY, 0) end
+	if armR then armR.CFrame = cf * CFrame.new(armX, armY, 0) end
+end
+
 -- The world cell the bot `id` currently stands in (for the collider's rest position). nil if not a bot.
 function RotationService.occupantCell(self: RotationService, id: string): string?
 	for rank = 1, RANKS do

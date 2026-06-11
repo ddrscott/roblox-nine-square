@@ -193,6 +193,25 @@ GridConfig.botJumpLeadTime = 0.0     -- seconds to begin the jump EARLY before t
 GridConfig.botRestColliderY = 4.5    -- height (studs above the cell floor) of the bot's hit-sphere at rest /
                                      --   ground (its "head" height before the jump); the jump rises from here
 
+-- Lifelike bot idle motion (idle ready-stance + anticipatory ball tracking). Every bot that is NOT the
+-- active receiver (no live swing) gets a cheap, deterministic "alive" motion centred on its home stand:
+-- a continuous toe-bob + weight-sway, plus occasional short READY STEPS to a spot a stud or two from home
+-- and back, plus a subtle LEAN/step toward the live ball's XZ so the whole grid reacts to the rally. All
+-- phases are seeded from the bot's rank so they don't move in lockstep; clamped inside the cell so a bot
+-- never drifts out of position for the next rally. Driven server-side on the existing Heartbeat step.
+GridConfig.botIdleBobHeight = 0.35   -- studs: vertical toe-bob amplitude (continuous up/down weight shift)
+GridConfig.botIdleBobSpeed = 3.2     -- rad/s: bob oscillation rate
+GridConfig.botIdleSwayRadius = 0.55  -- studs: lateral weight-shift radius (a slow elliptical sway around home)
+GridConfig.botIdleSwaySpeed = 1.4    -- rad/s: sway oscillation rate
+GridConfig.botIdleStepInterval = 2.1 -- seconds between ready-step shuffles (a short move out from home + back)
+GridConfig.botIdleStepDist = 1.8     -- studs: how far a ready step shuffles the feet from home before returning
+GridConfig.botIdleStepDur = 0.55     -- seconds the out-and-back ready shuffle takes (the rest of the interval is home)
+GridConfig.botIdleClampMargin = 2.2  -- studs kept clear of the cell edge: idle offset is clamped to
+                                     --   (squareSize/2 - margin) so a bot never wanders over a pipe / out of its square
+GridConfig.botTrackLeanFrac = 0.45   -- 0..1: fraction of the idle XZ budget biased toward the LIVE ball's XZ
+                                     --   (anticipatory tracking) -- the grid leans into the rally without leaving home
+GridConfig.botIdleLeanDeg = 7        -- degrees the torso leans toward the live ball while idling (subtle body face)
+
 -- Save highlight (last-saved square). A "save" = a (non-serve, non-self-fault) contact that clears the
 -- ball OUT of the hitter's square. On each save the overhead frame pipes of the struck square light up
 -- and stay lit until the next save. The continuous Frame beams can't be lit per-cell, so MatchService

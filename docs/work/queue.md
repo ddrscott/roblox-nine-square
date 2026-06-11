@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Lifelike bot movement — idle ready-stance + anticipatory ball tracking (6/8 bots sit frozen) — see [lifelike-bot-movement.md](lifelike-bot-movement.md)
+- [x] Lifelike bot movement — idle ready-stance + anticipatory ball tracking (6/8 bots sit frozen) — see [lifelike-bot-movement.md](lifelike-bot-movement.md)
 - [x] Dim the save-pipe highlight + reset it when the ball resets — see [dim-reset-save-highlight.md](dim-reset-save-highlight.md)
 - [x] Bots hit physically — move feet to aim off-center + jump into the ball (no artificial launch) — see [physical-bots-offcenter.md](physical-bots-offcenter.md)
 - [x] Increase jump velocity 30% (more force to the ball; human + bot) — see [jump-velocity-30pct.md](jump-velocity-30pct.md)
