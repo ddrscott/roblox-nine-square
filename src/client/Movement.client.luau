@@ -90,10 +90,20 @@ local function disableTripStates(h: Humanoid)
 	h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 end
 
+-- More force to the ball: boost the local character's jump velocity by jumpVelocityMult (~+30%). The
+-- velocity-proportional strike folds the HRP's upward velocity into the rebound, so a faster jump =
+-- a harder jump-strike. We scale the Humanoid's OWN default JumpPower (UseJumpPower=true) -- each fresh
+-- character starts at the engine default, so reading-then-scaling here never compounds across respawns.
+local function boostJump(h: Humanoid)
+	h.UseJumpPower = true
+	h.JumpPower = h.JumpPower * G.jumpVelocityMult
+end
+
 local function bindCharacter(char: Model)
 	hrp = char:WaitForChild("HumanoidRootPart") :: BasePart
 	humanoid = char:WaitForChild("Humanoid") :: Humanoid
 	disableTripStates(humanoid)
+	boostJump(humanoid)
 	usedAirJump = false
 	dashUntil = 0
 	dashHorizVel = nil

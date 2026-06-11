@@ -47,6 +47,10 @@ GridConfig.dashDuration = 0.18      -- how long the dash burst is held before co
 GridConfig.flipUpVelocity = 38      -- upward velocity set on the double-jump flip (studs/s); halved from 75 for a lower flip arc
 GridConfig.flipForwardBoost = 26    -- horizontal velocity added in the facing direction on the flip (studs/s)
 GridConfig.flipSpinTime = 0.45      -- duration of the cosmetic forward-flip rotation (s)
+GridConfig.jumpVelocityMult = 1.3   -- human jump boost: the local Humanoid's default JumpPower is scaled by
+                                    --   this (UseJumpPower=true) on character setup -> ~30% more upward velocity,
+                                    --   so a jump-strike carries more force into the velocity-proportional hit.
+                                    --   Applied per-character (each respawn gets a fresh default), so it never stacks.
 GridConfig.staminaMax = 100         -- energy pool ceiling
 GridConfig.staminaRegen = 28        -- energy regained per second while not spending
 GridConfig.dashCost = 30            -- energy spent per dash (must have >= this to dash)
@@ -162,12 +166,14 @@ GridConfig.botContactBand = 3        -- studs around frameHeight that count as t
 -- human's, so the existing swept, velocity-proportional collision (`strikeVelocity`) resolves the bot hit.
 -- The aim emerges from the off-center contact: the bot stands on the FAR side of the ball from its aim cell
 -- so `n = unit(ball - center)` points toward the aim; the jump velocity supplies the force.
-GridConfig.botJumpVelocity = 28      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
+GridConfig.botJumpVelocity = 36.4    -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
                                      --   contact -> the velocity-proportional strike (hitGain) turns this into
                                      --   outgoing ball speed (paired with the off-center normal for the aim).
-                                     --   60 sprayed every return out of bounds; 28 keeps the strike inside the
+                                     --   60 sprayed every return out of bounds; 28 kept the strike inside the
                                      --   court (lands in/near the aim cell) so bot->C->bot rallies sustain while
                                      --   still clearing the pipe (a save). Higher = flatter/longer -> more OOB.
+                                     --   Bumped 28 -> 36.4 (+30%) to match the human jump boost (more force to the
+                                     --   ball); a touch more OOB risk is the intended trade (leave to play-tuning).
 GridConfig.botOffCenterFrac = 0.55   -- 0..1: how far off-centre the bot stands, as a fraction of
                                      --   (hitZoneRadius + ballRadius). The stand centre is offset this far on
                                      --   the FAR side of the ball from the aim, so contact is clearly off-centre

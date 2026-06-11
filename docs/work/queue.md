@@ -1,7 +1,7 @@
 # Work Queue
 
 - [x] Bots hit physically — move feet to aim off-center + jump into the ball (no artificial launch) — see [physical-bots-offcenter.md](physical-bots-offcenter.md)
-- [-] Increase jump velocity 30% (more force to the ball; human + bot) — see [jump-velocity-30pct.md](jump-velocity-30pct.md)
+- [x] Increase jump velocity 30% (more force to the ball; human + bot) — see [jump-velocity-30pct.md](jump-velocity-30pct.md)
 - [x] FIX (severe): attribute faults by over-the-pipe crossings, not the landing XZ (wrong knock-outs on low deflects) — see [pipe-crossing-fault-attribution.md](pipe-crossing-fault-attribution.md)
 - [x] Defer rotation until the ball is at rest (keep red fault panel at landing) — see [defer-rotation-until-rest.md](defer-rotation-until-rest.md)
 - [x] Highlight the grid pipes of the last saved ball — see [save-pipe-highlight.md](save-pipe-highlight.md)
