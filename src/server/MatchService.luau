@@ -221,22 +221,28 @@ function MatchService.buildGym(origin: Vector3)
 	-- court. The opening matches the gallery floor opening (G.galleryOpening) so the sightline is unbroken.
 	-- The ring panels stay CanCollide=true (overhead, far above play) -- they never enter the court collision
 	-- (not under NineSquare.Frame) and the hole keeps them off the ball's arc.
+	-- LOCK THE SHELL (build-once): the big enclosing parts (ceiling panels + walls) are set Locked=true at
+	-- creation so they're CLICK-THROUGH in the Studio viewport -- you select the small interior objects behind
+	-- them normally and pick the shell deliberately via the Explorer. Purely an editor convenience: Locked has
+	-- NO runtime effect (collision/queries/physics are untouched), and the interior parts stay unlocked.
+	-- A one-time MCP pass (see the task) also stamps Locked on the ALREADY-built/persisted shell in the saved
+	-- place, since the world is build-once and this function won't re-run there.
 	do
 		local op = G.galleryOpening
 		local cs = W + 8                                  -- full ceiling span (matches the old solid slab)
 		local side = (cs - op) / 2                        -- width of each N/S panel band
 		local Hy = H
 		-- N / S panels run full width on X, fill the band beyond the opening on Z
-		block("CeilingN", Vector3.new(cs, 1, side), origin + Vector3.new(0, Hy, -(op + side) / 2), ceil, Enum.Material.SmoothPlastic)
-		block("CeilingS", Vector3.new(cs, 1, side), origin + Vector3.new(0, Hy,  (op + side) / 2), ceil, Enum.Material.SmoothPlastic)
+		block("CeilingN", Vector3.new(cs, 1, side), origin + Vector3.new(0, Hy, -(op + side) / 2), ceil, Enum.Material.SmoothPlastic).Locked = true
+		block("CeilingS", Vector3.new(cs, 1, side), origin + Vector3.new(0, Hy,  (op + side) / 2), ceil, Enum.Material.SmoothPlastic).Locked = true
 		-- E / W panels fill the band beyond the opening on X, only as deep as the opening (corners covered by N/S)
-		block("CeilingE", Vector3.new(side, 1, op), origin + Vector3.new( (op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic)
-		block("CeilingW", Vector3.new(side, 1, op), origin + Vector3.new(-(op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic)
+		block("CeilingE", Vector3.new(side, 1, op), origin + Vector3.new( (op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic).Locked = true
+		block("CeilingW", Vector3.new(side, 1, op), origin + Vector3.new(-(op + side) / 2, Hy, 0), ceil, Enum.Material.SmoothPlastic).Locked = true
 	end
-	block("WallE", Vector3.new(0.8, H, L), origin + Vector3.new(hx, wy, 0), wall, Enum.Material.SmoothPlastic)
-	block("WallW", Vector3.new(0.8, H, L), origin + Vector3.new(-hx, wy, 0), wall, Enum.Material.SmoothPlastic)
-	block("WallN", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, -hz), wall, Enum.Material.SmoothPlastic)
-	block("WallS", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, hz), wall, Enum.Material.SmoothPlastic)
+	block("WallE", Vector3.new(0.8, H, L), origin + Vector3.new(hx, wy, 0), wall, Enum.Material.SmoothPlastic).Locked = true
+	block("WallW", Vector3.new(0.8, H, L), origin + Vector3.new(-hx, wy, 0), wall, Enum.Material.SmoothPlastic).Locked = true
+	block("WallN", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, -hz), wall, Enum.Material.SmoothPlastic).Locked = true
+	block("WallS", Vector3.new(W, H, 0.8), origin + Vector3.new(0, wy, hz), wall, Enum.Material.SmoothPlastic).Locked = true
 	-- cosmetic window strips on the side walls
 	local glass = Color3.fromRGB(170, 205, 230)
 	block("WindowE", Vector3.new(0.3, 7, L - 20), origin + Vector3.new(hx - 0.5, 30, 0), glass, Enum.Material.Glass, 0.5)
@@ -416,11 +422,26 @@ function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L:
 	-- Short perimeter walls + roof so the gallery reads as an enclosed upper room (not a floating slab).
 	local wh = G.galleryWallHeight
 	local wmid = floorTop + wh / 2
-	gpart("GalWallE", Vector3.new(0.8, wh, cs), origin + Vector3.new(cs / 2, wmid, 0), wallG, Enum.Material.SmoothPlastic, true)
-	gpart("GalWallW", Vector3.new(0.8, wh, cs), origin + Vector3.new(-cs / 2, wmid, 0), wallG, Enum.Material.SmoothPlastic, true)
-	gpart("GalWallN", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, -cs / 2), wallG, Enum.Material.SmoothPlastic, true)
-	gpart("GalWallS", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, cs / 2), wallG, Enum.Material.SmoothPlastic, true)
-	gpart("GalRoof", Vector3.new(cs + 2, 1, cs + 2), origin + Vector3.new(0, floorTop + wh, 0), roofG, Enum.Material.SmoothPlastic, true)
+	-- LOCK THE GALLERY SHELL (build-once): the perimeter walls + roof are click-through in Studio (Locked),
+	-- like the gym shell, so they don't intercept clicks on interior gallery objects. Editor-only; no runtime
+	-- effect. The walkable floor ring + railing + barrier stay UNLOCKED-or-as-needed below.
+	gpart("GalWallE", Vector3.new(0.8, wh, cs), origin + Vector3.new(cs / 2, wmid, 0), wallG, Enum.Material.SmoothPlastic, true).Locked = true
+	gpart("GalWallW", Vector3.new(0.8, wh, cs), origin + Vector3.new(-cs / 2, wmid, 0), wallG, Enum.Material.SmoothPlastic, true).Locked = true
+	gpart("GalWallN", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, -cs / 2), wallG, Enum.Material.SmoothPlastic, true).Locked = true
+	gpart("GalWallS", Vector3.new(cs, wh, 0.8), origin + Vector3.new(0, wmid, cs / 2), wallG, Enum.Material.SmoothPlastic, true).Locked = true
+	gpart("GalRoof", Vector3.new(cs + 2, 1, cs + 2), origin + Vector3.new(0, floorTop + wh, 0), roofG, Enum.Material.SmoothPlastic, true).Locked = true
+
+	-- INVISIBLE OPENING BARRIER (decided): a transparent (Transparency=1), collidable, anchored cap across the
+	-- gallery floor opening at galleryFloorY. It blocks LOBBY WATCHERS from falling through the opening into the
+	-- play area while preserving the downward sightline to the court (invisible). Teleporting a SEATED player
+	-- DOWN to their cell is a CFrame set that bypasses collision, so they're unaffected. CanQuery=false so it
+	-- doesn't intercept anything that raycasts/queries the court below; CastShadow=false so it casts no shadow.
+	-- It lives in the Gallery folder (OUTSIDE NineSquare.Frame), so BallController._surfaces never collects it
+	-- and the ball never perturbs it -- and the ball is already volume-clamped below gallery height anyway, so
+	-- the barrier's real job is purely blocking PLAYERS. Sized to cover the full opening with a hair of overlap.
+	local barrier = gpart("OpeningBarrier", Vector3.new(op + 1, 1, op + 1), origin + Vector3.new(0, floorTop - fth / 2, 0), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic, true)
+	barrier.Transparency = 1
+	barrier.CanQuery = false
 
 	-- A couple of soft lights so the gallery isn't a dark box.
 	for _, dx in ipairs({ -1, 1 }) do

@@ -153,6 +153,31 @@ M3 loop / rank HUD / camera are unchanged.
 The build is playable with friends: 2–9 humans share the court, bots backfill the rest, overflow players
 spectate + auto-join, and the server stays authoritative. The pieces:
 
+- **Lobby spawn + tap-to-join (entry is button-driven).** A joining human does **not** auto-seat. They spawn
+  in the **gallery lobby** (parked at `GridConfig.specSpawnOffset`, overlook camera + HUD) and **watch** the
+  live (bot) game until they tap a **"Join Game"** button (a client `ScreenGui` `TextButton`, touch + desktop)
+  shown to any non-seated human. The button fires a `JoinRequest` `RemoteEvent`; the **server decides**
+  (server-authoritative — the client only requests): if a **bot** seat exists → `seatHuman` at the **entry
+  rank** (displaces a bot) + teleport to their court cell; if **all 9 are humans** → enqueue (FIFO), and the
+  longest-waiting joiner is auto-seated on the next human-seat freeing (the `_backfillHook`, kept). Button
+  state: **"Join Game"** → **"In queue (#N)"** (full) → **hidden** once seated (the seated camera/HUD takes
+  over). The M5.2 **proactive "auto-seat spectators into bot seats" sweep is disabled** so lobby watchers are
+  never pulled into the court without tapping; **leave→backfill** (queued joiner first, else bot) is kept.
+  Seated players return to the lobby only on disconnect. With **0 humans** the 9 bots play a full, watchable
+  game from the lobby's vantage.
+- **Invisible opening barrier.** A transparent (`Transparency=1`), `CanCollide`, anchored cap
+  (`Gallery.OpeningBarrier`) spans the gallery floor opening at `galleryFloorY`, so lobby watchers **can't fall
+  through** into the play area while the downward sightline stays clear. Teleporting a seated player **down** to
+  their cell is a `CFrame` set that bypasses collision (unaffected). The barrier is `CanQuery=false`, lives in
+  the `Gallery` folder **outside** `NineSquare.Frame`, and is never added to `BallController._surfaces` — and
+  the ball is already volume-clamped below gallery height anyway, so the barrier's only job is blocking
+  **players**.
+- **Locked building shell (Studio convenience).** The big enclosing parts are `Locked=true` so they're
+  **click-through in the Studio viewport** (select interior objects normally; pick the shell via the Explorer):
+  gym `Ceiling*` + `WallE/W/N/S`, gallery `GalRoof` + `GalWall*`. Set at creation in `buildGym`/`buildGallery`
+  **and** stamped once on the already-built/persisted shell (Locked persists in the saved place). Interior /
+  tweakable parts (floor numbers, grid lines, frame, bench, trees, ball, players) stay **unlocked**. `Locked`
+  has no runtime effect — collision/queries/physics are untouched.
 - **Occupancy / seating (humans fill, bots backfill).** A **seat** is a rank 1..9 ↔ cell (King = rank 1 = C).
   `RotationService.byRank[1..9]` is the single source of truth — each seat holds either a **human `Player`**
   or a **bot** rig. Every seat starts as a bot, so it's **always a full 9-square**. A joining human takes the
@@ -160,13 +185,16 @@ spectate + auto-join, and the server stays authoritative. The pieces:
   bot** — so everyone starts at the bottom and earns their way to C. Humans always outrank bots. Rotation,
   serve, and dethrone are unchanged mechanically and work for **any** mix of humans and bots (any human King
   hover-serves; any bot King auto-serves).
-- **Spectator overflow + auto-join (FIFO queue).** Spectators exist only when **humans > 9**. Extra joiners go
-  into a server **FIFO queue** and spawn in the gallery. When a seat frees (a human leaves, or a bot still
-  holds a seat while someone waits), the **longest-waiting** spectator is auto-seated at the entry rank. A
-  `Spectating` flag + 1-based `QueuePos` are replicated per spectator so the client shows the overlook camera
-  + a "Spectating — #N in line / NEXT UP!" HUD; the instant the server seats them, they flip back to a normal
-  seated camera/HUD. **Spectators never affect the ball** (their colliders are excluded from `bc:step` every
-  frame, re-checked against the live occupancy model).
+- **Join queue + auto-join (FIFO).** A player who taps **Join Game** while **all 9 seats are humans** is pushed
+  onto a server **FIFO queue** (they keep watching from the gallery). When a **human leaves**, the
+  **longest-waiting** queued joiner is auto-seated at the freed rank (the `_backfillHook`); with nobody waiting,
+  a fresh bot backfills. (The old M5.2 *proactive* sweep that pulled queued players into **bot** seats is now
+  disabled — entry is tap-to-join.) A `Spectating` flag + 1-based `QueuePos` are replicated per non-seated
+  human so the client shows the overlook camera + the "Spectating — #N in line / NEXT UP!" HUD and the Join
+  button's "In queue (#N)" state; the instant the server seats them they flip back to the seated camera/HUD.
+  **Non-seated players never affect the ball** (their colliders are excluded from `bc:step` every frame,
+  re-checked against the live occupancy model — a seated human has a rank, a lobby watcher / queued joiner does
+  not).
 - **Upper-floor gallery** — see the spectator-gallery note under *Key design decisions* above (M5.3).
 - **Server-authority / anti-cheat.** The server owns the ball, contact resolution, scoring, seats, rotation,
   serve, and the queue; the client only *proposes* its character pos/velocity. `HitResolver` **clamps** each

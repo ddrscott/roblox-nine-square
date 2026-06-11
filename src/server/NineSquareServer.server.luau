@@ -166,6 +166,16 @@ if not HudEvent then
 	HudEvent.Name = "HudEvent"
 	HudEvent.Parent = Remotes
 end
+-- LOBBY / TAP-TO-JOIN (this task): players no longer auto-seat on join -- they spawn in the gallery LOBBY
+-- watching the live (bot) game, and explicitly REQUEST to enter the court by tapping a "Join Game" button.
+-- The button fires this RemoteEvent; the SERVER decides (seat-from-a-bot at the entry rank, or enqueue when
+-- all 9 seats are humans) -- server-authoritative, the client only requests. Self-healed so a fresh place works.
+local JoinRequest = Remotes:FindFirstChild("JoinRequest")
+if not JoinRequest then
+	JoinRequest = Instance.new("RemoteEvent")
+	JoinRequest.Name = "JoinRequest"
+	JoinRequest.Parent = Remotes
+end
 local function fireHud(plr: Player, kind: string, text: string, tone: string?)
 	if plr and plr.Parent then HudEvent:FireClient(plr, { kind = kind, text = text, tone = tone }) end
 end
@@ -217,6 +227,18 @@ local function parkSpectator(plr: Player)
 	end
 end
 
+-- Put a non-seated human into the LOBBY WATCHER state (this task): parked at the gallery spawn, watching the
+-- live game, with the spectator camera/HUD on (Spectating=true) but NOT in the FIFO join queue (QueuePos=0,
+-- so the client shows the "Join Game" button rather than "In queue #N"). This is the DEFAULT state on join:
+-- the player watches until they tap Join. Idempotent + safe to call on (re)spawn. A lobby watcher has no rank,
+-- so the Heartbeat collider filter already excludes it from the ball (it can't strike/score while watching).
+local function parkLobbyWatcher(plr: Player)
+	plr:SetAttribute("Rank", 0)
+	plr:SetAttribute("Spectating", true)
+	plr:SetAttribute("QueuePos", 0)
+	parkSpectator(plr)
+end
+
 -- Enqueue a player as a spectator (overflow: all 9 seats are humans). FIFO -- appended at the tail.
 local function enqueueSpectator(plr: Player)
 	if isSpectator(plr) then return end
@@ -260,25 +282,14 @@ rotation._backfillHook = function(rank: number, cell: string): any
 	}
 end
 
--- Proactive seating sweep: seat queued spectators into ANY bot-held seat (humans always outrank bots).
--- The leave-hook covers the "a human left" case; this covers the "a spectator is waiting while a bot still
--- holds a seat" case (defensive -- with the join/leave logic that state shouldn't normally arise, but a
--- disconnect race or a future code path could leave a displaceable bot under a waiting spectator). Seats the
--- LONGEST-waiting spectator first (FIFO) at the entry rank via the SAME seatHuman path a fresh joiner uses,
--- so bots only ever hold seats no human wants. Re-places the board if anyone was seated.
+-- PROACTIVE SWEEP -- DISABLED (lobby / tap-to-join, this task). Previously this auto-seated queued spectators
+-- into ANY bot-held seat (humans always outrank bots). That behaviour is INTENTIONALLY OFF now: entry is
+-- button-driven, so a lobby watcher must NOT be yanked into the court without tapping "Join Game". A player
+-- who tapped Join while all 9 seats were human is enqueued (FIFO) and auto-seated ONLY on the next human-seat
+-- freeing (the M5.1 _backfillHook, kept). Bots may sit under lobby watchers indefinitely -- by design, they
+-- watch until they choose to enter. Kept as a no-op so any existing call site is harmless.
 local function trySeatSpectatorsFromBots()
-	local seatedAny = false
-	while #spectatorQueue > 0 do
-		-- Any bot-held seat left? seatHuman picks the entry rank (highest bot seat) + displaces that bot.
-		local plr = spectatorQueue[1]
-		local rank = rotation:seatHuman(plr)
-		if not rank then break end                     -- all 9 seats human -> stop (the rest stay queued)
-		dequeueSpectatorPlayer(plr)
-		print(("[NineSquare] AUTO-SEAT (sweep): %s (longest-waiting spectator) -> bot-held rank %d")
-			:format(plr.Name, rank))
-		seatedAny = true
-	end
-	return seatedAny
+	return false
 end
 
 rotation:placeAll()
@@ -627,7 +638,10 @@ local function placeAtCourtAndSync(plr: Player, char: Model)
 	local cell = rotation:cellOfPlayer(plr)
 	if cell then
 		placeAtCell(char, cell)
-	elseif isSpectator(plr) then
+	else
+		-- Not seated -> in the gallery: a queued joiner (FIFO) or a lobby watcher. Either way park them on the
+		-- gallery floor (clear of the opening, on top of the invisible barrier) so they watch from above and
+		-- can't fall through. parkSpectator uses the same gallery offset for both.
 		parkSpectator(plr)
 	end
 	task.delay(1, function() bc:resync() end)
@@ -638,30 +652,15 @@ local function onJoin(plr: Player)
 	-- their leaderstats ("Best" / "King Turns" / "Turns") BEFORE seating, so the player-list stats exist the
 	-- moment they're in. (Bots never reach onJoin -- only real Players fire PlayerAdded / are in GetPlayers.)
 	StatsService.onPlayerAdded(plr)
-	-- Seat the joiner at the entry rank (displaces the lowest-status bot). seatHuman also places them +
-	-- pushes their "Rank" attribute. nil = overflow (all 9 seats human) -> M5.2 spectator queue.
-	local rank = rotation:seatHuman(plr)
-	if rank then
-		-- STATS: their entry rank is a rank "reached" -> note it so "Best" reflects their starting seat
-		-- immediately (a returning player keeps their better stored best; noteRank only lowers it).
-		StatsService.noteRank(plr, rank)
-		-- Seated: ensure they're flagged OUT of spectator state (covers any prior overflow attribute).
-		plr:SetAttribute("Spectating", false)
-		plr:SetAttribute("QueuePos", 0)
-		print(("[NineSquare] %s joined -> seated at rank %d (%s)"):format(plr.Name, rank, tostring(rotation:cellOfPlayer(plr))))
-		-- M5.6 HUD feed: welcome the joiner (personal) + tell the table someone joined (broadcast).
-		fireHud(plr, "join", "Seated at Rank " .. tostring(rank) .. " \u{2014} climb to the throne!", "good")
-		broadcastHud("join", plr.DisplayName .. " joined the game", "neutral")
-	else
-		-- Overflow (all 9 seats are humans): no seat -> SPECTATOR. Push onto the FIFO queue (sets the
-		-- Spectating/QueuePos attributes + parks them clear of the court) and auto-join the next freed seat.
-		plr:SetAttribute("Rank", 0)
-		enqueueSpectator(plr)
-		print(("[NineSquare] %s joined -> SPECTATOR #%d (overflow)"):format(plr.Name, #spectatorQueue))
-		-- M5.6 HUD feed: tell the overflow joiner they're spectating + their place in line.
-		fireHud(plr, "join", "All 9 seats full \u{2014} spectating, #" .. tostring(#spectatorQueue) .. " in line", "neutral")
-		broadcastHud("join", plr.DisplayName .. " is spectating (#" .. tostring(#spectatorQueue) .. " in line)", "neutral")
-	end
+	-- LOBBY / TAP-TO-JOIN (this task): do NOT auto-seat on join. The player spawns in the gallery LOBBY,
+	-- watching the live (bot) game from above, until they tap "Join Game". With 0 humans seated the 9 bots
+	-- play a full, watchable match. Entry is request-driven (the JoinRequest handler below decides seat vs
+	-- queue) -- a watcher is never pulled into the court without tapping.
+	parkLobbyWatcher(plr)
+	print(("[NineSquare] %s joined -> LOBBY watcher in the gallery (tap Join to enter)"):format(plr.Name))
+	-- M5.6 HUD feed: welcome the watcher + tell the table someone is in the lobby.
+	fireHud(plr, "join", "Watching from the gallery \u{2014} tap Join Game to play", "neutral")
+	broadcastHud("join", plr.DisplayName .. " is watching from the gallery", "neutral")
 	-- Bind this player's character to its seat on (re)spawn.
 	if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
 	plr.CharacterAdded:Connect(function(char) placeAtCourtAndSync(plr, char) end)
@@ -675,13 +674,21 @@ local function onLeave(plr: Player)
 	-- M5.4: drop this player's server-side validation state (anti-teleport last-centre + mirrored stamina)
 	-- so a re-joiner with the same UserId starts fresh and we never leak per-player state on churn.
 	HitResolver.forgetPlayer(plr)
-	-- A SPECTATOR leaving just exits the FIFO queue cleanly (no seat to free, the line re-indexes) -- it
+	-- A QUEUED JOINER leaving just exits the FIFO queue cleanly (no seat to free, the line re-indexes) -- it
 	-- never held a seat so there's nothing to backfill.
 	if isSpectator(plr) then
 		dequeueSpectatorPlayer(plr)
-		print(("[NineSquare] %s left the spectator queue (line re-indexed; %d still waiting)")
+		print(("[NineSquare] %s left the join queue (line re-indexed; %d still waiting)")
 			:format(plr.Name, #spectatorQueue))
 		broadcastHud("leave", plr.DisplayName .. " left the queue", "neutral")
+		return
+	end
+	-- A LOBBY WATCHER leaving (this task): a non-seated, non-queued human just watching from the gallery. No
+	-- seat to free, not in the queue -> nothing to backfill; just note it. (Without this guard a watcher would
+	-- fall through to the seated-leave path and wrongly broadcast "left the game" + run unseatHuman for nothing.)
+	if not rotation:rankOfPlayer(plr) then
+		print(("[NineSquare] %s (lobby watcher) left -- was never seated, nothing to backfill"):format(plr.Name))
+		broadcastHud("leave", plr.DisplayName .. " left the gallery", "neutral")
 		return
 	end
 	-- M5.6 HUD feed: a seated human left -> tell the table (the auto-seat/backfill nudge for whoever fills
@@ -711,6 +718,43 @@ local function onLeave(plr: Player)
 		serveNextRally()
 	end
 end
+
+-- TAP-TO-JOIN handler (this task). A non-seated human's "Join Game" button fires JoinRequest; the SERVER
+-- decides (server-authoritative -- the client only requests):
+--   * A BOT seat exists  -> seatHuman seats them at the ENTRY rank (the highest bot seat), displacing that
+--     bot, and teleports them to their court cell (the existing seatHuman path). They leave the lobby
+--     (Spectating=false) and the seated camera/HUD takes over on the client off the replicated Rank.
+--   * All 9 seats are humans -> enqueue (FIFO). The longest-waiting queued joiner is auto-seated on the next
+--     human-seat freeing (the M5.1 _backfillHook, kept). The client shows "In queue (#N)".
+-- Idempotent + defensive: a request from an already-seated or already-queued player is ignored. STATS note +
+-- HUD feed mirror the old onJoin seating path so a tapped-in player still gets their entry-rank credit/welcome.
+local function onJoinRequest(plr: Player)
+	if not plr or not plr.Parent then return end
+	if rotation:rankOfPlayer(plr) then return end       -- already seated -> ignore
+	if isSpectator(plr) then return end                 -- already queued -> ignore (button shows "In queue")
+
+	local rank = rotation:seatHuman(plr)
+	if rank then
+		-- Seated from a bot at the entry rank: leave the lobby, credit the entry rank, place + welcome.
+		plr:SetAttribute("Spectating", false)
+		plr:SetAttribute("QueuePos", 0)
+		StatsService.noteRank(plr, rank)
+		print(("[NineSquare] JOIN REQUEST: %s seated at entry rank %d (%s) -- displaced a bot")
+			:format(plr.Name, rank, tostring(rotation:cellOfPlayer(plr))))
+		fireHud(plr, "seated", "You're in! Seated at Rank " .. tostring(rank) .. " \u{2014} climb to the throne!", "good")
+		broadcastHud("seated", plr.DisplayName .. " joined the court", "neutral")
+		-- Make sure their live character sits in the new cell now (placeOnePlayer in seatHuman already did, but
+		-- re-bind defensively if the character is mid-respawn).
+		if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
+	else
+		-- All 9 seats are humans -> enqueue (FIFO). enqueueSpectator sets Spectating/QueuePos + parks them.
+		enqueueSpectator(plr)
+		print(("[NineSquare] JOIN REQUEST: %s -> all 9 seats are humans, queued at #%d"):format(plr.Name, #spectatorQueue))
+		fireHud(plr, "join", "All 9 seats full \u{2014} you're #" .. tostring(#spectatorQueue) .. " in line", "neutral")
+		broadcastHud("join", plr.DisplayName .. " is in the join queue (#" .. tostring(#spectatorQueue) .. ")", "neutral")
+	end
+end
+JoinRequest.OnServerEvent:Connect(onJoinRequest)
 
 Players.PlayerAdded:Connect(onJoin)
 Players.PlayerRemoving:Connect(onLeave)

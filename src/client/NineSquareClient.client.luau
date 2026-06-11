@@ -103,6 +103,63 @@ renderSpectatorHud()
 LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderSpectatorHud)
 LocalPlayer:GetAttributeChangedSignal("QueuePos"):Connect(renderSpectatorHud)
 
+-- ── "Join Game" button (lobby / tap-to-join, this task) ─────────────────────────────────────────────
+-- On join the player spawns in the gallery LOBBY watching the live game (Spectating=true, no seat). A big,
+-- thumb-reachable button lets them REQUEST to enter the court (touch + desktop -- a TextButton activates on
+-- tap or click). The SERVER decides seat-vs-queue (JoinRequest); the client only requests + reflects state:
+--   * watching, not queued (QueuePos == 0)  -> "Join Game"   (enabled; tapping fires JoinRequest)
+--   * queued, all 9 seats human (QueuePos N) -> "In queue (#N)" (disabled; auto-seated when a seat frees)
+--   * seated (Spectating == false)           -> hidden        (the seated camera/HUD takes over)
+local JoinRequest = Remotes:WaitForChild("JoinRequest")
+
+local joinGui = Instance.new("ScreenGui")
+joinGui.Name = "JoinGameHud"; joinGui.ResetOnSpawn = false; joinGui.IgnoreGuiInset = true
+joinGui.Enabled = false; joinGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local joinBtn = Instance.new("TextButton")
+joinBtn.AnchorPoint = Vector2.new(0.5, 1)
+joinBtn.Position = UDim2.new(0.5, 0, 1, -86)        -- bottom-centre, above the spectator pill
+joinBtn.Size = UDim2.fromOffset(220, 56)
+joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92); joinBtn.BackgroundTransparency = 0.05
+joinBtn.BorderSizePixel = 0; joinBtn.AutoButtonColor = true
+joinBtn.Font = Enum.Font.GothamBold; joinBtn.TextSize = 22
+joinBtn.TextColor3 = Color3.fromRGB(245, 250, 245); joinBtn.Text = "Join Game"; joinBtn.Parent = joinGui
+local joinCorner = Instance.new("UICorner"); joinCorner.CornerRadius = UDim.new(0, 12); joinCorner.Parent = joinBtn
+local joinStroke = Instance.new("UIStroke"); joinStroke.Thickness = 2
+joinStroke.Color = Color3.fromRGB(150, 235, 160); joinStroke.Transparency = 0.25; joinStroke.Parent = joinBtn
+
+local function renderJoinButton()
+	local spectating = isSpectating()
+	if not spectating then joinGui.Enabled = false; return end
+	joinGui.Enabled = true
+	local pos = LocalPlayer:GetAttribute("QueuePos")
+	if type(pos) == "number" and pos > 0 then
+		-- Queued: all 9 seats are humans; the server auto-seats the longest-waiting on the next seat freeing.
+		joinBtn.Text = "In queue (#" .. tostring(pos) .. ")"
+		joinBtn.BackgroundColor3 = Color3.fromRGB(70, 76, 92)
+		joinBtn.AutoButtonColor = false; joinBtn.Active = false
+		joinStroke.Color = Color3.fromRGB(255, 210, 80)
+	else
+		-- Watching the lobby, not queued: tappable request to enter the court.
+		joinBtn.Text = "Join Game"
+		joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92)
+		joinBtn.AutoButtonColor = true; joinBtn.Active = true
+		joinStroke.Color = Color3.fromRGB(150, 235, 160)
+	end
+end
+
+joinBtn.Activated:Connect(function()
+	-- Only request while watching + not already queued (the server re-validates regardless).
+	if not isSpectating() then return end
+	local pos = LocalPlayer:GetAttribute("QueuePos")
+	if type(pos) == "number" and pos > 0 then return end
+	JoinRequest:FireServer()
+end)
+
+renderJoinButton()
+LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderJoinButton)
+LocalPlayer:GetAttributeChangedSignal("QueuePos"):Connect(renderJoinButton)
+
 -- Mouse-wheel zoom: 0 = zoomed out (default high view), 1 = zoomed in. Scroll up to zoom in.
 local zoom = 0
 UserInputService.InputChanged:Connect(function(input)
