@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Mobile camera: pinch-zoom + on-screen mode toggle + fit-the-grid (playable on phones) — see [mobile-camera-controls.md](mobile-camera-controls.md)
 - [x] Build-once / self-heal world so Studio tweaks persist (kids can adjust parts; GridLines stays white) — see [build-once-tweakable-world.md](build-once-tweakable-world.md)
 - [x] Orient grid: worst rank (9) to lower-right (SE) + upright floor numbers (camera common-sense) — see [orient-ranks-and-upright-numbers.md](orient-ranks-and-upright-numbers.md)
 - [x] Outdoor terrain + clear-day sky (backdrop out the windows / through clipped walls; grassy park vibe) — see [outdoor-terrain-and-sky.md](outdoor-terrain-and-sky.md)
