@@ -90,6 +90,7 @@ export type RotationService = typeof(setmetatable(
 		_dummyFolder: Folder?,                   -- workspace.NineSquare.Dummies (holds every bot rig)
 		_botLetters: { [string]: string },       -- bot id -> stable jersey letter (A, B, C, ...) while on the board
 		_letterSeq: number,                      -- monotonic counter -> the next bot jersey letter
+		_botColors: { [string]: Color3 },         -- bot id -> stable palette body colour while on the board (King-gold overrides at rank 1)
 		_jerseyConns: { [Player]: RBXScriptConnection }?,  -- per-human CharacterAdded -> re-attach the jersey on respawn
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
 	},
@@ -111,6 +112,7 @@ function RotationService.new(placeHuman: (player: Player, cell: string) -> ()): 
 		_dummyFolder = nil,
 		_botLetters = {},
 		_letterSeq = 0,
+		_botColors = {},
 		_jerseyConns = {},
 	}, RotationService)
 
@@ -161,6 +163,27 @@ function RotationService._assignBotLetter(self: RotationService, id: string): st
 	until n < 0
 	self._botLetters[id] = letter
 	return letter
+end
+
+-- Assign (once) + fetch a bot's STABLE palette body colour. Cycled deterministically by the bot's creation
+-- sequence (the numeric suffix of its "bot#<n>" id) over GridConfig.botColors, so it's distinct from its
+-- neighbours, STABLE while the bot is on the board, and travels with the bot through rotations (the colour is
+-- keyed to the bot id, not its rank/cell). King-gold still overrides at rank 1 in recolourRig; this is the
+-- colour the bot reverts to when it's not King. Falls back to botBodyColor if the palette is empty.
+function RotationService._botColor(self: RotationService, id: string): Color3
+	local existing = self._botColors[id]
+	if existing then return existing end
+	local palette = G.botColors
+	local color: Color3
+	if palette and #palette > 0 then
+		local seq = tonumber(string.match(id, "%d+")) or 1
+		local idx = ((seq - 1) % #palette) + 1
+		color = palette[idx]
+	else
+		color = G.botBodyColor
+	end
+	self._botColors[id] = color
+	return color
 end
 
 -- Find the Head (or PrimaryPart) of an occupant's rig/character to adorn the jersey to. Bots use their
@@ -244,10 +267,12 @@ local function botTorsoY(): number
 	return G.botRigFootToRoot
 end
 
--- Recolour the rig's body parts by rank (King = gold). The head keeps its skin tone; the arms/torso/legs
--- take the body colour so whoever holds rank 1 reads as the gold King after a rotation.
-local function recolourRig(rig: Model, rank: number)
-	local color = (rank == 1) and G.botKingColor or G.botBodyColor
+-- Recolour the rig's body parts (King = gold; otherwise this bot's own palette colour `bodyColor`). The head
+-- keeps its skin tone; the arms/torso/legs take the body colour so whoever holds rank 1 reads as the gold
+-- King after a rotation, and every non-King bot keeps its own distinct palette colour (set per bot in
+-- _makeBot). `bodyColor` falls back to the legacy single botBodyColor if a per-bot colour wasn't supplied.
+local function recolourRig(rig: Model, rank: number, bodyColor: Color3?)
+	local color = (rank == 1) and G.botKingColor or (bodyColor or G.botBodyColor)
 	for _, d in ipairs(rig:GetDescendants()) do
 		if d:IsA("BasePart") and d.Name ~= "Head" and d.Name ~= "HumanoidRootPart" then
 			d.Color = color
@@ -317,7 +342,7 @@ function RotationService._makeBot(self: RotationService, rank: number): Occupant
 
 	local rig = template:Clone()
 	rig.Name = "Bot_" .. id
-	recolourRig(rig, rank)
+	recolourRig(rig, rank, self:_botColor(id))
 	rig.Parent = folder
 	-- Put every rig part in the non-colliding BotRig group (the Humanoid flips CanCollide back on at runtime,
 	-- so the group is what actually guarantees the rig never perturbs the ball/player/rigs).
@@ -342,6 +367,7 @@ function RotationService._destroyBot(self: RotationService, occ: Occupant)
 	self._dummyParts[occ.id] = nil
 	self._rigState[occ.id] = nil
 	self._botLetters[occ.id] = nil   -- free this bot's jersey letter (it's off the board)
+	self._botColors[occ.id] = nil    -- free this bot's palette colour (it's off the board)
 end
 
 -- Drive a rig: place its anchored HumanoidRootPart at `hrpCF` and update the layered animation from the
@@ -394,17 +420,19 @@ function RotationService._driveRig(self: RotationService, id: string, hrpCF: CFr
 	end
 end
 
--- Stand a bot rig in the centre of its cell with the feet on the floor (re-colours by current rank so
--- whoever holds rank 1 reads as the gold King). Returns the floor-standing HRP CFrame. This is a SNAP
--- (placement / rest), so we reset the rig's speed tracking to zero so the snap never reads as "running".
+-- Stand a bot rig in the centre of its cell with the feet on the floor (re-colours: King-gold at rank 1,
+-- otherwise this bot's own stable palette colour, so whoever holds rank 1 reads as the gold King and every
+-- non-King bot keeps its distinct colour after a rotation). Returns the floor-standing HRP CFrame. This is a
+-- SNAP (placement / rest), so we reset the rig's speed tracking to zero so the snap never reads as "running".
 function RotationService._standBot(self: RotationService, rig: Model, cell: string, rank: number): CFrame
 	local center = G.cellCenter(cell) + Vector3.new(0, botTorsoY(), 0)
 	local cf = CFrame.new(center)
 	if rig.PrimaryPart then rig:PivotTo(cf) end
-	recolourRig(rig, rank)
+	local id = self:_idForRig(rig)
+	recolourRig(rig, rank, id and self:_botColor(id) or nil)
 
 	-- Reset the animation drive so the snapped position is the new rest (no spurious walk/run from the jump).
-	local st = self._rigState[self:_idForRig(rig)]
+	local st = id and self._rigState[id]
 	if st then
 		st.lastPos = center
 		st.lastTime = os.clock()

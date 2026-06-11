@@ -391,8 +391,26 @@ GridConfig.dummyHeight = 5          -- (legacy cylinder height; retained for bac
 GridConfig.dummyRadius = 1.3        -- (legacy cylinder radius)
 GridConfig.dummyColor = Color3.fromRGB(120, 90, 210)   -- a clearly-non-player violet (bot body)
 GridConfig.dummyKingColor = Color3.fromRGB(225, 185, 60) -- the King (rank 1 / C) stands out gold
-GridConfig.botBodyColor = Color3.fromRGB(120, 90, 210)   -- bot torso/limb colour (alias of dummyColor)
+GridConfig.botBodyColor = Color3.fromRGB(120, 90, 210)   -- bot torso/limb colour (alias of dummyColor; legacy single-colour fallback)
 GridConfig.botKingColor = Color3.fromRGB(225, 185, 60)   -- King bot colour
+-- PER-BOT PALETTE (variety). Each bot rig used to share botBodyColor (all violet -> identical). Now every
+-- bot is assigned a DISTINCT colour from this palette, cycled deterministically by the bot's creation
+-- sequence (RotationService._makeBot), so the colour is STABLE while that bot is on the board and travels
+-- with the bot through rotations. ~8 tasteful, clearly-distinct, clearly-non-player hues (none gold -- gold
+-- is reserved for the King treatment, so a non-King bot never reads as the King). Applied to the visible R15
+-- body parts (torso/arms/legs) only -- NOT the head (skin) or the jersey label. The King (rank 1) still
+-- overrides to botKingColor (gold) while it holds the throne, reverting to its own palette colour when it's
+-- no longer King -- so the King stays obvious AND non-King bots stay varied. Cosmetic only.
+GridConfig.botColors = {
+	Color3.fromRGB(120,  90, 210),  -- violet
+	Color3.fromRGB( 70, 160, 220),  -- sky blue
+	Color3.fromRGB( 60, 180, 130),  -- teal-green
+	Color3.fromRGB(225, 110,  90),  -- coral red
+	Color3.fromRGB(235, 140, 200),  -- pink
+	Color3.fromRGB(110, 100, 235),  -- indigo
+	Color3.fromRGB(120, 190,  70),  -- lime green
+	Color3.fromRGB(230, 150,  60),  -- orange
+}
 GridConfig.botSkinColor = Color3.fromRGB(245, 222, 179)  -- head colour (reads as a face)
 GridConfig.botTorsoSize = Vector3.new(2.2, 2.6, 1.2)     -- (legacy stylised torso block; collider-only ref)
 GridConfig.botHeadSize = 1.4                              -- (legacy stylised head edge; collider-only ref)
