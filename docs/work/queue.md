@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Cut the side windows into the walls (real openings + glass) for natural light — see [cutout-windows-natural-light.md](cutout-windows-natural-light.md)
 - [x] Lobby spawn (gallery) + tap-to-join button + opening barrier + lock the building shell — see [lobby-spawn-join-button-barrier.md](lobby-spawn-join-button-barrier.md)
 - [x] Sun directly overhead (centered) so shadows fall straight down over the play area — see [sun-overhead-centered.md](sun-overhead-centered.md)
 - [x] Mobile camera: pinch-zoom + on-screen mode toggle + fit-the-grid (playable on phones) — see [mobile-camera-controls.md](mobile-camera-controls.md)
