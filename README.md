@@ -185,9 +185,23 @@ client never writes a stat. Bots are excluded (no `UserId`; they never persist).
 
 ## Known issues / next steps
 
-- **OOB / pipe-escape edge case (tracked separately).** On certain outer-bot out-of-bounds hits the ball can
-  fly to a very large Y and the deferred rotation can fail to resolve / wedge the rally. Not addressed in M5.6
-  (UX/docs only) — left as a separate item to fix in the physics/rotation path.
+- **OOB / pipe-escape edge case (MITIGATED — no longer wedges).** On certain outer-bot out-of-bounds hits a
+  degenerate surface reflection could give the ball a runaway velocity and fling it to a huge Y (~13,072
+  observed). Because the fault rotation is deferred to `bc.onRest` and a ball that high never settles, `onRest`
+  never fired → the rally loop wedged. Two server-authoritative safety guards now make a wedge **impossible**
+  without touching normal physics feel (both have generous thresholds that only bite on the runaway/escape):
+  1. **Speed clamp** — `BallController` clamps the ball's velocity magnitude to `GridConfig.ballMaxSpeed` (280)
+     after every launch / strike / reflection / floor bounce, plus a NaN/inf guard, so no interaction can send
+     it to Y~13k. The degenerate reflection itself is also hardened (a near-zero / trapped-inside-surface
+     contact is ejected without adding energy instead of re-reflecting to a runaway). Normal outgoing speed is
+     ~55–130 studs/s, so the clamp never bites legit play.
+  2. **Play-volume + settle watchdog** — each Heartbeat, while a rally is in play, the server checks whether the
+     ball has left a sane play volume (above the gym ceiling + margin, below the floor, or `|XZ|` past the court
+     + margin) **or** has run past `GridConfig.ballSettleTimeout` (7 s) without reaching rest. On either, it
+     **force-resolves** exactly like the normal OOB path — attributes the fault to the hitter
+     (`struckCell`/`ownerCell`), applies the deferred rotation, and re-serves — so the loop **always** recovers
+     and never waits forever on an `onRest` that won't come. Verified in Studio: the watchdog fires on a
+     non-settling rally and the game continues; normal rallies never trip it.
 - **Pipe/wall collision is dormant.** `BallController:_collide` correctly bounces the ball off the
   frame pipes + gym walls, BUT with the current high apex (~24) vs frame height (11) the ball arcs
   4–6 studs clear of every pipe and never reaches the walls — so it visually passes through the
@@ -221,9 +235,10 @@ A checklist for a real multi-player session in **"9 Square Beta"**:
    freed rank ("You're in! Seated at Rank N") and the line re-indexes. With no spectator waiting, a fresh bot
    backfills — a seat is never empty.
 7. **What to look for:** every seat labeled (human name or "Bot"), King unmistakable, ranks shift cleanly on
-   faults, the queue HUD counts down, no errors in the Output, and **no wedged rally** (see the OOB note under
-   *Known issues* — if the ball ever flies off to a huge height and the rally stalls, that's the tracked
-   edge case, not your test).
+   faults, the queue HUD counts down, no errors in the Output, and **no wedged rally**. If the ball ever does
+   blow out of the arena or a rally runs long without settling, the **escape/settle watchdog** force-resolves
+   it within a few seconds (look for `WATCHDOG force-resolving rally …` in the Output) and play continues —
+   the old OOB-escape wedge is mitigated (see *Known issues*).
 
 Verify over MCP: `start_stop_play`, `get_console_output` for the `[NineSquare]` / `[Rotation]` logs, and
 `execute_luau` against the **Server** datamodel to read `workspace.NineSquare.Nameplates` + each player's

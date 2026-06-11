@@ -309,6 +309,14 @@ local rallyArmed = false
 -- consumes it, so rotation happens exactly once, when the ball finally stops.
 local pendingFaultRank: number? = nil
 
+-- BALL-ESCAPE / NON-SETTLE WATCHDOG state. `rallyStartT` is the server time the CURRENT rally entered play
+-- (a serve / first Flight). The watchdog (in the Heartbeat) force-resolves a rally that has left the sane
+-- play volume OR has not reached rest within G.ballSettleTimeout -- so a runaway ball (the documented
+-- degenerate pipe reflection) can never wedge the loop by never firing onRest. `resolvingRally` guards
+-- against double-resolving (a forced resolve + a late onLand/onRest in the same beat).
+local rallyStartT: number? = nil
+local resolvingRally = false
+
 -- Auto-serve: launch the ball from the King square (C) frame point so it ARCS DOWN INTO the target
 -- square and lands on its floor (where onLand will report `targetCell` -> that dummy faults). The arc
 -- peaks `serveArcApex` above the launch height, then falls to the target square's floor (y = ballRadius).
@@ -337,6 +345,8 @@ end
 -- random outer square. Idempotent-ish: we only serve when the ball is idle (Rest/Live), not mid-rally.
 local function serveNextRally()
 	rallyArmed = false
+	resolvingRally = false     -- a fresh serve clears the watchdog's resolve guard for the new rally
+	rallyStartT = nil          -- (re)armed when the serve actually puts the ball into play (below / Heartbeat)
 	serveClearPending = true   -- the upcoming serve's over-pipe clear is the serve itself, not a save -> swallow it
 	-- Clear last rally's save highlight so the pipe glow only ever shows the last save of the CURRENT rally.
 	lastSavedCell = nil
@@ -357,9 +367,81 @@ local function serveNextRally()
 			-- Only serve if nothing else has put the ball in play in the meantime.
 			if not rallyArmed and (bc.phase == "Live" or bc.phase == "Rest") then
 				rallyArmed = true
+				rallyStartT = workspace:GetServerTimeNow()   -- arm the settle watchdog from the serve moment
 				serveToTarget(target)
 			end
 		end)
+	end
+end
+
+-- Attribute the fault for a rally (PRD §6, corrected for over-the-pipe ownership), flash the OUT square,
+-- and RECORD the rank to rotate at rest. Shared by the normal landing (onLand) AND the escape watchdog
+-- (a runaway ball that never lands is treated as an OOB fault on the hitter, exactly like a real OOB
+-- landing). `landed` = the square the ball first hit the floor in (nil = out of bounds / escaped); `struck`
+-- = the square it was last struck/served from; `owner` = the square it LEGALLY belongs to. Sets
+-- pendingFaultRank (consumed by applyDeferredRotation at rest / by the watchdog). Idempotent-safe: only the
+-- caller's rallyArmed/resolve guards decide WHEN this runs.
+local function attributeFault(landed: string?, struck: string?, owner: string?)
+	local faultCell: string?
+	if landed == nil then
+		faultCell = struck
+		print(("[NineSquare] FAULT (out-of-bounds) struck=%s owner=%s"):format(tostring(struck), tostring(owner)))
+	elseif owner == struck then
+		faultCell = struck
+		print(("[NineSquare] FAULT (never cleared over a pipe) struck=%s landed=%s owner=%s")
+			:format(tostring(struck), tostring(landed), tostring(owner)))
+	else
+		faultCell = owner
+		print(("[NineSquare] FAULT (floor / unreturned) owner=%s landed=%s"):format(tostring(owner), tostring(landed)))
+	end
+
+	MatchService.flashCell(faultCell, G.faultFlashDuration); playOof()
+
+	local faultRank = faultCell and G.rankForCell(faultCell)
+	if faultRank then
+		local occ = rotation:occupantAtCell(faultCell)
+		print(("[NineSquare] fault marked (rotation deferred to rest): cell=%s rank=%d occupant=%s")
+			:format(tostring(faultCell), faultRank, occ and occ.id or "?"))
+		pendingFaultRank = faultRank
+	else
+		warn("[NineSquare] could not attribute fault (no rank for cell " .. tostring(faultCell) .. ")")
+	end
+end
+
+-- Run the deferred rotation if a fault is pending: snapshot each human's rank, rotate everyone toward the
+-- King, then push the per-player stats + HUD nudges. Shared by onRest (the normal path, when the ball has
+-- settled) AND the escape watchdog (which forces it for a ball that will never settle). Consumes
+-- pendingFaultRank so it runs EXACTLY once per rally.
+local function applyDeferredRotation()
+	if not pendingFaultRank then return end
+	local faultRank = pendingFaultRank
+	pendingFaultRank = nil
+	print(("[NineSquare] applying deferred rotation (rank %d)"):format(faultRank))
+	local before: { [Player]: number } = {}
+	for r = 1, 9 do
+		local o = rotation.byRank[r]
+		if o and o.kind == "human" and o.player then before[o.player] = r end
+	end
+	-- STATS: this rally is a completed "turn" for EVERY seated human -- credit it at the rank they held
+	-- DURING the rally (the pre-rotation `before` snapshot). recordRally: totalTurns++, turnsAtBest++ if
+	-- at their best rank, kingTurns++ if they were King (rank 1). Bots are excluded inside StatsService.
+	for plr, rank in pairs(before) do
+		StatsService.recordRally(plr, rank)
+	end
+	rotation:rotateOnFault(faultRank)
+	for r = 1, 9 do
+		local o = rotation.byRank[r]
+		if o and o.kind == "human" and o.player then
+			local was = before[o.player]
+			StatsService.noteRank(o.player, r)
+			if was and r ~= was then
+				if r == 9 and was ~= 9 then
+					fireHud(o.player, "rank", "Faulted \u{2014} back to Rank 9", "bad")
+				elseif r < was and r ~= 1 then
+					fireHud(o.player, "rank", "Moved up \u{2014} now Rank " .. tostring(r), "good")
+				end
+			end
+		end
 	end
 end
 
@@ -374,39 +456,7 @@ end
 bc.onLand = function(landed, struck, owner)
 	if not rallyArmed then return end          -- a stray landing outside an armed rally -> ignore
 	rallyArmed = false
-
-	-- Which square owns the fault (PRD §6, corrected for over-the-pipe ownership)?
-	local faultCell: string?
-	if landed == nil then
-		-- Out of bounds: the hitter (occupant of the struck square) faulted. OOB is always on the hitter.
-		faultCell = struck
-		print(("[NineSquare] FAULT (out-of-bounds) struck=%s owner=%s"):format(tostring(struck), tostring(owner)))
-	elseif owner == struck then
-		-- The ball never LEGALLY left the hitter's square: it either landed back in it, or was deflected LOW
-		-- into a neighbour WITHOUT clearing a pipe. Either way the hitter failed to clear -> hitter faults.
-		-- (Bug fix: the low-deflected neighbour `landed` is NOT knocked out.)
-		faultCell = struck
-		print(("[NineSquare] FAULT (never cleared over a pipe) struck=%s landed=%s owner=%s")
-			:format(tostring(struck), tostring(landed), tostring(owner)))
-	else
-		-- The ball legally cleared a pipe into `owner`'s square; its occupant failed to return it -> they fault.
-		faultCell = owner
-		print(("[NineSquare] FAULT (floor / unreturned) owner=%s landed=%s"):format(tostring(owner), tostring(landed)))
-	end
-
-	-- Flash the OUT square red and hold it through the land->rest settle (faultFlashDuration covers the
-	-- bounce-out window), plus the oof. This is the immediate "who's out" read; the rotation comes later.
-	MatchService.flashCell(faultCell, G.faultFlashDuration); playOof()
-
-	local faultRank = faultCell and G.rankForCell(faultCell)
-	if faultRank then
-		local occ = rotation:occupantAtCell(faultCell)
-		print(("[NineSquare] fault marked (rotation deferred to rest): cell=%s rank=%d occupant=%s")
-			:format(tostring(faultCell), faultRank, occ and occ.id or "?"))
-		pendingFaultRank = faultRank          -- rotate at onRest, not now
-	else
-		warn("[NineSquare] could not attribute fault (no rank for cell " .. tostring(faultCell) .. ")")
-	end
+	attributeFault(landed, struck, owner)
 end
 
 -- Ball has bounced out its energy and stopped. NOW we run the deferred rotation (if a fault is pending):
@@ -414,43 +464,47 @@ end
 -- next rally. This is the moment the OUT player rotates -- the red panel has been showing who's out the
 -- whole settle. (If a dead ball got batted mid-settle, the pending fault still stands and rotates here.)
 bc.onRest = function()
-	if pendingFaultRank then
-		local faultRank = pendingFaultRank
-		pendingFaultRank = nil
-		print(("[NineSquare] ball at rest -- applying deferred rotation (rank %d)"):format(faultRank))
-		-- M5.6 HUD feed: snapshot each seated human's rank BEFORE the shift so we can tell them how they
-		-- moved AFTER it. (onDethrone already covers the new King + dethrone broadcast; here we cover the
-		-- "you advanced toward the King" / "you faulted -> back to entry" personal nudges for everyone else.)
-		local before: { [Player]: number } = {}
-		for r = 1, 9 do
-			local o = rotation.byRank[r]
-			if o and o.kind == "human" and o.player then before[o.player] = r end
-		end
-		rotation:rotateOnFault(faultRank)
-		for r = 1, 9 do
-			local o = rotation.byRank[r]
-			if o and o.kind == "human" and o.player then
-				local was = before[o.player]
-				-- STATS: after the shift, observe this human's NEW rank and improve their best (lowest)
-				-- rank reached. noteRank only LOWERS bestRank (and resets turnsAtBest on a new peak), so a
-				-- climb toward the throne raises the leaderstats "Best" live; a fault-back never worsens it.
-				StatsService.noteRank(o.player, r)
-				if was and r ~= was then
-					if r == 9 and was ~= 9 then
-						fireHud(o.player, "rank", "Faulted \u{2014} back to Rank 9", "bad")
-					elseif r < was and r ~= 1 then
-						-- moved UP toward the King (rank 1's "you're King" toast is handled by onDethrone)
-						fireHud(o.player, "rank", "Moved up \u{2014} now Rank " .. tostring(r), "good")
-					end
-				end
-			end
-		end
-	end
+	if resolvingRally then return end          -- the watchdog already force-resolved this rally -> don't double-run
+	rallyStartT = nil                           -- rally settled cleanly -> disarm the watchdog timeout
+	applyDeferredRotation()
 	task.delay(G.serveDelay, function()
 		if bc.phase == "Rest" and not rallyArmed then
 			serveNextRally()
 		end
 	end)
+end
+
+-- ============================================================================================
+-- BALL-ESCAPE / NON-SETTLE WATCHDOG. The wedge fix: a runaway ball (the documented degenerate pipe/corner
+-- reflection) can rocket out of the arena and NEVER settle, so onRest never fires and the deferred rotation
+-- never runs -> the rally loop hangs forever. This watchdog GUARANTEES recovery. Each Heartbeat, while a
+-- rally is armed, it checks two escape signals:
+--   * out-of-volume: the ball left the sane play volume (above the gym ceiling + margin, below the floor,
+--     or |XZ| past the court + margin) -- it's gone and won't come back as a normal landing.
+--   * non-settle:    a rally has run past G.ballSettleTimeout without reaching rest (covers a ball stuck
+--     re-reflecting at speed, or one whose huge arc would take far too long to fall).
+-- On either, it FORCE-RESOLVES exactly like the normal OOB path: if no fault was attributed yet (the ball
+-- escaped before landing) it attributes an OOB fault to the hitter (bc.struckCell / ownerCell, same model as
+-- onLand's `landed == nil` branch), then applies the deferred rotation and re-serves. resolvingRally guards
+-- against double-resolving with a late onLand/onRest. The clamp (ballMaxSpeed) makes the escape rare; this
+-- makes it impossible to wedge even if one slips through. Normal play never trips it (peak ~32 << ceiling,
+-- rallies settle in ~2-4s << timeout).
+local function forceResolveRally(reason: string)
+	if resolvingRally then return end
+	resolvingRally = true
+	rallyArmed = false
+	rallyStartT = nil
+	warn(("[NineSquare] WATCHDOG force-resolving rally (%s) -- ball pos=%s phase=%s")
+		:format(reason, tostring(bc.ball.Position), tostring(bc.phase)))
+	-- If onLand never fired (escaped mid-flight), attribute an OOB fault to the hitter exactly like the
+	-- normal out-of-bounds path. If a fault was already pending (landed, then ran away while settling), keep it.
+	if not pendingFaultRank then
+		attributeFault(nil, bc.struckCell, bc.ownerCell)
+	end
+	applyDeferredRotation()
+	-- Re-serve for the (new) King so the loop continues. serveNextRally clears resolvingRally + parks/serves
+	-- the ball, so a stuck/escaped ball is replaced by a fresh serve and the game NEVER hangs.
+	serveNextRally()
 end
 
 -- Physical contact is now a real collision inside the ball's step: each Heartbeat we gather the
@@ -493,6 +547,18 @@ RunService.Heartbeat:Connect(function(dt)
 	-- onLand only scores when a rally is armed. The dummy-King auto-serve arms itself in serveNextRally.
 	if bc.phase == "Flight" and not rallyArmed then
 		rallyArmed = true
+		rallyStartT = workspace:GetServerTimeNow()   -- arm the settle watchdog from the moment it enters play
+	end
+
+	-- ESCAPE / NON-SETTLE WATCHDOG: while a rally is in play, recover it if the ball left the sane play
+	-- volume OR has run past the settle timeout without resting (so a runaway can never wedge the loop by
+	-- never firing onRest). Only checks armed, in-motion rallies; an idle/parked ball (Live/Rest) is skipped.
+	if rallyArmed and not resolvingRally and (bc.phase == "Flight" or bc.phase == "Settling") then
+		if G.ballOutOfPlayVolume(bc.ball.Position) then
+			forceResolveRally("ball left play volume")
+		elseif rallyStartT and (workspace:GetServerTimeNow() - rallyStartT) > G.ballSettleTimeout then
+			forceResolveRally("rally exceeded settle timeout")
+		end
 	end
 end)
 

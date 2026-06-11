@@ -149,6 +149,43 @@ GridConfig.galleryWallHeight = 18       -- studs: height of the gallery's short 
 GridConfig.galleryRailHeight = 3.5      -- studs: height of the safety railing ringing the opening (so spectators don't fall through)
 GridConfig.galleryRailInset = 0.5       -- studs the railing sits OUTSIDE the opening edge (a hair, so it rings the hole)
 
+-- ============================================================================================
+-- BALL ESCAPE / WEDGE SAFETY GUARDS. A degenerate surface reflection (the ball trapped inside a
+-- pipe/corner overlap, a near-zero/NaN contact normal, or repeated reflections in one frame) was
+-- observed to produce a RUNAWAY ball velocity that rocketed it to a huge Y (~13,072 studs). Because the
+-- fault rotation is DEFERRED until the ball is at rest (bc.onRest), a ball flung that high never settles
+-- -> onRest never fires -> the deferred rotation never applies -> the rally loop WEDGES. Two guards make
+-- a wedge impossible WITHOUT touching normal physics feel (both have generous thresholds that only bite
+-- on the runaway/escape; legitimate play -- outgoing ~55-130 studs/s, peak ~32 -- never reaches them):
+--   1. ballMaxSpeed: BallController clamps the ball's velocity MAGNITUDE after every launch/strike/
+--      reflection/bounce (+ a NaN/inf guard), so no interaction can fling it to Y~13k.
+--   2. play-volume + settle watchdog (NineSquareServer): if the ball leaves a sane play volume (above the
+--      gym ceiling + margin, below the floor, or |XZ| past the court + margin) OR a fault is pending and
+--      the ball hasn't reached rest within ballSettleTimeout, the server FORCE-RESOLVES the rally exactly
+--      like the normal OOB path (attribute to the hitter/ownerCell -> apply the deferred rotation ->
+--      re-serve). The loop ALWAYS recovers -- it never waits forever on an onRest that won't come.
+-- ============================================================================================
+GridConfig.ballMaxSpeed = 280       -- studs/s ceiling on the ball's velocity magnitude (clamped after any
+                                    --   launch/strike/reflection/bounce). Normal rally outgoing is ~55-130
+                                    --   studs/s, so this is well ABOVE legit play (never bites) but far
+                                    --   BELOW a runaway (caught immediately) -- a degenerate reflection can
+                                    --   no longer send the ball to Y~13k. NaN/inf velocity is reset to safe.
+GridConfig.gymCeilingY = 50         -- world Y (studs) of the gym ceiling (== MatchService H). The ball's Y is
+                                    --   absolute (floor at y=0, ceiling at y=50); the play-volume watchdog
+                                    --   reads this so it tracks the gym build. Keep in sync with MatchService H.
+GridConfig.playVolCeilingMargin = 12  -- studs above the gym ceiling the ball may rise before it's "escaped"
+                                    --   (a clean rally peaks ~32, far below the ~50 ceiling -> never triggers)
+GridConfig.playVolFloorMargin = 6   -- studs below the floor (y=0) before "escaped" (a resting ball sits at
+                                    --   y=ballRadius; this catches a ball that tunnelled through the ground)
+GridConfig.playVolXZMargin = 40     -- studs beyond the court's outer edge (|XZ|) before "escaped". Court
+                                    --   extent is 1.5*squareSize (=21); the gym walls sit a bit past that, so
+                                    --   a generous margin means only a ball that blew clean past the arena
+                                    --   trips it -- a normal OOB landing (still inside the gym) does not.
+GridConfig.ballSettleTimeout = 7    -- seconds a rally may run before the watchdog force-resolves it. The ball
+                                    --   normally lands + settles to rest in ~2-4s; 7s is generous slack so a
+                                    --   long legit rally never false-triggers, but a ball that will NEVER
+                                    --   settle (flung out of volume, stuck re-reflecting) is recovered fast.
+
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
 
@@ -425,6 +462,19 @@ GridConfig.jerseyMaxDistance = 220                       -- studs the jersey sta
 GridConfig.statsStoreName = "NineSquareStats"   -- DataStore base name (versioned at runtime)
 GridConfig.statsStoreVersion = "v1"             -- schema/keyspace version -- bump to reset all stats
 GridConfig.statsAutosaveInterval = 120          -- seconds between periodic autosaves of every live human
+
+-- Is a ball world position OUTSIDE the sane play volume (escaped)? True when it's above the gym ceiling +
+-- margin, below the floor - margin, or its |XZ| (relative to the court origin) is beyond the court's outer
+-- edge + margin. A normal rally never leaves this volume (peak ~32 << ceiling+margin; an OOB landing still
+-- sits inside the gym). The watchdog uses this to recover a ball that's been flung clean out of the arena.
+function GridConfig.ballOutOfPlayVolume(pos: Vector3): boolean
+	if pos.Y > GridConfig.gymCeilingY + GridConfig.playVolCeilingMargin then return true end
+	if pos.Y < -GridConfig.playVolFloorMargin then return true end
+	local rel = pos - GridConfig.origin
+	local courtExtent = 1.5 * GridConfig.squareSize + GridConfig.playVolXZMargin
+	if math.abs(rel.X) > courtExtent or math.abs(rel.Z) > courtExtent then return true end
+	return false
+end
 
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]

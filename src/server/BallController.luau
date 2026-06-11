@@ -54,6 +54,30 @@ export type PlayerCollider = { center: Vector3, radius: number, vel: Vector3, pl
 
 local SURFACE_RESTITUTION = 0.6   -- bounciness off the rigid surfaces (frame pipes, walls, ceiling, hoops)
 
+-- Is a number finite (not NaN, not +/-inf)? (x ~= x is true only for NaN; abs(inf) == inf.)
+local function isFinite(x: number): boolean
+	return x == x and x ~= math.huge and x ~= -math.huge
+end
+
+-- SAFETY clamp on any outgoing ball velocity. A degenerate collision/reflection (the ball trapped inside a
+-- pipe/corner overlap, a near-zero/NaN contact normal, or repeated reflections in one frame) could produce a
+-- RUNAWAY velocity that rockets the ball to a huge Y (~13k observed) -> it never settles -> the deferred
+-- rotation never runs -> the rally WEDGES. This guards every velocity the ball is given:
+--   * NaN/inf component -> reset to a safe, gently-falling velocity (never propagate a poisoned value).
+--   * magnitude above G.ballMaxSpeed -> rescaled DOWN to ballMaxSpeed along its own direction (direction
+--     preserved, only the runaway speed is shed). ballMaxSpeed is well above legit play (~55-130 studs/s),
+--     so this never bites a normal strike/serve/bounce -- it only catches the escape.
+local function clampVelocity(v: Vector3): Vector3
+	if not (isFinite(v.X) and isFinite(v.Y) and isFinite(v.Z)) then
+		return Vector3.new(0, -1, 0)   -- poisoned velocity -> safe, gently falling (lets the floor/watchdog resolve)
+	end
+	local mag = v.Magnitude
+	if mag > G.ballMaxSpeed then
+		return v * (G.ballMaxSpeed / mag)
+	end
+	return v
+end
+
 function BallController.new()
 	local self = setmetatable({}, BallController)
 	local ball = Instance.new("Part")
@@ -116,7 +140,7 @@ end
 -- starts/continues a rally; a strike on an already-resolved ball (Settling/Rest) just bats it around
 -- again -- no new landing is reported, so the rally is not re-scored and any pending re-serve is moot.
 function BallController:launch(fromPoint: Vector3, v0: Vector3)
-	self.p0 = fromPoint; self.v0 = v0
+	self.p0 = fromPoint; self.v0 = clampVelocity(v0)   -- SAFETY: no launch/strike can exceed ballMaxSpeed (+ NaN guard)
 	self.startT = workspace:GetServerTimeNow()
 	self.struckCell = G.cellAtPosition(fromPoint)
 	-- A fresh strike resets ownership to the hitter's square: the ball is the hitter's responsibility until
@@ -210,10 +234,32 @@ function BallController:_collide(pos: Vector3, vel: Vector3): ({ pos: Vector3, v
 			math.clamp(pos.Z, c.Z - h.Z, c.Z + h.Z))
 		local delta = pos - closest
 		local dist = delta.Magnitude
-		if dist < r and dist > 1e-4 and vel:Dot(delta.Unit) < 0 then
+		-- DEGENERATE-CASE GUARD: only reflect off a NON-DEGENERATE normal while moving INTO the surface.
+		-- dist > 1e-3 rejects a near-zero delta (the ball centre essentially ON the surface / trapped inside
+		-- a pipe-corner overlap), which would yield a garbage unit normal and could re-reflect to a runaway
+		-- speed. When dist <= 1e-3 we skip the reflect and instead PUSH the ball straight out to the surface
+		-- (along whichever axis it's least penetrated) WITHOUT adding energy, so a trapped ball is freed
+		-- cleanly instead of being flung. The outgoing reflected velocity is also speed-clamped.
+		if dist < r and vel:Dot(delta) < 0 then
+			if dist <= 1e-3 then
+				-- trapped/on-surface: eject toward the box's nearest face along the dominant separation axis,
+				-- preserve the ball's velocity but zero its component into the (best-guess) face -- no energy added.
+				local push = (pos - c)
+				local axis = Vector3.new(0, 1, 0)
+				if math.abs(push.X) >= math.abs(push.Y) and math.abs(push.X) >= math.abs(push.Z) then
+					axis = Vector3.new(push.X >= 0 and 1 or -1, 0, 0)
+				elseif math.abs(push.Z) >= math.abs(push.Y) then
+					axis = Vector3.new(0, 0, push.Z >= 0 and 1 or -1)
+				else
+					axis = Vector3.new(0, push.Y >= 0 and 1 or -1, 0)
+				end
+				local ejected = pos + axis * (r - dist + 0.05)
+				local vout = vel - math.min(vel:Dot(axis), 0) * axis   -- kill only the into-face component
+				return { pos = ejected, vel = clampVelocity(vout) }
+			end
 			local n = delta.Unit
 			local out = vel - (1 + SURFACE_RESTITUTION) * vel:Dot(n) * n
-			return { pos = closest + n * (r + 0.05), vel = out }
+			return { pos = closest + n * (r + 0.05), vel = clampVelocity(out) }   -- SAFETY: bound the reflected speed
 		end
 	end
 	return nil
@@ -347,7 +393,7 @@ function BallController:step(dt: number, playerColliders: { PlayerCollider }?)
 			if self.onRest then self.onRest() end
 		else
 			self.p0 = self.ball.Position
-			self.v0 = Vector3.new(horiz.X, up, horiz.Z)
+			self.v0 = clampVelocity(Vector3.new(horiz.X, up, horiz.Z))   -- SAFETY: bound the bounced speed too
 			self.startT = now
 			self:resync()
 		end
