@@ -403,9 +403,15 @@ RunService.Heartbeat:Connect(function(dt)
 	-- and hand the WHOLE list to bc:step, so the same swept collision resolves both. A bot hit thus flies
 	-- via the real physical strike (no bc:launch); a missed/under-jumped swing makes no contact -> the ball
 	-- falls -> onLand fault. The human's volley is unchanged.
-	-- SPECTATORS NEVER AFFECT THE BALL: drop any collider for a player who isn't seated (M5.2). A seated
-	-- human has a rank in the occupancy model; a queued spectator does not -> its hit-sphere is excluded
-	-- here so it can't strike, deflect, or score. (Bots feed their own colliders below; they're always seated.)
+	-- TRUST BOUNDARY (M5.4): HitResolver.playerColliders() has already VALIDATED each player's PROPOSED
+	-- position/velocity -- it clamps the collider velocity to a plausible max (maxStrikeSpeed), caps the
+	-- per-frame centre jump (anti-teleport: maxFrameDisplacement) and bounds the contribution against a
+	-- server-mirrored stamina pool -- so a spoofed HRP can't manufacture a super-hit or warp into the ball.
+	-- The deterministic ball physics + strike formula are UNTOUCHED (inputs only), so legit play is identical.
+	-- SPECTATORS NEVER AFFECT THE BALL (M5.2): drop any collider for a player who isn't seated. A seated
+	-- human has a rank in the occupancy model; a queued spectator (or any unseated player) does not -> its
+	-- (validated) hit-sphere is excluded here so it can't strike, deflect, or score, re-enforced every frame
+	-- off the live occupancy model. (Bots feed their own server-driven colliders below; they're always seated.)
 	local colliders = {}
 	for _, c in ipairs(HitResolver.playerColliders()) do
 		if rotation:rankOfPlayer(c.player) then
@@ -476,6 +482,9 @@ local function onJoin(plr: Player)
 end
 
 local function onLeave(plr: Player)
+	-- M5.4: drop this player's server-side validation state (anti-teleport last-centre + mirrored stamina)
+	-- so a re-joiner with the same UserId starts fresh and we never leak per-player state on churn.
+	HitResolver.forgetPlayer(plr)
 	-- A SPECTATOR leaving just exits the FIFO queue cleanly (no seat to free, the line re-indexes) -- it
 	-- never held a seat so there's nothing to backfill.
 	if isSpectator(plr) then
@@ -484,6 +493,12 @@ local function onLeave(plr: Player)
 			:format(plr.Name, #spectatorQueue))
 		return
 	end
+	-- M5.4 lifecycle robustness: was THIS leaver the current King? Capture it BEFORE the backfill so we can
+	-- recover a wedged hover-serve below (the King left while the ball hovered at C waiting for its
+	-- jump-serve that will now never come). Mid-rally/mid-settle leaves are already safe: the onLand/onRest
+	-- loop keeps running and the new occupant just inherits the seat.
+	local wasKing = (rotation:kingPlayer() == plr)
+
 	-- A SEATED human leaving frees its rank: the _backfillHook seats the longest-waiting spectator if one
 	-- is queued, else a fresh bot -- so a rank is never empty + the game never wedges.
 	local repl = rotation:unseatHuman(plr)
@@ -492,6 +507,15 @@ local function onLeave(plr: Player)
 	end
 	-- Defensive: if (somehow) a bot still holds a seat while spectators wait, sweep them into it now.
 	trySeatSpectatorsFromBots()
+
+	-- RE-SERVE RECOVERY: if the King left while the ball was parked for a (human) hover-serve -- i.e. the
+	-- ball is Live/Rest and no rally is in flight -- the new King must serve, or the ball would hover
+	-- forever. Re-run serveNextRally for whoever now holds the throne (a human re-hovers; a bot auto-serves).
+	-- Guarded on the idle phases + not rallyArmed so it never interrupts a live rally or double-serves.
+	if wasKing and not rallyArmed and (bc.phase == "Live" or bc.phase == "Rest") then
+		print("[NineSquare] King left mid-serve -> re-serving for the new King (no wedge)")
+		serveNextRally()
+	end
 end
 
 Players.PlayerAdded:Connect(onJoin)

@@ -65,6 +65,39 @@ GridConfig.staminaRegen = 28        -- energy regained per second while not spen
 GridConfig.dashCost = 30            -- energy spent per dash (must have >= this to dash)
 GridConfig.flipCost = 35            -- energy spent per double-jump flip (must have >= this to flip)
 
+-- ============================================================================================
+-- M5.4 -- SERVER-AUTHORITY / ANTI-CHEAT clamp tunables. The strike reads each SEATED human's replicated
+-- HumanoidRootPart velocity + position as a moving hit-sphere collider (HitResolver), then BallController
+-- folds it into the swept, velocity-proportional collision. A client could spoof its replicated HRP to
+-- manufacture a super-hit or warp the collider into the ball. The server CLAMPS those INPUTS before they
+-- reach bc:step -- it does NOT touch the deterministic ball physics or the strike formula, so legitimate
+-- play (always under these ceilings) feels identical; the clamp only bites on impossible values.
+-- ============================================================================================
+
+-- Max plausible collider SPEED (studs/s) a legitimate player can carry into the strike, derived from the
+-- movement tunables. Worst-case composed burst a real client can produce:
+--   horizontal: dash (40) folded with the flip's forward boost (26) ~= 66 studs/s
+--   vertical:   flip up-velocity (38), or a gravity-accumulated DESCENT from the flip/jump apex
+-- |(66 horiz, ~40 vert)| ~= 77 studs/s at the burst; a fast fall from apex adds more vertical, so we set a
+-- generous ceiling well ABOVE any legitimate composite (never bites real play) but far BELOW a spoofed
+-- super-hit (e.g. 1000 studs/s). The collider's velocity magnitude is clamped to this in HitResolver.
+GridConfig.maxStrikeSpeed = 120     -- studs/s ceiling on a seated human's hit-sphere velocity fed to bc:step
+
+-- When a client has NO stamina it cannot legitimately dash/flip, so its burst velocity can't exceed plain
+-- run/jump motion. The server mirrors the stamina pool (regen + spend, same formula as the client) and,
+-- when a player's tracked stamina is below a dash cost, clamps that player's collider velocity to THIS
+-- lower ceiling -- so a client can't dash/flip into every hit with an empty pool to cheat the
+-- velocity-proportional strike. Derived from walk/run + jump (no dash burst): ~jump-up (boosted ~62) plus
+-- a little horizontal; set comfortably above that, below the full-burst maxStrikeSpeed.
+GridConfig.maxStrikeSpeedNoStamina = 78  -- studs/s ceiling when the player's server-tracked stamina is spent
+
+-- Anti-teleport: max plausible per-frame DISPLACEMENT (studs) of a seated human's collider centre between
+-- consecutive Heartbeats. At maxStrikeSpeed (120) over a slow ~0.06s frame that's ~7 studs; we cap at this
+-- generous bound so ordinary motion (incl. a lag spike's catch-up) passes untouched, but a warp straight
+-- into the ball is clamped -- the collider is moved at most this far toward its new (spoofed) position, so
+-- it can't appear inside the ball in one frame. The clamped-away displacement also bounds the velocity.
+GridConfig.maxFrameDisplacement = 16  -- studs cap on a seated human collider's per-frame centre jump
+
 -- Court camera: a fixed high view the player can zoom with the mouse wheel. Zoom lerps between the
 -- "out" and "in" offsets below (relative to the court origin); zooming IN also raises the look target
 -- so the pitch flattens and you see less floor. zoom 0 = full out (default), 1 = full in.

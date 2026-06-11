@@ -5,7 +5,13 @@
 -- strike. The server's HitResolver reports the LOCAL character's replicated HumanoidRootPart
 -- AssemblyLinearVelocity as the player hit-sphere's velocity, which BallController folds into its
 -- moving-sphere collision, so every burst applied here flows straight into the strike rebound with
--- NO server change and NO strike-formula change (per M1; anti-cheat is M5).
+-- NO strike-formula change.
+--
+-- M5.4 ANTI-CHEAT: this client logic is now a PROPOSAL only -- the stamina pool + dash/flip gating here
+-- are for local feel/feedback, but they are NOT trusted. The server (HitResolver) independently CLAMPS
+-- the replicated velocity to a plausible max, caps per-frame position jumps (anti-teleport) and MIRRORS
+-- the stamina pool server-side, so a tampered client that removes the gating below, spoofs its HRP
+-- velocity, or warps cannot manufacture a super-hit or warp the collider into the ball. Server-authoritative.
 --
 --   * Dash        -- double-tap a movement key (W/A/S/D) within doubleTapWindow -> a brief horizontal
 --                    velocity burst in that (camera-relative) direction. Horizontal only, so it can't
