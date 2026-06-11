@@ -96,6 +96,18 @@ M3 loop / rank HUD / camera are unchanged.
   `camFitMarginStuds`, `camMobileMaxFOV`, `camFitMaxDistScale` in `GridConfig`.
 - **Faults**: a ball that returns to the square it was struck from is a *self-fault*; landing outside
   the 9 squares is *out-of-bounds*. Both flash the square + play the oof sound, then re-serve.
+- **No double-hit (one fault, server-authoritative)**: a player may not strike the ball **twice in a
+  row**. The server tracks the previous *player* touch of the rally (`lastHitterId`, via
+  `rotation:occupantAtCell(struckCell)` off `bc.onPlayerHit`); the **same** occupant striking again with
+  **no other occupant in between** (surface bounces off the floor/wall/pipe don't reach `onPlayerHit`, so
+  they never reset it) is a double-hit → that occupant **faults on their own cell**, reusing the existing
+  `attributeFault` → deferred-rotation-at-rest → re-serve path (they rotate out to the back). The **human**
+  double-hitter is **ragdolled** (`Humanoid.PlatformStand = true` + the no-trip `FallingDown`/`Ragdoll`
+  states re-enabled + a small flop impulse) and stays limp/out through the dead ball, then **recovers**
+  (`recoverRagdoll` rides every `placeAtCell`, so the re-serve rotation stands them up). **Bots fault but
+  never ragdoll** (server-driven anchored rigs). The tracker **resets every serve** so the serve is never a
+  double, and the `rallyArmed`/`resolvingRally`/`pendingFaultRank` guards keep it to **one fault** with no
+  wedge. Tunables: `GridConfig.doubleHitRagdollHumans` / `doubleHitFlopImpulse` / `doubleHitFlopUp`.
 - **Scene**: an enclosed gym (`MatchService.buildGym`, build-once) with painted floor grid lines so
   the grid reads in Play even when dynamic shadows don't render.
 - **Build-once / self-heal world (tweak in Studio, it sticks)**: the arena, gym, gallery, and outdoors are

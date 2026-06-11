@@ -130,11 +130,19 @@ local function playImpact()
 	Debris:AddItem(s, math.max(2, s.TimeLength + 0.5))
 end
 
+-- NO DOUBLE-HIT detection hook (this task). Forward-declared here so the onPlayerHit callback (defined
+-- now, for the impact SFX) can call it, but ASSIGNED far below once the rally loop / fault attribution /
+-- ragdoll exist (it needs `rotation`, `attributeFault`, etc.). nil until then -> a no-op, so any early hit
+-- (there are none before the loop is wired) is harmless. Takes the struck cell + wasServe of the hit.
+local handleDoubleHit: ((struckCell: string?, wasServe: boolean) -> ())? = nil
+
 -- Both the human's strikes and the bots' volleys resolve through the SAME BallController collision and fire
 -- onPlayerHit (serve + mid-flight return alike), so this one hook gives every player a bump. Notification
--- only -- the ball's physics are unchanged.
-bc.onPlayerHit = function(_struckCell, _targetCell, _wasServe)
+-- only -- the ball's physics are unchanged. It ALSO drives the no-double-hit check (a player can't strike
+-- twice in a row) once that handler is wired below.
+bc.onPlayerHit = function(struckCell, _targetCell, wasServe)
 	playImpact()
+	if handleDoubleHit then handleDoubleHit(struckCell, wasServe) end
 end
 
 -- JUMP SQUEAK SFX (this task). A short squeak on EVERY human jump, emitted from the JUMPING player at a
@@ -183,12 +191,66 @@ end
 -- NOTE: the rally loop (onLand -> fault attribution -> rotation -> next King serve, and onRest -> serve)
 -- is wired below, AFTER the RotationService exists -- it needs `rotation` and `serveNextRally`.
 
+-- ============================================================================================
+-- NO DOUBLE-HIT -> RAGDOLL (this task). The HUMAN double-hitter goes limp + drops and stays OUT until the
+-- point resets; bots are never ragdolled (server-driven anchored rigs). Server-authoritative: the server
+-- decides the penalty, so the ragdoll is driven from the character's Humanoid here (PlatformStand replicates
+-- to all clients). recoverRagdoll() stands them back up; it is called from placeAtCell, so ANY re-placement
+-- (the deferred rotation's placeAll on re-serve, a respawn, the fell-out safety net) recovers them
+-- automatically -- the loop can never strand a player limp. Tunables (impulse) live in GridConfig.
+-- ============================================================================================
+
+-- The set of players currently ragdolled out for a double-hit (so we only recover those we put down, and so a
+-- placeAtCell during normal rotation doesn't needlessly poke a standing player's Humanoid).
+local ragdolledOut: { [Player]: boolean } = {}
+
+-- Stand a ragdolled-out player back up: clear PlatformStand, re-disable the trip states (matching the
+-- client's no-trip movement change) so they walk normally, and forget them. Safe/idempotent -- a no-op for a
+-- player who isn't ragdolled. Called on any re-placement (placeAtCell) so recovery rides the existing path.
+local function recoverRagdoll(char: Model)
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	local plr = Players:GetPlayerFromCharacter(char)
+	if humanoid.PlatformStand then humanoid.PlatformStand = false end
+	-- Re-disable the deliberate-penalty states so normal play (dash/flip) never trips into a ragdoll again.
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	if plr then ragdolledOut[plr] = nil end
+end
+
+-- Ragdoll a HUMAN double-hitter limp: re-enable the FallingDown/Ragdoll states the no-trip movement change
+-- disabled, set PlatformStand (the Humanoid goes limp), and add a small flop impulse so they visibly topple.
+-- They stay limp through the dead ball; recoverRagdoll (via placeAtCell on the re-serve rotation) stands them
+-- back up at their cell. Bots are excluded by the caller (humans only). Server-driven -> replicates.
+local function ragdollPlayer(plr: Player)
+	if not G.doubleHitRagdollHumans then return end
+	local char = plr.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not (humanoid and humanoid:IsA("Humanoid")) then return end
+	ragdolledOut[plr] = true
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+	humanoid.PlatformStand = true
+	if hrp and hrp:IsA("BasePart") then
+		-- A small sideways + up flop so the drop reads (deterministic direction off the HRP facing).
+		local look = hrp.CFrame.LookVector
+		local side = Vector3.new(-look.Z, 0, look.X)
+		hrp.AssemblyLinearVelocity = side * G.doubleHitFlopImpulse + Vector3.new(0, G.doubleHitFlopUp, 0)
+	end
+	print(("[NineSquare] DOUBLE-HIT ragdoll: %s goes limp (out until the point resets)"):format(plr.Name))
+end
+
 -- The default SpawnLocation is by the old Obby (z~0), but the court is at z=200.
 -- Teleport a character's HRP to a given cell (M3 generalizes the old always-centre placement so the
 -- human can stand in their ranked square, not just "C").
 local function placeAtCell(char: Model, cell: string)
 	local hrp = char:WaitForChild("HumanoidRootPart", 5)
 	if hrp then
+		-- Recover a double-hit ragdoll on ANY re-placement (re-serve rotation, respawn, safety net) so a
+		-- limp player is always stood back up when the point resets -- the loop can never strand them.
+		recoverRagdoll(char)
 		hrp.CFrame = CFrame.new(G.cellCenter(cell) + Vector3.new(0, 5, 0))
 		print(("[NineSquare] placed %s at %s (%s)"):format(char.Name, cell, tostring(hrp.Position)))
 	else
@@ -437,6 +499,15 @@ local rallyArmed = false
 -- consumes it, so rotation happens exactly once, when the ball finally stops.
 local pendingFaultRank: number? = nil
 
+-- NO DOUBLE-HIT tracker (this task). `lastHitterId` is the occupant id (human "human_<userId>" / bot "bot#<n>")
+-- of the PREVIOUS player touch in the CURRENT rally. A double-hit = the same occupant strikes the ball on two
+-- CONSECUTIVE player touches with NO other occupant hitting in between (surface bounces -- floor/wall/pipe --
+-- never reach onPlayerHit, so they can't reset it; only another player/bot touching the ball does). nil at the
+-- start of a rally; RESET to nil on every serve / rally reset (serveNextRally) so a new rally's first hit (the
+-- serve) is never a double. The struck cell -> occupant mapping is the SAME `rotation:occupantAtCell` the fault
+-- path uses, so detection agrees with attribution.
+local lastHitterId: string? = nil
+
 -- BALL-ESCAPE / NON-SETTLE WATCHDOG state. `rallyStartT` is the server time the CURRENT rally entered play
 -- (a serve / first Flight). The watchdog (in the Heartbeat) force-resolves a rally that has left the sane
 -- play volume OR has not reached rest within G.ballSettleTimeout -- so a runaway ball (the documented
@@ -476,6 +547,7 @@ local function serveNextRally()
 	resolvingRally = false     -- a fresh serve clears the watchdog's resolve guard for the new rally
 	rallyStartT = nil          -- (re)armed when the serve actually puts the ball into play (below / Heartbeat)
 	serveClearPending = true   -- the upcoming serve's over-pipe clear is the serve itself, not a save -> swallow it
+	lastHitterId = nil         -- reset the no-double-hit tracker each serve -> the rally's first hit (the serve) is never a double
 	-- Clear last rally's save highlight so the pipe glow only ever shows the last save of the CURRENT rally.
 	lastSavedCell = nil
 	MatchService.clearSaveHighlight()
@@ -628,6 +700,41 @@ local function forceResolveRally(reason: string)
 	-- Re-serve for the (new) King so the loop continues. serveNextRally clears resolvingRally + parks/serves
 	-- the ball, so a stuck/escaped ball is replaced by a fresh serve and the game NEVER hangs.
 	serveNextRally()
+end
+
+-- ============================================================================================
+-- NO DOUBLE-HIT detection + penalty (this task). Fires from bc.onPlayerHit on EVERY player/bot strike
+-- (serve + every volley). It compares the striker to the PREVIOUS player touch of this rally:
+--   * If the SAME occupant struck the ball again (their id == lastHitterId) with no other occupant hitting
+--     in between -> DOUBLE-HIT: fault that occupant (treat their struck cell as the OUT cell, reusing
+--     attributeFault -> pendingFaultRank -> the deferred-rotation-at-rest -> re-serve path, exactly like
+--     other faults), and RAGDOLL the human double-hitter (bots get the fault, no ragdoll). We DON'T rotate
+--     here -- we disarm rallyArmed so onLand won't re-fault, set pendingFaultRank, and let the ball settle
+--     into onRest (the existing deferred path) which rotates + re-serves. The ragdolled human recovers on
+--     that re-serve's placeAll (placeAtCell -> recoverRagdoll).
+--   * Otherwise -> a legal alternating touch: record this striker as the new lastHitterId (a DIFFERENT
+--     occupant hitting in between always resets the tracker, so a normal rally never false-faults).
+-- The SERVE is the rally's first hit (lastHitterId is nil after the serve reset), so it just seeds the
+-- tracker -- never a double. Guards: skip while resolvingRally/already-pending so a double-hit is ONE fault,
+-- and only act when a rally is in play (rallyArmed, or the serve itself) so a dead-ball bat-around is ignored.
+handleDoubleHit = function(struckCell, wasServe)
+	if resolvingRally or pendingFaultRank then return end   -- already resolving this rally -> one fault only
+	local occ = struckCell and rotation:occupantAtCell(struckCell)
+	if not occ then return end
+	if lastHitterId ~= nil and occ.id == lastHitterId then
+		-- DOUBLE-HIT. Disarm the rally so onLand won't also fault (the deferred path consumes pendingFaultRank
+		-- at rest), attribute the fault on the double-hitter's cell, and ragdoll the human.
+		rallyArmed = false
+		print(("[NineSquare] DOUBLE-HIT: %s (%s) struck twice in a row -> fault"):format(occ.id, tostring(struckCell)))
+		attributeFault(struckCell, struckCell, struckCell)   -- owner == struck -> faults the double-hitter's own cell
+		if occ.kind == "human" and occ.player then
+			ragdollPlayer(occ.player)
+		end
+		return
+	end
+	-- A legal touch (the serve, or a different occupant returning): this striker is now the last hitter.
+	lastHitterId = occ.id
+	local _ = wasServe   -- (wasServe is informational; the serve is handled by the nil-tracker reset on serve)
 end
 
 -- ============================================================================================

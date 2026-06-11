@@ -512,6 +512,18 @@ GridConfig.serveArcApex = 6          -- extra studs the auto-serve arc peaks ABO
 -- window. Generous on purpose: better to hold the red a touch long than blank it mid-settle.
 GridConfig.faultFlashDuration = 2.5  -- seconds the OUT square holds red after a fault (covers land -> rest)
 
+-- NO DOUBLE-HIT -> FAULT + RAGDOLL. A player may not strike the ball twice in a ROW: the SAME occupant
+-- contacting the ball on two CONSECUTIVE player touches (no other occupant hitting in between -- surface
+-- bounces off the floor/wall/pipe do NOT reset it) is a double-hit -> that occupant FAULTS (reusing the
+-- normal fault/rotation/serve path, treating their cell as the OUT cell) and, if HUMAN, RAGDOLLS limp and
+-- stays OUT until the point resets (recovers on the next serve / when re-placed at their seat). Bots get the
+-- fault but no ragdoll (server-driven anchored rigs). The "last hitter" tracker resets every serve / rally
+-- reset, so a new rally's first hit (the serve) is never a double-hit. These tune the ragdoll DROP only --
+-- the detection + fault reuse the existing deterministic server path; no ball-physics/strike change.
+GridConfig.doubleHitRagdollHumans = true   -- ragdoll the HUMAN double-hitter (bots are never ragdolled)
+GridConfig.doubleHitFlopImpulse = 18       -- studs/s flop velocity added to the HRP so they visibly drop/topple
+GridConfig.doubleHitFlopUp = 6             -- a little upward kick on the flop so the drop reads (studs/s)
+
 -- Over-the-pipe ownership (fault attribution). A ball only LEGALLY enters a square by clearing the
 -- dividing pipe and dropping in. BallController tracks an `ownerCell` (the square the ball legally
 -- belongs to) and only transfers it on a cell-boundary crossing whose height is at/above this
