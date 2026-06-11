@@ -166,14 +166,17 @@ GridConfig.botContactBand = 3        -- studs around frameHeight that count as t
 -- human's, so the existing swept, velocity-proportional collision (`strikeVelocity`) resolves the bot hit.
 -- The aim emerges from the off-center contact: the bot stands on the FAR side of the ball from its aim cell
 -- so `n = unit(ball - center)` points toward the aim; the jump velocity supplies the force.
-GridConfig.botJumpVelocity = 36.4    -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
+GridConfig.botJumpVelocity = 20      -- upward speed (studs/s) the bot drives its hit-sphere into the ball at
                                      --   contact -> the velocity-proportional strike (hitGain) turns this into
                                      --   outgoing ball speed (paired with the off-center normal for the aim).
                                      --   60 sprayed every return out of bounds; 28 kept the strike inside the
                                      --   court (lands in/near the aim cell) so bot->C->bot rallies sustain while
                                      --   still clearing the pipe (a save). Higher = flatter/longer -> more OOB.
-                                     --   Bumped 28 -> 36.4 (+30%) to match the human jump boost (more force to the
-                                     --   ball); a touch more OOB risk is the intended trade (leave to play-tuning).
+                                     --   NOTE: a brief +30% bump to 36.4 (mirroring the HUMAN jump boost) made the
+                                     --   bot drive the ball nearly straight up at hitGain*36.4 ~= 91 studs/s -> it
+                                     --   cleared the gym ceiling (H=50) on every hit. Reverted to the tuned 28; the
+                                     --   +30% boost is human-only (the bot drives full velocity vertically, so it
+                                     --   doesn't need -- and can't afford -- the extra force).
 GridConfig.botOffCenterFrac = 0.55   -- 0..1: how far off-centre the bot stands, as a fraction of
                                      --   (hitZoneRadius + ballRadius). The stand centre is offset this far on
                                      --   the FAR side of the ball from the aim, so contact is clearly off-centre
