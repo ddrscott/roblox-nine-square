@@ -44,6 +44,39 @@ local function playOof()
 	s.Parent = bc.ball; s:Play(); Debris:AddItem(s, 3)
 end
 
+-- Impact SFX on EVERY player strike (human + all 8 bots): both go through bc.onPlayerHit, so playing it
+-- there covers everyone. Server-side + parented to the ball -> it replicates to all clients and is 3D/
+-- positional (emitted from the ball). We CLONE a template per hit (each plays on its own instance) so a
+-- fast rally never cuts the previous bump off; Debris reaps the clone after its tail. A tiny PlaybackSpeed
+-- jitter, seeded from a monotonic hit counter (NOT math.random in the hot loop), adds liveliness
+-- deterministically. Tunables (id/volume/range/jitter) live in GridConfig. Audio only -- no physics touched.
+local impactTemplate = Instance.new("Sound")
+impactTemplate.Name = "ImpactSound"
+impactTemplate.SoundId = G.impactSoundId
+impactTemplate.Volume = G.impactSoundVolume
+impactTemplate.RollOffMaxDistance = G.impactSoundRange
+impactTemplate.RollOffMode = Enum.RollOffMode.InverseTapered
+local impactHitCount = 0
+local function playImpact()
+	impactHitCount += 1
+	local s = impactTemplate:Clone()
+	-- deterministic pitch jitter from the hit counter: maps the counter onto [-jitter, +jitter]
+	if G.impactPitchJitter > 0 then
+		local phase = ((impactHitCount * 0.6180339887) % 1) * 2 - 1   -- golden-ratio walk over (-1, 1)
+		s.PlaybackSpeed = 1 + phase * G.impactPitchJitter
+	end
+	s.Parent = bc.ball
+	s:Play()
+	Debris:AddItem(s, math.max(2, s.TimeLength + 0.5))
+end
+
+-- Both the human's strikes and the bots' volleys resolve through the SAME BallController collision and fire
+-- onPlayerHit (serve + mid-flight return alike), so this one hook gives every player a bump. Notification
+-- only -- the ball's physics are unchanged.
+bc.onPlayerHit = function(_struckCell, _targetCell, _wasServe)
+	playImpact()
+end
+
 -- NOTE: the rally loop (onLand -> fault attribution -> rotation -> next King serve, and onRest -> serve)
 -- is wired below, AFTER the RotationService exists -- it needs `rotation` and `serveNextRally`.
 

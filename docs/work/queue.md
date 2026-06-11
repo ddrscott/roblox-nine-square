@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Sound effect on any player impact (human + bot strikes) — see [player-impact-sound.md](player-impact-sound.md)
+- [x] Sound effect on any player impact (human + bot strikes) — see [player-impact-sound.md](player-impact-sound.md)
 - [ ] Swap dummy bot bodies for animated R15 rigs (keep the deterministic collider) — see [r15-bot-rigs.md](r15-bot-rigs.md)
 - [x] Lifelike bot movement — idle ready-stance + anticipatory ball tracking (6/8 bots sit frozen) — see [lifelike-bot-movement.md](lifelike-bot-movement.md)
 - [x] Dim the save-pipe highlight + reset it when the ball resets — see [dim-reset-save-highlight.md](dim-reset-save-highlight.md)

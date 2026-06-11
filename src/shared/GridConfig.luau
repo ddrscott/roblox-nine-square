@@ -31,6 +31,15 @@ GridConfig.hitSpeedV = 72           -- (legacy) fixed vertical launch speed; sup
 GridConfig.hitCooldown = 0.30       -- (legacy) old proximity-trigger debounce; the moving-sphere collision now
                                     --   repositions the ball out of the hit-sphere, so one approach = one hit (no timer)
 GridConfig.minLift = 0.30           -- floor on the contact normal's vertical part (biases a clean bump upward)
+-- Impact SFX: a short bump/pop played server-side from the ball on EVERY player strike (human + bots, since
+-- both go through BallController:onPlayerHit). Server-side so it replicates to all clients (players +
+-- spectators) and is positional (emitted from the ball part). `impactSoundId` is a built-in rbxasset that
+-- ships with the engine -> always loads, no asset-permission warnings. A small clone-pool + per-hit pitch
+-- jitter (seeded from a hit counter, NOT math.random in the hot loop) keeps fast rallies crisp.
+GridConfig.impactSoundId = "rbxasset://sounds/snap.mp3"  -- short (~0.42s) percussive bump/pop; built-in, always loads
+GridConfig.impactSoundVolume = 0.8  -- reasonable level (not blown out)
+GridConfig.impactSoundRange = 90    -- RollOffMaxDistance (studs) the strike is audible within
+GridConfig.impactPitchJitter = 0.12 -- +/- PlaybackSpeed variance per hit for liveliness (0 = no jitter)
 GridConfig.floorRestitution = 0.55  -- ground bounciness: fraction of vertical speed kept per floor bounce
 GridConfig.floorFriction = 0.72     -- horizontal speed kept per floor bounce (so it rolls to a stop)
 GridConfig.restSpeedV = 8           -- settle once a floor bounce would rise slower than this (studs/s)
