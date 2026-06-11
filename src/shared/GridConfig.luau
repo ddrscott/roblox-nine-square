@@ -215,6 +215,17 @@ GridConfig.playVolXZMargin = 4      -- studs beyond the gym interior wall plane 
                                     --   the gym INTERIOR now (gymHalfExtent), so this is just slack for a ball resting against
                                     --   the inside of a wall (centre ~ 35 - ballRadius), NOT a loose court margin. A ball that
                                     --   actually left the gym is past gymHalfExtent + this -> caught immediately.
+-- PLAYER FELL-OUT SAFETY NET (catch-all, server-side). Mirrors the ball-escape watchdog but for PLAYERS: a
+-- per-player Heartbeat check (NineSquareServer) teleports any player back to their spawn if their HRP drops
+-- below a floor threshold OR leaves the building's XZ footprint by a margin -- so even if a specific gap is
+-- missed, no player can fall forever. Seated humans -> their court cell (placeAtCell / rotation:cellOfPlayer);
+-- spectators / lobby watchers -> the gallery spawn (parkSpectator). Cheap + debounced + server-authoritative.
+-- The footprint is the WHOLE building (gym + gallery stacked): |XZ| out to gymHalfExtent + a margin, and Y
+-- from the fell-out floor up past the gallery roof. Generous bounds so NORMAL play (court y~0-12, gallery
+-- y~54-78, both well inside |XZ| 35) never trips it -- only a genuine out-of-bounds / below-floor position does.
+GridConfig.playerFallY = -25            -- world Y (studs) a player's HRP must drop below to count as "fell out" (well below the court floor at y=0; a normal court player never goes negative)
+GridConfig.playerFootprintMargin = 10   -- studs beyond the building's |XZ| half-extent (gymHalfExtent) before a player is "outside the footprint" (slack so standing against an inside wall never trips it)
+GridConfig.playerRecoverCooldown = 1.0  -- seconds between fell-out recoveries for the SAME player (debounce so one fall = one teleport, not a per-frame spam while the teleport settles)
 GridConfig.ballSettleTimeout = 7    -- seconds a rally may run before the watchdog force-resolves it. The ball
                                     --   normally lands + settles to rest in ~2-4s; 7s is generous slack so a
                                     --   long legit rally never false-triggers, but a ball that will NEVER
@@ -296,6 +307,17 @@ GridConfig.windowGlassColor = Color3.fromRGB(170, 205, 230)  -- pale blue glass 
 -- whole opening (and a hair beyond) is covered with no leak seam.
 GridConfig.windowBarrierMargin = 3      -- studs added to the opening's height + length for the ball-barrier (no edge leak)
 GridConfig.windowBarrierThickness = 0.8 -- studs (X): barrier slab thickness, matches the wall so the bounce plane lines up
+-- WINDOW PLAYER-BARRIER (seal the gap to the CHARACTER). The ball-barrier above is CanCollide=FALSE (ball-only,
+-- via the geometric _collide test), so the open window gap (y26.5-33.5) is PASSABLE to a player -- and a
+-- dash(40)+flip can carry a court player up and OUT through it. We add a SEPARATE invisible slab co-located
+-- with the gap that BLOCKS THE CHARACTER (CanCollide=TRUE) but stays OUT of the ball/court collision: it is
+-- Neon material (BallController._surfaces SKIPS Glass + Neon, so the ball never collides with it -> ball feel
+-- unchanged) and named WindowGuardE/WindowGuardW with NO WallE/WallW prefix (so the camera wall-fade never
+-- touches it -> it stays invisible across the open window even when the eye is inside). Transparency=1 +
+-- CastShadow=false keeps the window visually OPEN (light + view still pass). Sized to fully cover the opening
+-- (+ a generous margin up to the ceiling + past the Z ends) so a player can't slip over/around it via a flip.
+GridConfig.windowPlayerBarrierThickness = 1.0  -- studs (X): player-barrier slab thickness (a touch thicker than the wall so a fast dash can't tunnel it)
+GridConfig.windowPlayerBarrierMargin = 8       -- studs added to the opening height + length for the player-barrier (extra headroom so a flip can't clear it)
 
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
@@ -692,6 +714,21 @@ function GridConfig.ballOutOfPlayVolume(pos: Vector3): boolean
 	local rel = pos - GridConfig.origin
 	local gymExtent = GridConfig.gymHalfExtent + GridConfig.playVolXZMargin
 	if math.abs(rel.X) > gymExtent or math.abs(rel.Z) > gymExtent then return true end
+	return false
+end
+
+-- Has a player's HRP world position fallen OUT of the building (the fell-out safety-net signal)? True when
+-- the HRP dropped below the fell-out floor (playerFallY) OR its |XZ| (relative to the court origin) is beyond
+-- the building footprint (gymHalfExtent + playerFootprintMargin). The building is the gym + the gallery
+-- STACKED directly above it (same XZ footprint), so a single XZ test covers a court player AND a gallery
+-- spectator; only the floor check is one-sided (a player can fall DOWN out of either level, never up through
+-- the gallery roof in normal play). Generous bounds so legit positions (court y~0-12, gallery y~54-78, both
+-- |XZ| <= ~28) never trip it -- only a genuine below-floor / outside-footprint position does.
+function GridConfig.playerFellOut(pos: Vector3): boolean
+	if pos.Y < GridConfig.playerFallY then return true end
+	local rel = pos - GridConfig.origin
+	local foot = GridConfig.gymHalfExtent + GridConfig.playerFootprintMargin
+	if math.abs(rel.X) > foot or math.abs(rel.Z) > foot then return true end
 	return false
 end
 

@@ -626,11 +626,51 @@ local function forceResolveRally(reason: string)
 	serveNextRally()
 end
 
+-- ============================================================================================
+-- PLAYER FELL-OUT SAFETY NET (catch-all, server-side). Mirrors the ball-escape watchdog but for PLAYERS:
+-- each Heartbeat we check every player's HRP and, if it has fallen OUT of the building (below the fell-out
+-- floor OR outside the building's XZ footprint -- see G.playerFellOut), teleport them BACK to their spawn:
+--   * a SEATED human -> their court cell (placeAtCell at their live rank's cell), and
+--   * a spectator / lobby watcher (no seat) -> the gallery spawn (parkSpectator).
+-- This GUARANTEES no infinite fall even if a specific gap is missed -- it's the belt to the window/foyer
+-- braces' suspenders. Cheap (a vector compare per player), debounced per-player (playerRecoverCooldown so one
+-- fall = one teleport, not per-frame spam while the teleport settles), and server-authoritative (the client
+-- never decides this). A teleport is a CFrame set, so it bypasses collision and always lands them home.
+local lastRecoverT: { [Player]: number } = {}
+local function recoverFallenPlayers()
+	local now = os.clock()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local char = plr.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp and hrp:IsA("BasePart") and G.playerFellOut(hrp.Position) then
+			if now - (lastRecoverT[plr] or 0) >= G.playerRecoverCooldown then
+				lastRecoverT[plr] = now
+				local cell = rotation:cellOfPlayer(plr)
+				if cell then
+					placeAtCell(char, cell)   -- seated -> back to their court cell
+					warn(("[NineSquare] SAFETY NET: %s fell out (%s) -> teleported back to cell %s")
+						:format(plr.Name, tostring(hrp.Position), cell))
+				else
+					parkSpectator(plr)        -- spectator / lobby watcher -> back to the gallery spawn
+					warn(("[NineSquare] SAFETY NET: %s fell out (%s) -> teleported back to the gallery spawn")
+						:format(plr.Name, tostring(hrp.Position)))
+				end
+			end
+		end
+	end
+end
+-- Drop a leaver's debounce entry so we don't leak state across churn (the safety net runs off the live
+-- player list anyway, but this keeps the table tidy on rejoin with the same UserId).
+Players.PlayerRemoving:Connect(function(plr) lastRecoverT[plr] = nil end)
+
 -- Physical contact is now a real collision inside the ball's step: each Heartbeat we gather the
 -- players' moving hit-spheres and hand them to bc:step, which resolves a hit only on penetration +
 -- approach (so a descending player can't pull a rising ball down) and bounces the ball off the sphere
 -- exactly like it bounces off the pipes/walls/floor. No more proximity trigger or time cooldown.
 RunService.Heartbeat:Connect(function(dt)
+	-- SAFETY NET: catch + teleport-home any player who has fallen out of the building (below floor / outside
+	-- footprint). Runs first, every beat, off the live player list -- cheap + debounced per-player.
+	recoverFallenPlayers()
 	-- First drive the bots: each active swing slides its hit-sphere to its off-center stand + jumps into
 	-- the ball, returning this frame's bot colliders. We combine them with the human's moving hit-spheres
 	-- and hand the WHOLE list to bc:step, so the same swept collision resolves both. A bot hit thus flies

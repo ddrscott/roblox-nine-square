@@ -348,6 +348,26 @@ function MatchService.buildWindowedWall(gym: Instance, origin: Vector3, prefix: 
 	barrier.CanCollide = false; barrier.CanQuery = false; barrier.CanTouch = false
 	barrier.Locked = true
 	barrier.Parent = gym
+	-- PLAYER-BARRIER across the gap (SEAL the window to the CHARACTER). The ball-barrier above is
+	-- CanCollide=false (ball-only), so the open window is PASSABLE to a player -- a dash(40)+flip can carry a
+	-- court player up and OUT through it. This invisible slab fills the opening (+ a generous margin so a flip
+	-- can't clear it over the top or slip past a Z end) and BLOCKS THE CHARACTER (CanCollide=TRUE) while staying
+	-- OUT of the ball/court collision: it is NEON material, so BallController._surfaces SKIPS it (the ball never
+	-- collides with it -> ball feel UNCHANGED), and it is named WindowGuard* with NO WallE/WallW prefix so the
+	-- camera wall-fade never touches it (it stays invisible across the open window even when the eye is inside).
+	-- Transparency=1 + CastShadow=false keeps the window visually OPEN (light + the view still pass through).
+	local side = (prefix == "WallE") and "E" or "W"
+	local pMargin = G.windowPlayerBarrierMargin
+	local guard = Instance.new("Part"); guard.Anchored = true; guard.Name = "WindowGuard" .. side
+	guard.Size = Vector3.new(G.windowPlayerBarrierThickness, wh + pMargin, wl + pMargin)
+	guard.Position = origin + Vector3.new(xoff, cy, 0)
+	guard.Material = Enum.Material.Neon                 -- Neon -> excluded from BallController._surfaces (ball never hits it)
+	guard.Transparency = 1; guard.CastShadow = false    -- invisible: the window stays visually open
+	guard.CanCollide = true                             -- but SOLID to the player character (seals the gap)
+	guard.CanQuery = false                              -- don't intercept raycasts/queries (court below, wall-fade, etc.)
+	guard.CanTouch = false
+	guard.Locked = true
+	guard.Parent = gym
 	return gym
 end
 
