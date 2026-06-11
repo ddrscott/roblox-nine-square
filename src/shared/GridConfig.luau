@@ -666,10 +666,10 @@ GridConfig.botIdleLeanDeg = 7        -- degrees the torso leans toward the live 
 -- and stay lit until the next save. The continuous Frame beams can't be lit per-cell, so MatchService
 -- builds a separate non-colliding `SaveHighlight` overlay -- 4 glowing neon edge-segments outlining the
 -- saved cell's border at frameHeight -- and repositions/shows it on each save. Visual only.
-GridConfig.saveHighlightColor = Color3.fromRGB(64, 168, 104)  -- a soft, muted green (dimmed from a vivid 70,255,140) -- a hint, not a bright bar
-GridConfig.saveHighlightTransparency = 0.55  -- partial transparency on the (Neon) overlay so it reads as a faint "last save" glow, not a glaring bar; 0 = solid, 1 = invisible
-GridConfig.saveHighlightThickness = 0.9   -- edge-segment cross-section (a touch fatter than beamThickness so it reads as a glow over the pipe)
-GridConfig.saveHighlightYOffset = 0.15    -- studs above frameHeight so the overlay sits just proud of the frame beams (no z-fight)
+GridConfig.saveHighlightColor = Color3.fromRGB(70, 120, 88)   -- DESATURATED muted sage-green (darkened/desaturated from the brighter 64,168,104) -- a quiet hint of the active/saved square, NOT an attention-grabbing bright bar
+GridConfig.saveHighlightTransparency = 0.78  -- HIGH transparency on the (Neon) overlay so it reads as a faint "active square" glow, not a glaring proud box; 0 = solid, 1 = invisible (raised 0.55 -> 0.78 to dim it)
+GridConfig.saveHighlightThickness = 0.35   -- THIN edge-segment cross-section so the outline HUGS the grid pipe line (was 0.9, fatter than the beam -> a proud box; now thinner than beamThickness 0.5 so it tucks onto the pipe)
+GridConfig.saveHighlightYOffset = 0.04    -- studs above frameHeight: just enough to avoid z-fighting the beams, so the outline sits TIGHT on the pipe top instead of floating proud above it (was 0.15)
 
 -- ── Floor rank numbers (replaces the M5.6 over-grid nameplates) ───────────────────────────────────
 -- A large painted-court RANK NUMBER is drawn on each of the 9 floor panels, facing UP, via a SurfaceGui

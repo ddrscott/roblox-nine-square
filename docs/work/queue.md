@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Make the green active-grid highlight tighter to the grid + dimmer (subtle) — see [subtle-tight-green-grid-highlight.md](subtle-tight-green-grid-highlight.md)
+- [x] Make the green active-grid highlight tighter to the grid + dimmer (subtle) — see [subtle-tight-green-grid-highlight.md](subtle-tight-green-grid-highlight.md) — DONE: the bright proud green box was the SaveHighlight (last-saved/active square neon outline); made it tight (thickness 0.9→0.35, Y-offset 0.15→0.04 so it hugs the pipe) + subtle (color 64,168,104→70,120,88 desaturated sage; transparency 0.55→0.78). Tunables in GridConfig.saveHighlight*; deployed to Studio + verified in Play. Gold landing/King highlights untouched.
 - [ ] No double-hit: same player can't hit the ball twice in a row → fault + ragdoll out until the point resets — see [no-double-hit-ragdoll-penalty.md](no-double-hit-ragdoll-penalty.md)
 - [x] Give the bots different colors (palette in GridConfig; keep the King obvious) — see [bots-different-colors.md](bots-different-colors.md)
 - [x] Decorate the game-area walls (gym + playful mix) — decorations MUST fade with the wall (camera occlusion) — see [wall-decoration-gym-playful-fades.md](wall-decoration-gym-playful-fades.md) — DONE: MatchService.buildWallDecor + wall-fade extension deployed to Studio; decor authored into the persisted Gym (48 non-colliding parts across WallN/S/E/W, none under NineSquare.Frame); verified the decor fades WITH its wall + reappears when the eye is inside
