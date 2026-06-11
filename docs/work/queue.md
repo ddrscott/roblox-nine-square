@@ -1,7 +1,7 @@
 # Work Queue
 
 - [x] Give the bots different colors (palette in GridConfig; keep the King obvious) — see [bots-different-colors.md](bots-different-colors.md)
-- [ ] Decorate the game-area walls (gym + playful mix) — decorations MUST fade with the wall (camera occlusion) — see [wall-decoration-gym-playful-fades.md](wall-decoration-gym-playful-fades.md)
+- [-] Decorate the game-area walls (gym + playful mix) — decorations MUST fade with the wall (camera occlusion) — see [wall-decoration-gym-playful-fades.md](wall-decoration-gym-playful-fades.md)
 - [x] Drop the "Spectating" HUD label; add "Spectators Area" text on the gallery walls — see [spectators-area-wall-sign.md](spectators-area-wall-sign.md)
 - [x] Remove the artificial ball + player shadows (real sun shadows now show position) — keep the strike ring + landing highlight; ensure the ball CastShadow=true — see [remove-fake-shadows-use-real-sun.md](remove-fake-shadows-use-real-sun.md)
 - [x] Slow the ball a little (lower gravity ~0.8x, keep one consistent gravity for serve+bots) so it's easier to contact — see [slow-ball-gravity-easier-contact.md](slow-ball-gravity-easier-contact.md)
