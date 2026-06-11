@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Re-imagine the HUD: minimal + consistent (stats = Turns + TAK; drop rank-change toasts + rank pill; transient messaging) — see [hud-reimagine-minimal-consistent.md](hud-reimagine-minimal-consistent.md)
+- [x] Re-imagine the HUD: minimal + consistent (stats = Turns + TAK; drop rank-change toasts + rank pill; transient messaging) — see [hud-reimagine-minimal-consistent.md](hud-reimagine-minimal-consistent.md)
 - [x] Shrink the in-game message feed (esp. mobile) so it doesn't block the action — see [shrink-message-feed-mobile.md](shrink-message-feed-mobile.md)
 - [x] BUG: prevent the player falling out of the building — find/seal the gap (windows? foyer dash-over?) + a fell-out teleport-back safety net — see [prevent-player-falling-out.md](prevent-player-falling-out.md)
 - [x] Play a squeak sound on every player jump (varied playback speed) — needs Scott's uploaded asset id in GridConfig.jumpSoundId — see [jump-squeak-sound.md](jump-squeak-sound.md)

@@ -240,8 +240,8 @@ local function broadcastHud(kind: string, text: string, tone: string?)
 	HudEvent:FireAllClients({ kind = kind, text = text, tone = tone })
 end
 -- Replicate EACH seated player's OWN rank (server-authoritative; per-player now -- a human/bot mix means
--- every human reads ITS seat). The client HUD (RankHud) observes the player's "Rank" attribute and shows
--- "Rank N" / "KING".
+-- every human reads ITS seat). The client HUD (RankHud) observes the player's "Rank" attribute to show the
+-- subtle KING chip while they hold rank 1 (there is no generic rank readout -- rank is read off the floor).
 rotation._setHumanRank = function(player: Player, rank: number)
 	player:SetAttribute("Rank", rank)
 end
@@ -335,8 +335,8 @@ rotation._backfillHook = function(rank: number, cell: string): any
 	print(("[NineSquare] AUTO-SEAT: %s (longest-waiting spectator) -> freed rank %d (%s)")
 		:format(nextPlr.Name, rank, cell))
 	-- M5.6 HUD feed: tell the auto-seated spectator they're in (personal) + the table they joined the court.
-	fireHud(nextPlr, "seated", "You're in! Seated at Rank " .. tostring(rank), "good")
-	broadcastHud("seated", nextPlr.DisplayName .. " joined the court from the queue", "neutral")
+	-- HUD feed (trimmed): a brief personal "You're in" for the auto-seated spectator only -- no broadcast.
+	fireHud(nextPlr, "seated", "You're in", "good")
 	return {
 		kind = "human", player = nextPlr, id = "human_" .. tostring(nextPlr.UserId),
 		isDummy = false, rank = rank, cell = cell,
@@ -548,18 +548,13 @@ local function applyDeferredRotation()
 		StatsService.recordRally(plr, rank)
 	end
 	rotation:rotateOnFault(faultRank)
+	-- NOTE: we deliberately do NOT announce rank changes anymore. A player's rank is obvious from where they
+	-- stand + the floor rank numbers, so per-rotation "Faulted -- back to Rank 9" / "Moved up -- now Rank N"
+	-- toasts were redundant noise over the court. We still credit best-rank stats (silent).
 	for r = 1, 9 do
 		local o = rotation.byRank[r]
 		if o and o.kind == "human" and o.player then
-			local was = before[o.player]
 			StatsService.noteRank(o.player, r)
-			if was and r ~= was then
-				if r == 9 and was ~= 9 then
-					fireHud(o.player, "rank", "Faulted \u{2014} back to Rank 9", "bad")
-				elseif r < was and r ~= 1 then
-					fireHud(o.player, "rank", "Moved up \u{2014} now Rank " .. tostring(r), "good")
-				end
-			end
 		end
 	end
 end
@@ -757,7 +752,7 @@ end
 
 local function onJoin(plr: Player)
 	-- STATS: load this human's PERSISTENT profile (DataStore, pcall-guarded -> in-memory fallback) and build
-	-- their leaderstats ("Best" / "King Turns" / "Turns") BEFORE seating, so the player-list stats exist the
+	-- their leaderstats ("Turns" / "TAK") BEFORE seating, so the player-list stats exist the
 	-- moment they're in. (Bots never reach onJoin -- only real Players fire PlayerAdded / are in GetPlayers.)
 	StatsService.onPlayerAdded(plr)
 	-- LOBBY / TAP-TO-JOIN (this task): do NOT auto-seat on join. The player spawns in the gallery LOBBY,
@@ -766,9 +761,8 @@ local function onJoin(plr: Player)
 	-- queue) -- a watcher is never pulled into the court without tapping.
 	parkLobbyWatcher(plr)
 	print(("[NineSquare] %s joined -> LOBBY watcher in the gallery (tap Join to enter)"):format(plr.Name))
-	-- M5.6 HUD feed: welcome the watcher + tell the table someone is in the lobby.
-	fireHud(plr, "join", "Watching from the gallery \u{2014} tap Join Game to play", "neutral")
-	broadcastHud("join", plr.DisplayName .. " is watching from the gallery", "neutral")
+	-- HUD feed (trimmed): no join toast -- the persistent "Join Game" button + Spectating label already tell
+	-- the watcher what to do, and the table doesn't need a notice for every gallery arrival.
 	-- Bind this player's character to its seat on (re)spawn, and hook its jump squeak (this task) -- the
 	-- Humanoid.Jumping handler plays the positional jump sound from the HRP for every jump (debounced).
 	if plr.Character then placeAtCourtAndSync(plr, plr.Character); hookJumpSound(plr.Character) end
@@ -789,7 +783,6 @@ local function onLeave(plr: Player)
 		dequeueSpectatorPlayer(plr)
 		print(("[NineSquare] %s left the join queue (line re-indexed; %d still waiting)")
 			:format(plr.Name, #spectatorQueue))
-		broadcastHud("leave", plr.DisplayName .. " left the queue", "neutral")
 		return
 	end
 	-- A LOBBY WATCHER leaving (this task): a non-seated, non-queued human just watching from the gallery. No
@@ -797,12 +790,9 @@ local function onLeave(plr: Player)
 	-- fall through to the seated-leave path and wrongly broadcast "left the game" + run unseatHuman for nothing.)
 	if not rotation:rankOfPlayer(plr) then
 		print(("[NineSquare] %s (lobby watcher) left -- was never seated, nothing to backfill"):format(plr.Name))
-		broadcastHud("leave", plr.DisplayName .. " left the gallery", "neutral")
 		return
 	end
-	-- M5.6 HUD feed: a seated human left -> tell the table (the auto-seat/backfill nudge for whoever fills
-	-- the seat fires from the backfill hook above).
-	broadcastHud("leave", plr.DisplayName .. " left the game", "neutral")
+	-- HUD feed (trimmed): no "left the game" broadcast -- a seated player leaving is silently backfilled.
 	-- M5.4 lifecycle robustness: was THIS leaver the current King? Capture it BEFORE the backfill so we can
 	-- recover a wedged hover-serve below (the King left while the ball hovered at C waiting for its
 	-- jump-serve that will now never come). Mid-rally/mid-settle leaves are already safe: the onLand/onRest
@@ -850,8 +840,8 @@ local function onJoinRequest(plr: Player)
 		StatsService.noteRank(plr, rank)
 		print(("[NineSquare] JOIN REQUEST: %s seated at entry rank %d (%s) -- displaced a bot")
 			:format(plr.Name, rank, tostring(rotation:cellOfPlayer(plr))))
-		fireHud(plr, "seated", "You're in! Seated at Rank " .. tostring(rank) .. " \u{2014} climb to the throne!", "good")
-		broadcastHud("seated", plr.DisplayName .. " joined the court", "neutral")
+		-- HUD feed (trimmed): a brief personal "You're in" only -- no broadcast, no rank chatter.
+		fireHud(plr, "seated", "You're in", "good")
 		-- Make sure their live character sits in the new cell now (placeOnePlayer in seatHuman already did, but
 		-- re-bind defensively if the character is mid-respawn).
 		if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
@@ -859,8 +849,8 @@ local function onJoinRequest(plr: Player)
 		-- All 9 seats are humans -> enqueue (FIFO). enqueueSpectator sets Spectating/QueuePos + parks them.
 		enqueueSpectator(plr)
 		print(("[NineSquare] JOIN REQUEST: %s -> all 9 seats are humans, queued at #%d"):format(plr.Name, #spectatorQueue))
-		fireHud(plr, "join", "All 9 seats full \u{2014} you're #" .. tostring(#spectatorQueue) .. " in line", "neutral")
-		broadcastHud("join", plr.DisplayName .. " is in the join queue (#" .. tostring(#spectatorQueue) .. ")", "neutral")
+		-- HUD feed (trimmed): a brief personal queue note only (the Spectating "#N in line" label persists too).
+		fireHud(plr, "join", "All seats full \u{2014} #" .. tostring(#spectatorQueue) .. " in line", "neutral")
 	end
 end
 JoinRequest.OnServerEvent:Connect(onJoinRequest)
@@ -894,8 +884,7 @@ local function onLeaveRequest(plr: Player)
 	parkLobbyWatcher(plr)
 	-- Re-place their live character up in the gallery now (parkLobbyWatcher -> parkSpectator teleports the HRP).
 	if plr.Character then parkSpectator(plr) end
-	fireHud(plr, "leave", "Back in the gallery \u{2014} tap Join Game to return", "neutral")
-	broadcastHud("leave", plr.DisplayName .. " left the court to spectate", "neutral")
+	-- HUD feed (trimmed): no leave toast -- the Spectating label + "Join Game" button return on their own.
 
 	-- RE-SERVE RECOVERY (same as the disconnect path): if the King left this way while the ball was parked for
 	-- a human hover-serve, re-serve for whoever now holds the throne so the ball doesn't hover forever.

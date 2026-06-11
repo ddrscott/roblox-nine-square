@@ -1,11 +1,14 @@
 --!strict
 -- StarterPlayer.StarterPlayerScripts.RankHud
--- M3 step 4: minimal, server-authoritative rank/King HUD legibility.
---   (A) Rank readout -- shows the LOCAL player's current rank ("Rank N", or "KING" at rank 1), read from
---       the replicated "Rank" player attribute (the server owns it; the client only displays). Updates
---       live whenever rotation changes the player's rank.
+-- Minimal, server-authoritative King HUD (re-imagined: no generic rank pill, no rank-change toasts).
+--   (A) Subtle KING chip -- a small top-LEFT "KING" chip shown ONLY while THIS player holds the throne
+--       (rank 1), read from the replicated "Rank" attribute. There is NO generic "Rank N" pill anymore:
+--       rank is obvious from where you stand + the floor rank numbers, so a persistent pill was redundant
+--       clutter over the court. The chip vanishes the moment you're not King.
 --   (B) King-square indicator -- a glowing ring/box on cell C so the throne is always visible on the court.
--- Intentionally minimal (no leaderboard / reign timer / VFX -- those are M6).
+--   (C) Transient notice feed -- a few brief, small, semi-transparent, fast-fading corner notes (seating /
+--       King moment); see the feed section. (D) Compact mobile Turns/TAK scoreboard.
+-- Intentionally minimal (no leaderboard / reign timer / VFX).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local G = require(RS.GridConfig)
@@ -45,63 +48,49 @@ end
 -- colours applied only as TEXT tint. Centralised in GridConfig so the HUD stays consistent + tweakable.
 local UI = G.uiStyle
 
--- ── (A) Rank readout ────────────────────────────────────────────────────────────────────────────
+-- ── (A) Subtle KING-only chip ──────────────────────────────────────────────────────────────────────
 local gui = Instance.new("ScreenGui")
 gui.Name = "RankHud"; gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Top-LEFT LABEL pill: flat dark info card with a faint neutral hairline (a tidy card, NOT a button). The
--- rank ACCENT (gold KING / cyan rank) is applied to the TEXT, never as a bright button-style ring.
--- Anchored top-LEFT with a small margin and DROPPED below the Roblox CoreGui topbar buttons (menu / chat /
--- mic live top-left) so the pill never hides behind them. The toast feed stacks directly under it.
+-- Shared top-LEFT layout anchors. There is NO persistent rank pill: a player's rank is obvious from where
+-- they stand + the floor rank numbers, so a "Rank N" card was redundant clutter. The ONLY persistent
+-- top-left element is a small KING chip shown while THIS player reigns (rank 1). LEFT_MARGIN / PILL_TOP also
+-- anchor the transient notice feed (C) so it reads down the left edge, clear of the court + CoreGui icons.
 local LEFT_MARGIN = 12       -- px gap from the left screen edge
 local PILL_TOP = 76          -- px from the top: clear of the top-left CoreGui icons
-local pill = Instance.new("Frame")
-pill.Name = "RankPill"; pill.AnchorPoint = Vector2.new(0, 0)
-pill.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP); pill.Size = UDim2.fromOffset(140, 40)
-pill.BackgroundColor3 = UI.labelBg; pill.BackgroundTransparency = UI.labelBgTransparency
-pill.BorderSizePixel = 0; pill.Parent = gui
-local pillCorner = Instance.new("UICorner"); pillCorner.CornerRadius = UDim.new(0, UI.labelCorner); pillCorner.Parent = pill
-local pillStroke = Instance.new("UIStroke"); pillStroke.Thickness = UI.panelHairlineThickness
-pillStroke.Color = UI.panelHairlineColor; pillStroke.Transparency = UI.panelHairlineTransparency; pillStroke.Parent = pill
-
-local rankLabel = Instance.new("TextLabel")
-rankLabel.Name = "RankLabel"; rankLabel.BackgroundTransparency = 1
-rankLabel.Size = UDim2.fromScale(1, 1); rankLabel.Font = UI.buttonFont
-rankLabel.TextSize = 20; rankLabel.TextColor3 = UI.labelText
-rankLabel.Text = "Rank ?"; rankLabel.Parent = pill
 
 local KING_COLOR = UI.accentKing
 
--- While this client is an overflow SPECTATOR (M5.2), the rank pill is meaningless (no seat) -- hide it; the
--- SpectatorHud ("Spectating -- #N in line") owns the screen instead. The pill returns the instant the server
--- auto-seats us (Spectating -> false) and replicates a real Rank.
+-- Small KING chip (label, never a button): flat low-opacity card, faint hairline, gold KING text. Sized to
+-- the word, shown ONLY at rank 1. Hidden otherwise (including while spectating, which has no seat/rank).
+local kingChip = Instance.new("Frame")
+kingChip.Name = "KingChip"; kingChip.AnchorPoint = Vector2.new(0, 0)
+kingChip.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP); kingChip.Size = UDim2.fromOffset(86, 34)
+kingChip.BackgroundColor3 = UI.labelBg; kingChip.BackgroundTransparency = UI.labelBgTransparency
+kingChip.BorderSizePixel = 0; kingChip.Visible = false; kingChip.Parent = gui
+local kcCorner = Instance.new("UICorner"); kcCorner.CornerRadius = UDim.new(0, UI.labelCorner); kcCorner.Parent = kingChip
+local kcStroke = Instance.new("UIStroke"); kcStroke.Thickness = UI.panelHairlineThickness
+kcStroke.Color = UI.panelHairlineColor; kcStroke.Transparency = UI.panelHairlineTransparency; kcStroke.Parent = kingChip
+local kingLabel = Instance.new("TextLabel")
+kingLabel.Name = "KingLabel"; kingLabel.BackgroundTransparency = 1
+kingLabel.Size = UDim2.fromScale(1, 1); kingLabel.Font = UI.buttonFont
+kingLabel.TextSize = 18; kingLabel.TextColor3 = KING_COLOR
+kingLabel.Text = "\u{1F451} KING"; kingLabel.Parent = kingChip
+
+-- While this client is an overflow SPECTATOR (M5.2) there's no seat/rank -- the chip is hidden; the lobby HUD
+-- ("Spectating -- #N in line") owns the screen instead.
 local function isSpectating(): boolean
 	return LocalPlayer:GetAttribute("Spectating") == true
 end
 
-local function render(rank: number?)
-	if isSpectating() then pill.Visible = false; return end
-	pill.Visible = true
-	if rank == nil then return end
-	-- Label: tint the TEXT only (gold for KING, plain for a numbered rank). The card's hairline stays a neutral
-	-- panel grey so it never reads as a tappable accent-ringed button.
-	if rank <= 1 then
-		rankLabel.Text = "KING"
-		rankLabel.TextColor3 = KING_COLOR
-	else
-		rankLabel.Text = "Rank " .. tostring(rank)
-		rankLabel.TextColor3 = UI.labelText
-	end
-end
-
--- The "Rank" attribute is server-owned; observe it and re-render on every change.
+-- Show the KING chip ONLY when this seated player holds rank 1; hide it for every other rank + while spectating.
 local function renderFromAttr()
-	render(LocalPlayer:GetAttribute("Rank") :: number?)
+	local rank = LocalPlayer:GetAttribute("Rank") :: number?
+	kingChip.Visible = (not isSpectating()) and type(rank) == "number" and rank <= 1
 end
 renderFromAttr()
 LocalPlayer:GetAttributeChangedSignal("Rank"):Connect(renderFromAttr)
--- Re-render on spectator transitions too (hide while spectating, restore the pill on auto-seat).
 LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderFromAttr)
 
 -- ── (B) King-square indicator ────────────────────────────────────────────────────────────────────
@@ -129,34 +118,37 @@ task.spawn(function()
 	end
 end)
 
--- ── (C) HUD event toast feed (M5.6) ───────────────────────────────────────────────────────────────
--- Brief, non-spammy on-screen notes for the lobby moments: a player joined/left, an auto-seat from the
--- queue, a dethrone, taking the King, or this player's own rotation. The server (authoritative) fires
--- HudEvent with { kind, text, tone }; we render a short-lived toast under the rank pill, capped to a few
--- stacked lines so a burst (e.g. several joins) never spams the screen. Display only -- no rules here.
+-- ── (C) Transient notice feed ──────────────────────────────────────────────────────────────────────
+-- The server trims HudEvent to the few moments that matter (a brief "You're in" on seating, a queue note,
+-- the King moment). We render each as a SMALL, SEMI-TRANSPARENT, FAST-FADING corner note that flashes
+-- briefly and is gone -- it never persistently blocks the court (the corners are occupied: CoreGui top-left,
+-- scoreboard top-right, touch controls bottom). Each note tweens UP to readable, holds briefly, then fades
+-- OUT and is destroyed, so the feed is empty most of the time. Display only -- no rules ride on it.
+local TweenService = game:GetService("TweenService")
 local HudEvent = Remotes:FindFirstChild("HudEvent")
 if not HudEvent then HudEvent = Remotes:WaitForChild("HudEvent", 10) end
 
 if HudEvent then
-	-- Responsive sizing: on a phone (touch / small portrait) the feed is a small corner note -- NARROWER
-	-- holder + SMALLER text + FEWER stacked lines + SHORTER on-screen time -- so it never banners across the
-	-- court. Desktop keeps the roomier sizing. All values are GridConfig tunables (mobile vs desktop); content
-	-- and the events that fire are unchanged.
+	-- Responsive sizing: a phone (touch / small portrait) gets a NARROWER holder + SMALLER text + FEWER stacked
+	-- lines + SHORTER on-screen time so it reads as a tiny corner flash, never a banner. All GridConfig tunables.
 	local mobile = isMobile()
 	local TOAST_WIDTH = mobile and G.toastWidthMobile or G.toastWidthDesktop
 	local TOAST_HEIGHT = mobile and G.toastHeightMobile or G.toastHeightDesktop
 	local TOAST_TEXTSIZE = mobile and G.toastTextSizeMobile or G.toastTextSizeDesktop
 	local MAX_TOASTS = mobile and G.toastMaxLinesMobile or G.toastMaxLinesDesktop   -- cap stacked lines so a burst never floods the screen
-	local TOAST_SECONDS = mobile and G.toastSecondsMobile or G.toastSecondsDesktop  -- how long each note lingers before it fades
+	local TOAST_SECONDS = mobile and G.toastSecondsMobile or G.toastSecondsDesktop  -- visible hold (before the fade-out)
+	local FADE_TIME = G.toastFadeTime                                               -- in/out tween length (flash feel)
+	-- Notices are MORE see-through than persistent labels so they never read as a solid block over the court.
+	local BG_VISIBLE = G.toastBgTransparency
+	local TXT_VISIBLE = G.toastTextTransparency
 
-	-- Left-anchored, stacked directly UNDER the rank pill so status reads down the LEFT edge (the top-centre
-	-- stays clear of the court). The pill sits at PILL_TOP and is 40px tall; start the feed just below it.
-	-- Holder height = the max stacked lines (each TOAST_HEIGHT, +4px UIListLayout padding) so it never
-	-- reserves more vertical room than the cap can fill.
+	-- Left-anchored, stacked from PILL_TOP down the LEFT edge (no rank pill anymore; the rare KING chip sits at
+	-- PILL_TOP, so the feed begins just below that slot to avoid overlap when the chip is shown). Holder height =
+	-- the max stacked lines so it never reserves more vertical room than the cap can fill.
 	local holderHeight = MAX_TOASTS * (TOAST_HEIGHT + 4)
 	local toastHolder = Instance.new("Frame")
 	toastHolder.Name = "ToastHolder"; toastHolder.AnchorPoint = Vector2.new(0, 0)
-	toastHolder.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP + 40 + 8); toastHolder.Size = UDim2.fromOffset(TOAST_WIDTH, holderHeight)
+	toastHolder.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP + 40); toastHolder.Size = UDim2.fromOffset(TOAST_WIDTH, holderHeight)
 	toastHolder.BackgroundTransparency = 1; toastHolder.Parent = gui
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
@@ -183,16 +175,25 @@ if HudEvent then
 		seq += 1
 		local toast = Instance.new("TextLabel")
 		toast.LayoutOrder = seq; toast.Size = UDim2.fromOffset(TOAST_WIDTH, TOAST_HEIGHT)
-		toast.BackgroundColor3 = UI.labelBg; toast.BackgroundTransparency = UI.labelBgTransparency
+		toast.BackgroundColor3 = UI.labelBg
 		toast.BorderSizePixel = 0; toast.Font = UI.labelFont; toast.TextSize = TOAST_TEXTSIZE
 		toast.TextColor3 = TONE_COLOR[tone or "neutral"] or TONE_COLOR.neutral
 		toast.TextXAlignment = Enum.TextXAlignment.Left   -- read from the LEFT edge (left-anchored feed)
+		-- Start fully transparent so it FADES IN (flash feel) rather than popping.
+		toast.BackgroundTransparency = 1; toast.TextTransparency = 1
 		toast.Text = text; toast.Parent = toastHolder
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, UI.labelCorner); corner.Parent = toast
 		local tPad = Instance.new("UIPadding"); tPad.PaddingLeft = UDim.new(0, 10); tPad.PaddingRight = UDim.new(0, 10); tPad.Parent = toast
 
-		task.delay(TOAST_SECONDS, function()
-			if toast and toast.Parent then toast:Destroy() end
+		-- Fade IN to the (semi-transparent) visible state, hold TOAST_SECONDS, then fade OUT + destroy.
+		local inInfo = TweenInfo.new(FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		TweenService:Create(toast, inInfo, { BackgroundTransparency = BG_VISIBLE, TextTransparency = TXT_VISIBLE }):Play()
+		task.delay(FADE_TIME + TOAST_SECONDS, function()
+			if not (toast and toast.Parent) then return end
+			local outInfo = TweenInfo.new(FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			local out = TweenService:Create(toast, outInfo, { BackgroundTransparency = 1, TextTransparency = 1 })
+			out.Completed:Connect(function() if toast and toast.Parent then toast:Destroy() end end)
+			out:Play()
 		end)
 	end
 
@@ -203,13 +204,13 @@ if HudEvent then
 	end)
 end
 
--- ── (D) Compact MOBILE stats readout (this task) ───────────────────────────────────────────────────
--- Best / King Turns / Turns normally show in Roblox's BUILT-IN leaderstats PLAYER LIST (CoreGui, top-right,
--- opened via the player-list button). On a phone that list is bulky, not freely repositionable, and covers
--- too much of the narrow portrait play view. So on TOUCH / small (portrait) screens we hide the built-in
--- list and draw our OWN compact, RIGHT-ANCHORED panel that reads the SAME server-authoritative leaderstats
--- IntValues live (display only -- no values are computed here). Desktop is unchanged: it keeps the normal
--- built-in player list and never gets this panel.
+-- ── (D) Compact MOBILE scoreboard (Turns + TAK) ─────────────────────────────────────────────────────
+-- The scoreboard is just two stats: Turns (= rallies played) and TAK (= Turns As King). They show in
+-- Roblox's BUILT-IN leaderstats PLAYER LIST (CoreGui, top-right) on desktop. On a phone that list is bulky,
+-- not freely repositionable, and covers too much of the narrow portrait play view. So on TOUCH / small
+-- (portrait) screens we hide the built-in list and draw our OWN compact, RIGHT-ANCHORED panel that reads the
+-- SAME server-authoritative leaderstats IntValues live (display only -- no values are computed here).
+-- Desktop is unchanged: it keeps the normal built-in list (now only Turns + TAK) and never gets this panel.
 local StarterGui = game:GetService("StarterGui")
 
 -- isMobile() (touch/no-keyboard OR small/portrait viewport) is defined at the top of this script and shared
@@ -221,13 +222,13 @@ if isMobile() then
 		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 	end)
 
-	local STAT_LABELS = { { key = "Best", text = "Best" }, { key = "King Turns", text = "King" }, { key = "Turns", text = "Turns" } }
+	local STAT_LABELS = { { key = "Turns", text = "Turns" }, { key = "TAK", text = "TAK" } }
 	local rowH = G.mobileStatsRowHeight
 	local panelH = rowH * #STAT_LABELS + 8   -- rows + a little vertical padding
 
 	-- Right-anchored, top-right, just below the CoreGui topbar -- out of the central play view and clear of
-	-- the rank pill (now top-LEFT), the camera toggle / stamina bar / Join button (all bottom). IgnoreGuiInset
-	-- is left FALSE so the panel sits under Roblox's top inset on a phone.
+	-- the top-LEFT KING chip / notice feed and the bottom camera toggle / stamina bar / Join button.
+	-- IgnoreGuiInset is left FALSE so the panel sits under Roblox's top inset on a phone.
 	local statsPanel = Instance.new("Frame")
 	statsPanel.Name = "StatsPanel"; statsPanel.AnchorPoint = Vector2.new(1, 0)
 	statsPanel.Position = UDim2.new(1, -G.mobileStatsMargin, 0, G.mobileStatsMargin)

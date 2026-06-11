@@ -19,8 +19,10 @@
 -- logs a clear note once. So play is identical whether or not persistence is actually writing.
 --
 -- DISPLAY: a standard Roblox `leaderstats` folder per human (auto-shows in the player list for everyone):
---   "Best" (best rank reached, lower = better), "King Turns", "Turns". The values update LIVE as the player
---   climbs / holds / rotates. Server-authoritative: the client never writes these.
+--   "Turns" (= totalTurns, rallies played) and "TAK" (= kingTurns, Turns As King). This game isn't
+--   stats-heavy, so the scoreboard is deliberately just those two. The values update LIVE as the player
+--   plays / reigns. Server-authoritative: the client never writes these. (bestRank/turnsAtBest are still
+--   TRACKED + persisted internally for future use -- they're simply not shown.)
 local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -39,7 +41,8 @@ local StatsService = {}
 -- backing store loaded on join / flushed on leave). A bot never appears here (no UserId).
 local profiles: { [number]: Profile } = {}
 -- per-UserId leaderstats IntValues so we can push updates without re-walking the player tree each rally.
-local stats: { [number]: { best: IntValue, kingTurns: IntValue, turns: IntValue } } = {}
+-- Only the two SHOWN stats are mirrored here: `turns` (= totalTurns) and `tak` (= kingTurns, Turns As King).
+local stats: { [number]: { turns: IntValue, tak: IntValue } } = {}
 -- guard so the "DataStore unavailable -> in-memory fallback" note is logged once, not every call.
 local fallbackNoted = false
 
@@ -89,15 +92,21 @@ local function sanitize(raw: any): Profile
 	return p
 end
 
--- Build the leaderstats folder + IntValues for a player and bind them to its live profile. "Best" shows the
--- best (lowest) rank reached; before any rank is held bestRank is 10 (sentinel) -> we show 0 so the player
--- list reads cleanly ("no rank yet") rather than a bogus 10.
+-- Build the leaderstats folder + IntValues for a player and bind them to its live profile. The scoreboard is
+-- intentionally just two stats: "Turns" (= totalTurns, rallies played) and "TAK" (= kingTurns, Turns As King).
+-- Any STALE IntValues from an older schema ("Best" / "King Turns") are removed so a re-joiner's player-list
+-- shows only the two current columns.
 local function buildLeaderstats(player: Player, p: Profile)
 	local ls = player:FindFirstChild("leaderstats")
 	if not ls then
 		ls = Instance.new("Folder")
 		ls.Name = "leaderstats"
 		ls.Parent = player
+	end
+	-- Drop any obsolete stat columns from a previous schema so only Turns + TAK remain.
+	for _, name in ipairs({ "Best", "King Turns" }) do
+		local stale = ls:FindFirstChild(name)
+		if stale then stale:Destroy() end
 	end
 	local function ensure(name: string): IntValue
 		local v = ls:FindFirstChild(name) :: IntValue?
@@ -108,21 +117,19 @@ local function buildLeaderstats(player: Player, p: Profile)
 		end
 		return v
 	end
-	local best = ensure("Best")
-	local kingTurns = ensure("King Turns")
 	local turns = ensure("Turns")
-	stats[player.UserId] = { best = best, kingTurns = kingTurns, turns = turns }
+	local tak = ensure("TAK")
+	stats[player.UserId] = { turns = turns, tak = tak }
 end
 
--- Push the live profile onto the player's leaderstats (called after every change).
+-- Push the live profile onto the player's leaderstats (called after every change). Only the two SHOWN stats
+-- update: Turns (= totalTurns) and TAK (= kingTurns). bestRank/turnsAtBest stay tracked internally, unshown.
 local function pushLeaderstats(userId: number)
 	local s = stats[userId]
 	local p = profiles[userId]
 	if not s or not p then return end
-	-- bestRank 10 is the "never seated" sentinel -> show 0 (no rank yet).
-	s.best.Value = (p.bestRank >= 10) and 0 or p.bestRank
-	s.kingTurns.Value = p.kingTurns
 	s.turns.Value = p.totalTurns
+	s.tak.Value = p.kingTurns
 end
 
 -- Load a human's profile from the DataStore (pcall-guarded; in-memory fresh profile on any failure) and set
@@ -187,15 +194,17 @@ end
 
 -- Observe a seated human at `rank` and improve their best (lowest) rank reached. When a NEW best is reached,
 -- bestRank updates and turnsAtBest resets to 0 (we then accrue turnsAtBest per rally held at that new best,
--- via recordRally). Called after seating/rotation so the leaderstats "Best" climbs live. No-op for ranks
--- that don't beat the stored best. Bots (no live profile) are ignored.
+-- via recordRally). Called after seating/rotation. bestRank/turnsAtBest are TRACKED + persisted but no longer
+-- SHOWN on the scoreboard (just Turns + TAK) -- so this no longer pushes leaderstats. No-op for ranks that
+-- don't beat the stored best. Bots (no live profile) are ignored.
 function StatsService.noteRank(player: Player, rank: number)
 	local p = profiles[player.UserId]
 	if not p then return end
 	if rank < p.bestRank then
 		p.bestRank = rank
 		p.turnsAtBest = 0   -- fresh peak spot: start counting turns held here from zero
-		pushLeaderstats(player.UserId)
+		-- (No leaderstats push: bestRank isn't shown on the scoreboard anymore -- only Turns + TAK, which this
+		-- doesn't change. recordRally pushes those.)
 	end
 end
 

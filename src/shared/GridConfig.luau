@@ -617,13 +617,13 @@ GridConfig.mobileStatsRowHeight = 22            -- px height per stat row
 GridConfig.mobileStatsMargin = 8                -- px gap from the right/top screen edges (clear of the central play view + the CoreGui topbar)
 GridConfig.mobileStatsTextSize = 13             -- px font size for the compact rows (small but readable on a phone)
 
--- ── HUD EVENT TOAST FEED (client). The top-LEFT event/toast feed (join/leave/auto-seat/dethrone/King/
--- rank-change notes) used to be a ~340px-wide banner with up to 4 stacked 28px lines lingering 3.2s -- a big
--- chunk of a phone screen that blocked the court. These tune that feed's SIZE / LINE-COUNT / DURATION only
--- (display, not content -- the same events fire with the same text). The client picks the MOBILE values on a
--- touch/portrait session (reusing the same isMobile() check as the stats panel) and the DESKTOP values
--- otherwise. Mobile = narrower holder + smaller text + fewer simultaneous lines + shorter on-screen time so
--- it reads as a small corner feed, never a banner across the play view.
+-- ── TRANSIENT NOTICE FEED (client). The top-LEFT notice feed is now TRIMMED to the few moments that matter
+-- (a brief "You're in" on seating, a queue note, the King moment -- the server no longer fires join/leave or
+-- rank-change chatter) and each note FADES IN, holds briefly, then FADES OUT + is destroyed, so it flashes and
+-- is gone rather than persistently blocking the court. These tune the feed's SIZE / LINE-COUNT / HOLD only
+-- (display, not content). The client picks the MOBILE values on a touch/portrait session (reusing the same
+-- isMobile() check as the scoreboard) and the DESKTOP values otherwise. Mobile = narrower holder + smaller
+-- text + fewer simultaneous lines + shorter hold so it reads as a tiny corner flash, never a banner.
 GridConfig.toastWidthMobile = 200               -- px width of each toast + holder on a phone (was 340) -- a small corner feed, not a banner
 GridConfig.toastWidthDesktop = 320              -- px width on desktop (trimmed a touch from 340)
 GridConfig.toastHeightMobile = 22               -- px height per toast line on a phone (was 28) -- compact
@@ -632,8 +632,14 @@ GridConfig.toastTextSizeMobile = 12             -- px font for toasts on a phone
 GridConfig.toastTextSizeDesktop = 15            -- px font for toasts on desktop (unchanged)
 GridConfig.toastMaxLinesMobile = 2              -- cap simultaneous stacked lines on a phone (was 4) so it never stacks tall over the court
 GridConfig.toastMaxLinesDesktop = 4             -- cap on desktop (unchanged)
-GridConfig.toastSecondsMobile = 2.2             -- how long each note lingers on a phone (was 3.2) -- clears faster, less time blocking the action
-GridConfig.toastSecondsDesktop = 3.2            -- how long each note lingers on desktop (unchanged)
+GridConfig.toastSecondsMobile = 1.8             -- VISIBLE HOLD on a phone (before the fade-out) -- a brief flash, then gone
+GridConfig.toastSecondsDesktop = 2.4            -- VISIBLE HOLD on desktop (before the fade-out)
+-- Each notice now FADES IN, holds (above), then FADES OUT + is destroyed so the feed flashes briefly and is
+-- empty most of the time -- it never persistently blocks the court. These tune that fade + how see-through a
+-- visible notice is (MORE transparent than a persistent label, so it reads as a transient overlay).
+GridConfig.toastFadeTime = 0.25                 -- seconds for the in/out opacity tween (flash feel)
+GridConfig.toastBgTransparency = 0.55           -- background transparency while visible (more see-through than a persistent label's 0.45)
+GridConfig.toastTextTransparency = 0.1          -- text transparency while visible (still legible, a touch soft)
 
 -- ── STAMINA METER placement (the player-movement HUD fill bar) ─────────────────────────────────────
 -- The stamina bar (dash/flip energy) lives in the MovementHUD. It used to sit BOTTOM-CENTRE (260x16),
@@ -654,7 +660,7 @@ GridConfig.staminaBarTop = 2                     -- px the bar's BOTTOM sits ABO
 -- right-side column (the scoreboard reserve at the top, the column width + element heights + gaps). The
 -- client picks the COMPACT (mobile) sizes on a touch/portrait session and the roomier ones on desktop.
 GridConfig.lobbyUISideMargin = 12               -- px gap from the RIGHT screen edge for the lobby column
-GridConfig.lobbyUITopReserve = 92               -- px reserved at the top for the scoreboard (stats panel / player-list) so the column starts BELOW it
+GridConfig.lobbyUITopReserve = 78               -- px reserved at the top for the scoreboard (stats panel / player-list) so the column starts BELOW it (trimmed: the scoreboard is now 2 rows -- Turns + TAK -- not 3)
 GridConfig.lobbyUIGap = 8                        -- px vertical gap between the join button + the spectating pill
 GridConfig.lobbyUIWidth = 190                   -- px width of the join/leave button (desktop)
 GridConfig.lobbyUIButtonHeight = 48             -- px height of the join/leave button (desktop)
@@ -673,7 +679,7 @@ GridConfig.lobbyUIPillTextSizeMobile = 13       -- px pill text size (mobile)
 --   * BUTTON  -> tappable. Solid SATURATED fill, AutoButtonColor, a stroke "edge", a chunkier corner, bold
 --                font. Accent roles: GO (green / Join), LEAVE (red / exit), DISABLED (flat grey, no stroke,
 --                non-tappable). The mobile camera toggle is also a button (neutral fill).
---   * LABEL/PANEL -> NON-interactive status (Spectating/queue, rank pill, stats panel, toasts). FLAT, dark,
+--   * LABEL/PANEL -> NON-interactive status (Spectating/queue, KING chip, scoreboard panel, notices). FLAT, dark,
 --                low-opacity background, NO stroke (or the faintest hairline on grouped panels), a tighter
 --                corner, a LIGHTER (Medium) font weight. Never looks tappable.
 -- Sizes (width/height/text) still come from the per-context tunables above; this table owns the COLOUR
@@ -704,7 +710,7 @@ GridConfig.uiStyle = {
 	labelText = Color3.fromRGB(225, 232, 240),
 	labelMutedText = Color3.fromRGB(178, 188, 202),  -- secondary text (stat row names)
 	labelFont = Enum.Font.GothamMedium,              -- lighter weight than buttons
-	-- Grouped INFO panels (rank pill, stats panel) may carry the FAINTEST hairline so they read as a tidy
+	-- Grouped INFO panels (KING chip, scoreboard panel) may carry the FAINTEST hairline so they read as a tidy
 	-- card -- still clearly not a button (thin, very transparent, neutral grey -- never a bright accent ring).
 	panelHairlineColor = Color3.fromRGB(120, 132, 150),
 	panelHairlineThickness = 1,

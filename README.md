@@ -256,12 +256,13 @@ spectate + auto-join, and the server stays authoritative. The pieces:
     **DisplayName** (cyan) or **"Bot"** (violet); the **King's plate is gold + crowned (`👑`)**. Server-built,
     so it replicates to every client for free and never trusts the client for who's King.
   - **Spectator / queue HUD.** Spectators see "Spectating — #N in line", promoted to **"NEXT UP!"** (green) at
-    position 1; the rank pill hides while spectating and returns on auto-seat.
-  - **Join / leave / rotation feedback.** A `HudEvent` `RemoteEvent` carries `{ kind, text, tone }`; the
-    client renders a short-lived **toast** under the rank pill (capped to 4 stacked lines so a burst never
-    spams). The server fires it on join, leave, queue auto-seat, dethrone, taking the King, and a player's own
-    rank change ("Moved up — now Rank N" / "Faulted — back to Rank 9"). The whole table sees join/leave; the
-    King/rank nudges are personal.
+    position 1.
+  - **Transient notice feed (trimmed).** A `HudEvent` `RemoteEvent` carries `{ kind, text, tone }`; the client
+    renders a small, **semi-transparent**, top-left notice that **fades in, holds briefly, then fades out** so
+    it flashes and is gone (never persistently over the court). The feed is trimmed to the few moments that
+    matter — a brief **"You're in"** on seating, a queue note, and the **King moment** (a personal "You're the
+    KING" + a broadcast "X takes the throne"). There are **no** join/leave or rank-change toasts: rank is
+    obvious from where you stand + the floor numbers.
   - Tunables (`nameplate*`) live in `GridConfig`.
 
 ## Persistent player stats (DataStore)
@@ -270,14 +271,14 @@ Every **human** carries a persistent profile across sessions, surfaced in the st
 player list (so the stats auto-show for everyone, no custom UI needed). Server-authoritative throughout — the
 client never writes a stat. Bots are excluded (no `UserId`; they never persist).
 
-- **What's tracked** (per human, keyed by `UserId`):
-  - **`Best`** — best rank *reached* = the **lowest rank number ever held** (King = rank 1 = best). Improves
-    only when a better (lower) rank is reached; a fault-back never worsens it. Shown as `0` until the player's
-    first seat.
-  - **`King Turns`** — total rallies held as **King** (rank 1) — the marquee stat.
+- **Scoreboard = two stats** (this game isn't stats-heavy). The `leaderstats` player list shows only:
   - **`Turns`** — total rallies played while seated.
-  - (also stored: `turnsAtBest` — rallies held at the best rank, i.e. how long they lasted in their peak spot;
-    not shown in the player list but persisted + available via `StatsService.getProfile`.)
+  - **`TAK`** — **Turns As King** = total rallies held as **King** (rank 1) — the marquee stat.
+- **Tracked but not shown** (per human, keyed by `UserId`, still persisted + available via
+  `StatsService.getProfile`):
+  - `bestRank` — best rank *reached* = the **lowest rank number ever held** (King = rank 1 = best). Improves
+    only when a better (lower) rank is reached; a fault-back never worsens it.
+  - `turnsAtBest` — rallies held at the best rank (how long they lasted in their peak spot).
 - **A "turn" = one rally** (a serve→fault cycle) the player took part in while seated. `NineSquareServer`
   observes the existing rally loop: when the ball comes to rest and the deferred rotation runs, it credits a
   turn to **every seated human at the rank they held during that rally** (`recordRally`), then — after the
@@ -345,16 +346,17 @@ A checklist for a real multi-player session in **"9 Square Beta"**:
    displacing a bot; each additional human takes the next-highest bot seat. Bots backfill everything else, so
    it's **always a full 9-square**. Confirm each player's **nameplate** shows their name over their seat, and
    the **King's plate is gold + crowned** (`👑`).
-3. **Climb + rotate.** Rally the ball; on a fault the grid rotates one step toward the King. Watch your **rank
-   pill** update and a brief **toast** appear ("Moved up — now Rank N" when you advance, "Faulted — back to
-   Rank 9" when you're knocked out). Take the center square to become **King** ("You're the KING! 👑").
+3. **Climb + rotate.** Rally the ball; on a fault the grid rotates one step toward the King. Your rank is read
+   straight off **where you stand + the floor rank numbers** — there are **no** rank-change toasts. Take the
+   center square to become **King**: a small gold **KING chip** appears top-left and a brief "You're the KING! 👑"
+   notice flashes.
 4. **Dethrone.** Fault while King → you drop to Rank 9 and the next occupant takes C; the whole table gets a
-   "X takes the throne" toast and the King square flashes.
+   brief "X takes the throne" notice and the King square flashes.
 5. **Overflow → spectating.** Add a **10th** player: with all 9 seats human they spawn in the **upper gallery**
    and see **"Spectating — #N in line"** (the longest-waiting shows **"NEXT UP!"**). They look straight down
    onto the court through the gallery opening and **cannot affect the ball**.
 6. **Auto-join.** Have a seated player **leave**. The longest-waiting spectator is **auto-seated** into the
-   freed rank ("You're in! Seated at Rank N") and the line re-indexes. With no spectator waiting, a fresh bot
+   freed rank (a brief "You're in") and the line re-indexes. With no spectator waiting, a fresh bot
    backfills — a seat is never empty.
 7. **What to look for:** every seat labeled (human name or "Bot"), King unmistakable, ranks shift cleanly on
    faults, the queue HUD counts down, no errors in the Output, and **no wedged rally**. If the ball ever does
@@ -378,12 +380,13 @@ Verify over MCP: `start_stop_play`, `get_console_output` for the `[NineSquare]` 
   predicts the contact, drives an off-center hit-sphere collider into the ball along the aim line, misses by
   under-driving; returns colliders merged into `bc:step`), `NineSquareServer` (bootstrap + Heartbeat + the
   king-of-the-hill loop; merges human + bot colliders into `bc:step`; owns the **M5.1/M5.2 join/leave +
-  spectator FIFO queue**, the **M5.4 trust boundary**, and the **M5.6 `HudEvent` feed** — fires join / leave /
-  auto-seat / dethrone / King / rank-change toasts).
+  spectator FIFO queue**, the **M5.4 trust boundary**, and the **trimmed `HudEvent` feed** — fires only a
+  brief "You're in" on seating, a queue note, and the King moment; no join/leave or rank-change toasts).
 - `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera, **spectator overlook
   camera + queue HUD** ("Spectating — #N in line / NEXT UP!").
-- `src/client/RankHud.client.luau` — server-authoritative rank pill + King-square indicator + the **M5.6 HUD
-  toast feed** (renders `HudEvent` notes; hides the pill while spectating).
+- `src/client/RankHud.client.luau` — subtle top-left **KING chip** (only while you hold rank 1; no generic rank
+  pill) + King-square indicator + the **transient notice feed** (renders `HudEvent` notes: small,
+  semi-transparent, fade-in/hold/fade-out) + the compact mobile **Turns/TAK scoreboard**.
 - `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side, server-validated).
 - `docs/` — PRD, specs, plans.
 
