@@ -22,11 +22,15 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "RankHud"; gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Top-centre LABEL pill: flat dark info card with a faint neutral hairline (a tidy card, NOT a button). The
+-- Top-LEFT LABEL pill: flat dark info card with a faint neutral hairline (a tidy card, NOT a button). The
 -- rank ACCENT (gold KING / cyan rank) is applied to the TEXT, never as a bright button-style ring.
+-- Anchored top-LEFT with a small margin and DROPPED below the Roblox CoreGui topbar buttons (menu / chat /
+-- mic live top-left) so the pill never hides behind them. The toast feed stacks directly under it.
+local LEFT_MARGIN = 12       -- px gap from the left screen edge
+local PILL_TOP = 76          -- px from the top: clear of the top-left CoreGui icons
 local pill = Instance.new("Frame")
-pill.Name = "RankPill"; pill.AnchorPoint = Vector2.new(0.5, 0)
-pill.Position = UDim2.new(0.5, 0, 0, 16); pill.Size = UDim2.fromOffset(140, 40)
+pill.Name = "RankPill"; pill.AnchorPoint = Vector2.new(0, 0)
+pill.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP); pill.Size = UDim2.fromOffset(140, 40)
 pill.BackgroundColor3 = UI.labelBg; pill.BackgroundTransparency = UI.labelBgTransparency
 pill.BorderSizePixel = 0; pill.Parent = gui
 local pillCorner = Instance.new("UICorner"); pillCorner.CornerRadius = UDim.new(0, UI.labelCorner); pillCorner.Parent = pill
@@ -106,12 +110,14 @@ local HudEvent = Remotes:FindFirstChild("HudEvent")
 if not HudEvent then HudEvent = Remotes:WaitForChild("HudEvent", 10) end
 
 if HudEvent then
+	-- Left-anchored, stacked directly UNDER the rank pill so status reads down the LEFT edge (the top-centre
+	-- stays clear of the court). The pill sits at PILL_TOP and is 40px tall; start the feed just below it.
 	local toastHolder = Instance.new("Frame")
-	toastHolder.Name = "ToastHolder"; toastHolder.AnchorPoint = Vector2.new(0.5, 0)
-	toastHolder.Position = UDim2.new(0.5, 0, 0, 64); toastHolder.Size = UDim2.fromOffset(340, 160)
+	toastHolder.Name = "ToastHolder"; toastHolder.AnchorPoint = Vector2.new(0, 0)
+	toastHolder.Position = UDim2.new(0, LEFT_MARGIN, 0, PILL_TOP + 40 + 8); toastHolder.Size = UDim2.fromOffset(340, 160)
 	toastHolder.BackgroundTransparency = 1; toastHolder.Parent = gui
 	local layout = Instance.new("UIListLayout")
-	layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	layout.Padding = UDim.new(0, 4); layout.Parent = toastHolder
 
 	local TONE_COLOR = {
@@ -140,8 +146,10 @@ if HudEvent then
 		toast.BackgroundColor3 = UI.labelBg; toast.BackgroundTransparency = UI.labelBgTransparency
 		toast.BorderSizePixel = 0; toast.Font = UI.labelFont; toast.TextSize = 15
 		toast.TextColor3 = TONE_COLOR[tone or "neutral"] or TONE_COLOR.neutral
+		toast.TextXAlignment = Enum.TextXAlignment.Left   -- read from the LEFT edge (left-anchored feed)
 		toast.Text = text; toast.Parent = toastHolder
 		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, UI.labelCorner); corner.Parent = toast
+		local tPad = Instance.new("UIPadding"); tPad.PaddingLeft = UDim.new(0, 10); tPad.PaddingRight = UDim.new(0, 10); tPad.Parent = toast
 
 		task.delay(TOAST_SECONDS, function()
 			if toast and toast.Parent then toast:Destroy() end
@@ -188,7 +196,7 @@ if isMobile() then
 	local panelH = rowH * #STAT_LABELS + 8   -- rows + a little vertical padding
 
 	-- Right-anchored, top-right, just below the CoreGui topbar -- out of the central play view and clear of
-	-- the rank pill (top-centre), the camera toggle / stamina bar / Join button (all bottom). IgnoreGuiInset
+	-- the rank pill (now top-LEFT), the camera toggle / stamina bar / Join button (all bottom). IgnoreGuiInset
 	-- is left FALSE so the panel sits under Roblox's top inset on a phone.
 	local statsPanel = Instance.new("Frame")
 	statsPanel.Name = "StatsPanel"; statsPanel.AnchorPoint = Vector2.new(1, 0)
