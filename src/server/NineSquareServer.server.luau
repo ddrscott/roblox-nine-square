@@ -179,6 +179,17 @@ if not JoinRequest then
 	JoinRequest.Name = "JoinRequest"
 	JoinRequest.Parent = Remotes
 end
+-- LEAVE-TO-SPECTATE (this task): the counterpart to JoinRequest. A SEATED human taps a "Leave" button to
+-- step off the court back into the gallery lobby. The button fires this RemoteEvent; the SERVER frees their
+-- seat (unseatHuman -> the _backfillHook seats a queued spectator, else a bot, so the rank is never empty),
+-- parks them as a lobby watcher (Spectating=true, no rank), and re-serves if they were the King -- so the
+-- loop never wedges. Server-authoritative: the client only requests. Self-healed so a fresh place works.
+local LeaveRequest = Remotes:FindFirstChild("LeaveRequest")
+if not LeaveRequest then
+	LeaveRequest = Instance.new("RemoteEvent")
+	LeaveRequest.Name = "LeaveRequest"
+	LeaveRequest.Parent = Remotes
+end
 local function fireHud(plr: Player, kind: string, text: string, tone: string?)
 	if plr and plr.Parent then HudEvent:FireClient(plr, { kind = kind, text = text, tone = tone }) end
 end
@@ -762,6 +773,47 @@ local function onJoinRequest(plr: Player)
 	end
 end
 JoinRequest.OnServerEvent:Connect(onJoinRequest)
+
+-- LEAVE-TO-SPECTATE handler (this task). A SEATED human's "Leave" button fires LeaveRequest; the SERVER frees
+-- their seat back to the gallery lobby (server-authoritative -- the client only requests):
+--   * Free their rank via unseatHuman -> the _backfillHook seats the longest-waiting queued spectator if one
+--     is waiting, else a fresh bot -- so the freed rank is NEVER empty (same backfill as a disconnect).
+--   * Park them as a LOBBY WATCHER (parkLobbyWatcher: Spectating=true, Rank=0, QueuePos=0) so the roam camera
+--     + the Join Game button come back. They re-enter later via Join (entry rank, the existing fairness).
+--   * If they were the KING and the ball was parked for a (now-gone) hover-serve, re-serve for the NEW King --
+--     the same wedge guard as the disconnect path -- so the loop never hangs.
+-- Idempotent + defensive: a request from an unseated player (lobby watcher / queued spectator) is ignored.
+local function onLeaveRequest(plr: Player)
+	if not plr or not plr.Parent then return end
+	if not rotation:rankOfPlayer(plr) then return end   -- not seated (already a watcher / queued) -> ignore
+	-- Capture King-ness BEFORE the backfill, exactly like the disconnect path, so we can re-serve for the new
+	-- King if this leaver was mid-(hover-)serve.
+	local wasKing = (rotation:kingPlayer() == plr)
+
+	local repl = rotation:unseatHuman(plr)            -- free + backfill (queued spectator -> else bot; never empty)
+	if repl then
+		print(("[NineSquare] LEAVE REQUEST: %s left the court -> seat backfilled with %s %s")
+			:format(plr.Name, repl.kind, repl.id))
+	end
+	-- Defensive: if (somehow) a bot still holds a seat while spectators wait, sweep them in (no-op while the
+	-- proactive sweep is disabled, but kept symmetric with the disconnect path).
+	trySeatSpectatorsFromBots()
+
+	-- Back to the gallery LOBBY: roam camera, Join Game available again (no rank, Spectating=true, not queued).
+	parkLobbyWatcher(plr)
+	-- Re-place their live character up in the gallery now (parkLobbyWatcher -> parkSpectator teleports the HRP).
+	if plr.Character then parkSpectator(plr) end
+	fireHud(plr, "leave", "Back in the gallery \u{2014} tap Join Game to return", "neutral")
+	broadcastHud("leave", plr.DisplayName .. " left the court to spectate", "neutral")
+
+	-- RE-SERVE RECOVERY (same as the disconnect path): if the King left this way while the ball was parked for
+	-- a human hover-serve, re-serve for whoever now holds the throne so the ball doesn't hover forever.
+	if wasKing and not rallyArmed and (bc.phase == "Live" or bc.phase == "Rest") then
+		print("[NineSquare] King left to spectate mid-serve -> re-serving for the new King (no wedge)")
+		serveNextRally()
+	end
+end
+LeaveRequest.OnServerEvent:Connect(onLeaveRequest)
 
 Players.PlayerAdded:Connect(onJoin)
 Players.PlayerRemoving:Connect(onLeave)

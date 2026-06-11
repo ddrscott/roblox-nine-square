@@ -157,7 +157,7 @@ GridConfig.specSpawnOffset = Vector3.new(0, 57, -28)   -- where a spectator's HR
 GridConfig.galleryOpening = 46          -- studs: edge of the square opening over the court (court span is 42, so 46 clears the 9-square + frame with margin)
 GridConfig.galleryFloorY = 54           -- studs: top of the gallery floor (y), above the gym ceiling (gym H = 50)
 GridConfig.galleryFloorThickness = 1    -- gallery floor slab thickness
-GridConfig.galleryWallHeight = 18       -- studs: height of the gallery's short perimeter walls (above galleryFloorY)
+GridConfig.galleryWallHeight = 24       -- studs: height of the gallery's perimeter FALL-OUT walls (above galleryFloorY). Tall enough that a roaming spectator (default ~7-stud jump) can never clear them; with the roof + opening barrier the foyer is fully enclosed (audited: no fall-out point). Raised 18->24 for belt-and-suspenders headroom.
 GridConfig.galleryRailHeight = 3.5      -- studs: height of the safety railing ringing the opening (so spectators don't fall through)
 GridConfig.galleryRailInset = 0.5       -- studs the railing sits OUTSIDE the opening edge (a hair, so it rings the hole)
 
@@ -558,6 +558,26 @@ GridConfig.mobileStatsWidth = 132               -- px width of the compact right
 GridConfig.mobileStatsRowHeight = 22            -- px height per stat row
 GridConfig.mobileStatsMargin = 8                -- px gap from the right/top screen edges (clear of the central play view + the CoreGui topbar)
 GridConfig.mobileStatsTextSize = 13             -- px font size for the compact rows (small but readable on a phone)
+
+-- ── LOBBY UI placement (Join Game / Leave-Spectate button + Spectating pill) ───────────────────────────
+-- The lobby/spectator UI used to sit bottom-CENTRE, covering the court view. We now RIGHT-ANCHOR it and
+-- stack it vertically BENEATH the scoreboard (the stats panel is top-right), so it's out of the central
+-- view and clear of the bottom-right camera-mode toggle + the default touch jump button. These tune that
+-- right-side column (the scoreboard reserve at the top, the column width + element heights + gaps). The
+-- client picks the COMPACT (mobile) sizes on a touch/portrait session and the roomier ones on desktop.
+GridConfig.lobbyUISideMargin = 12               -- px gap from the RIGHT screen edge for the lobby column
+GridConfig.lobbyUITopReserve = 92               -- px reserved at the top for the scoreboard (stats panel / player-list) so the column starts BELOW it
+GridConfig.lobbyUIGap = 8                        -- px vertical gap between the join button + the spectating pill
+GridConfig.lobbyUIWidth = 190                   -- px width of the join/leave button (desktop)
+GridConfig.lobbyUIButtonHeight = 48             -- px height of the join/leave button (desktop)
+GridConfig.lobbyUIPillHeight = 38               -- px height of the spectating/queue pill (desktop)
+GridConfig.lobbyUIWidthMobile = 132             -- px width on mobile (matches the compact stats panel so the column lines up)
+GridConfig.lobbyUIButtonHeightMobile = 42       -- px button height on mobile
+GridConfig.lobbyUIPillHeightMobile = 32         -- px pill height on mobile
+GridConfig.lobbyUITextSize = 20                 -- px button text size (desktop)
+GridConfig.lobbyUITextSizeMobile = 15           -- px button text size (mobile)
+GridConfig.lobbyUIPillTextSize = 16             -- px pill text size (desktop)
+GridConfig.lobbyUIPillTextSizeMobile = 13       -- px pill text size (mobile)
 
 -- Is a ball world position OUTSIDE the sane play volume (escaped)? True when it's above the gym ceiling +
 -- margin, below the floor - margin, or its |XZ| (relative to the court origin) is beyond the court's outer

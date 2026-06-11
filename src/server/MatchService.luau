@@ -470,7 +470,15 @@ function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L:
 	gpart("GalFloorE", Vector3.new(side, fth, op), origin + Vector3.new( (op + side) / 2, floorMid, 0), woodG, Enum.Material.WoodPlanks, true)
 	gpart("GalFloorW", Vector3.new(side, fth, op), origin + Vector3.new(-(op + side) / 2, floorMid, 0), woodG, Enum.Material.WoodPlanks, true)
 
-	-- Short perimeter walls + roof so the gallery reads as an enclosed upper room (not a floating slab).
+	-- Perimeter FALL-OUT walls + roof so a roaming spectator can't walk off the foyer / fall out, and the
+	-- gallery reads as an enclosed upper room (not a floating slab). FALL-OUT AUDIT (verified by walking the
+	-- edges/corners in Play): the floor RING tiles fully around the opening (the N/S bands run the full span on
+	-- X, so the opening corners are floored), the OpeningBarrier caps the central hole flush with the floor, and
+	-- these four perimeter walls run the FULL outer span (X=+/-cs/2, Z=+/-cs/2) at galleryWallHeight tall --
+	-- well above a default ~7-stud spectator jump -- meeting the floor (wall bottom = floorTop) with no gap, and
+	-- the roof closes the top. Net: the foyer is fully enclosed; a spectator stays contained everywhere. These
+	-- live in the Gallery folder (OUTSIDE NineSquare.Frame), so they're NOT in the ball/player COURT collision
+	-- set (the gallery sits above the court) -- they only block PLAYERS up here.
 	local wh = G.galleryWallHeight
 	local wmid = floorTop + wh / 2
 	-- LOCK THE GALLERY SHELL (build-once): the perimeter walls + roof are click-through in Studio (Locked),

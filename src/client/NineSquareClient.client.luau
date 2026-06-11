@@ -62,89 +62,119 @@ local function isSpectating(): boolean
 	return LocalPlayer:GetAttribute("Spectating") == true
 end
 
-local specGui = Instance.new("ScreenGui")
-specGui.Name = "SpectatorHud"; specGui.ResetOnSpawn = false; specGui.Enabled = false
-specGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local specPill = Instance.new("Frame")
-specPill.AnchorPoint = Vector2.new(0.5, 1)
-specPill.Position = UDim2.new(0.5, 0, 1, -28); specPill.Size = UDim2.fromOffset(280, 44)
-specPill.BackgroundColor3 = Color3.fromRGB(20, 22, 28); specPill.BackgroundTransparency = 0.2
-specPill.BorderSizePixel = 0; specPill.Parent = specGui
-local specCorner = Instance.new("UICorner"); specCorner.CornerRadius = UDim.new(0, 10); specCorner.Parent = specPill
-local specStroke = Instance.new("UIStroke"); specStroke.Thickness = 1.5
-specStroke.Color = Color3.fromRGB(255, 210, 80); specStroke.Transparency = 0.35; specStroke.Parent = specPill
-
-local specLabel = Instance.new("TextLabel")
-specLabel.BackgroundTransparency = 1; specLabel.Size = UDim2.fromScale(1, 1)
-specLabel.Font = Enum.Font.GothamBold; specLabel.TextSize = 18
-specLabel.TextColor3 = Color3.fromRGB(235, 240, 245); specLabel.Text = "Spectating"; specLabel.Parent = specPill
-
-local function renderSpectatorHud()
-	local spectating = isSpectating()
-	specGui.Enabled = spectating
-	if spectating then
-		local pos = LocalPlayer:GetAttribute("QueuePos")
-		if type(pos) == "number" and pos == 1 then
-			-- Longest-waiting: you take the next freed seat. Make the "you're up next" read unmistakable.
-			specLabel.Text = "Spectating  --  NEXT UP!"
-			specStroke.Color = Color3.fromRGB(150, 235, 160)
-		elseif type(pos) == "number" and pos > 0 then
-			specLabel.Text = "Spectating  --  #" .. tostring(pos) .. " in line"
-			specStroke.Color = Color3.fromRGB(255, 210, 80)
-		else
-			specLabel.Text = "Spectating"
-			specStroke.Color = Color3.fromRGB(255, 210, 80)
-		end
-	end
+-- A seated player has a real court rank (Rank > 0) and is NOT spectating. We show them a "Leave" button (the
+-- counterpart to "Join Game") so they can step off the court back into the gallery lobby.
+local function isSeated(): boolean
+	if isSpectating() then return false end
+	local rank = LocalPlayer:GetAttribute("Rank")
+	return type(rank) == "number" and rank > 0
 end
 
-renderSpectatorHud()
-LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderSpectatorHud)
-LocalPlayer:GetAttributeChangedSignal("QueuePos"):Connect(renderSpectatorHud)
-
--- ── "Join Game" button (lobby / tap-to-join, this task) ─────────────────────────────────────────────
--- On join the player spawns in the gallery LOBBY watching the live game (Spectating=true, no seat). A big,
--- thumb-reachable button lets them REQUEST to enter the court (touch + desktop -- a TextButton activates on
--- tap or click). The SERVER decides seat-vs-queue (JoinRequest); the client only requests + reflects state:
---   * watching, not queued (QueuePos == 0)  -> "Join Game"   (enabled; tapping fires JoinRequest)
---   * queued, all 9 seats human (QueuePos N) -> "In queue (#N)" (disabled; auto-seated when a seat frees)
---   * seated (Spectating == false)           -> hidden        (the seated camera/HUD takes over)
+-- ── LOBBY / SEAT UI -- a single RIGHT-anchored column UNDER the scoreboard (this task) ─────────────────
+-- The Join Game button, the new Leave button, and the Spectating/queue pill all used to sit bottom-CENTRE,
+-- covering the court view. They now live in ONE right-anchored ScreenGui, stacked vertically just BELOW the
+-- scoreboard (the stats panel / player-list is top-right), so nothing blocks the centre of the screen and the
+-- column stays clear of the bottom-right camera-mode toggle + the default touch jump button. Visibility is
+-- mutually exclusive off the server-replicated attributes (the client only reflects + requests):
+--   * SPECTATING + not queued (QueuePos 0) -> Join Game button (tappable) + Spectating pill
+--   * SPECTATING + queued (QueuePos N)      -> "In queue (#N)" button (disabled) + Spectating pill
+--   * SEATED (Rank>0, Spectating false)     -> Leave button only (return to the gallery lobby)
+-- Layout switches to compact widths/heights on a touch/portrait session.
 local JoinRequest = Remotes:WaitForChild("JoinRequest")
+local LeaveRequest = Remotes:WaitForChild("LeaveRequest")
 
-local joinGui = Instance.new("ScreenGui")
-joinGui.Name = "JoinGameHud"; joinGui.ResetOnSpawn = false; joinGui.IgnoreGuiInset = true
-joinGui.Enabled = false; joinGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local lobbyIsMobile = (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled)
+	or (cam.ViewportSize.Y > 0 and (cam.ViewportSize.X / cam.ViewportSize.Y) <= G.mobileStatsAspectMax)
+local colW = lobbyIsMobile and G.lobbyUIWidthMobile or G.lobbyUIWidth
+local btnH = lobbyIsMobile and G.lobbyUIButtonHeightMobile or G.lobbyUIButtonHeight
+local pillH = lobbyIsMobile and G.lobbyUIPillHeightMobile or G.lobbyUIPillHeight
+local btnTxt = lobbyIsMobile and G.lobbyUITextSizeMobile or G.lobbyUITextSize
+local pillTxt = lobbyIsMobile and G.lobbyUIPillTextSizeMobile or G.lobbyUIPillTextSize
 
+local lobbyGui = Instance.new("ScreenGui")
+lobbyGui.Name = "LobbyHud"; lobbyGui.ResetOnSpawn = false; lobbyGui.IgnoreGuiInset = false
+lobbyGui.Enabled = false; lobbyGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Right-anchored column. A top-anchored vertical list growing DOWN from below the scoreboard reserve.
+local lobbyCol = Instance.new("Frame")
+lobbyCol.Name = "Column"; lobbyCol.AnchorPoint = Vector2.new(1, 0)
+lobbyCol.Position = UDim2.new(1, -G.lobbyUISideMargin, 0, G.lobbyUITopReserve)
+lobbyCol.Size = UDim2.fromOffset(colW, btnH + pillH + G.lobbyUIGap)
+lobbyCol.BackgroundTransparency = 1; lobbyCol.Parent = lobbyGui
+local colLayout = Instance.new("UIListLayout")
+colLayout.FillDirection = Enum.FillDirection.Vertical
+colLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+colLayout.SortOrder = Enum.SortOrder.LayoutOrder
+colLayout.Padding = UDim.new(0, G.lobbyUIGap); colLayout.Parent = lobbyCol
+
+-- Join / In-queue button (shown to a SPECTATING watcher).
 local joinBtn = Instance.new("TextButton")
-joinBtn.AnchorPoint = Vector2.new(0.5, 1)
-joinBtn.Position = UDim2.new(0.5, 0, 1, -86)        -- bottom-centre, above the spectator pill
-joinBtn.Size = UDim2.fromOffset(220, 56)
+joinBtn.Name = "JoinBtn"; joinBtn.LayoutOrder = 1
+joinBtn.Size = UDim2.fromOffset(colW, btnH)
 joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92); joinBtn.BackgroundTransparency = 0.05
 joinBtn.BorderSizePixel = 0; joinBtn.AutoButtonColor = true
-joinBtn.Font = Enum.Font.GothamBold; joinBtn.TextSize = 22
-joinBtn.TextColor3 = Color3.fromRGB(245, 250, 245); joinBtn.Text = "Join Game"; joinBtn.Parent = joinGui
+joinBtn.Font = Enum.Font.GothamBold; joinBtn.TextSize = btnTxt
+joinBtn.TextColor3 = Color3.fromRGB(245, 250, 245); joinBtn.Text = "Join Game"; joinBtn.Parent = lobbyCol
 local joinCorner = Instance.new("UICorner"); joinCorner.CornerRadius = UDim.new(0, 12); joinCorner.Parent = joinBtn
 local joinStroke = Instance.new("UIStroke"); joinStroke.Thickness = 2
 joinStroke.Color = Color3.fromRGB(150, 235, 160); joinStroke.Transparency = 0.25; joinStroke.Parent = joinBtn
 
-local function renderJoinButton()
+-- Leave / Spectate button (shown to a SEATED player) -- the counterpart to Join Game.
+local leaveBtn = Instance.new("TextButton")
+leaveBtn.Name = "LeaveBtn"; leaveBtn.LayoutOrder = 2
+leaveBtn.Size = UDim2.fromOffset(colW, btnH)
+leaveBtn.BackgroundColor3 = Color3.fromRGB(170, 78, 70); leaveBtn.BackgroundTransparency = 0.05
+leaveBtn.BorderSizePixel = 0; leaveBtn.AutoButtonColor = true
+leaveBtn.Font = Enum.Font.GothamBold; leaveBtn.TextSize = btnTxt
+leaveBtn.TextColor3 = Color3.fromRGB(250, 245, 245); leaveBtn.Text = "Leave \u{2192} Spectate"; leaveBtn.Parent = lobbyCol
+local leaveCorner = Instance.new("UICorner"); leaveCorner.CornerRadius = UDim.new(0, 12); leaveCorner.Parent = leaveBtn
+local leaveStroke = Instance.new("UIStroke"); leaveStroke.Thickness = 2
+leaveStroke.Color = Color3.fromRGB(245, 170, 160); leaveStroke.Transparency = 0.25; leaveStroke.Parent = leaveBtn
+
+-- Spectating / queue pill (shown to a SPECTATING watcher, beneath the Join button).
+local specPill = Instance.new("Frame")
+specPill.Name = "SpecPill"; specPill.LayoutOrder = 3
+specPill.Size = UDim2.fromOffset(colW, pillH)
+specPill.BackgroundColor3 = Color3.fromRGB(20, 22, 28); specPill.BackgroundTransparency = 0.2
+specPill.BorderSizePixel = 0; specPill.Parent = lobbyCol
+local specCorner = Instance.new("UICorner"); specCorner.CornerRadius = UDim.new(0, 10); specCorner.Parent = specPill
+local specStroke = Instance.new("UIStroke"); specStroke.Thickness = 1.5
+specStroke.Color = Color3.fromRGB(255, 210, 80); specStroke.Transparency = 0.35; specStroke.Parent = specPill
+local specLabel = Instance.new("TextLabel")
+specLabel.BackgroundTransparency = 1; specLabel.Size = UDim2.fromScale(1, 1)
+specLabel.Font = Enum.Font.GothamBold; specLabel.TextSize = pillTxt
+specLabel.TextColor3 = Color3.fromRGB(235, 240, 245); specLabel.Text = "Spectating"; specLabel.Parent = specPill
+
+local function renderLobbyHud()
 	local spectating = isSpectating()
-	if not spectating then joinGui.Enabled = false; return end
-	joinGui.Enabled = true
-	local pos = LocalPlayer:GetAttribute("QueuePos")
-	if type(pos) == "number" and pos > 0 then
-		-- Queued: all 9 seats are humans; the server auto-seats the longest-waiting on the next seat freeing.
-		joinBtn.Text = "In queue (#" .. tostring(pos) .. ")"
-		joinBtn.BackgroundColor3 = Color3.fromRGB(70, 76, 92)
-		joinBtn.AutoButtonColor = false; joinBtn.Active = false
-		joinStroke.Color = Color3.fromRGB(255, 210, 80)
-	else
-		-- Watching the lobby, not queued: tappable request to enter the court.
-		joinBtn.Text = "Join Game"
-		joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92)
-		joinBtn.AutoButtonColor = true; joinBtn.Active = true
-		joinStroke.Color = Color3.fromRGB(150, 235, 160)
+	local seated = isSeated()
+	-- The whole column is only shown when there's something to show (spectating OR seated).
+	lobbyGui.Enabled = spectating or seated
+	joinBtn.Visible = spectating
+	specPill.Visible = spectating
+	leaveBtn.Visible = seated
+	if spectating then
+		local pos = LocalPlayer:GetAttribute("QueuePos")
+		if type(pos) == "number" and pos > 0 then
+			-- Queued: all 9 seats are humans; the server auto-seats the longest-waiting on the next seat freeing.
+			joinBtn.Text = "In queue (#" .. tostring(pos) .. ")"
+			joinBtn.BackgroundColor3 = Color3.fromRGB(70, 76, 92)
+			joinBtn.AutoButtonColor = false; joinBtn.Active = false
+			joinStroke.Color = Color3.fromRGB(255, 210, 80)
+		else
+			joinBtn.Text = "Join Game"
+			joinBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 92)
+			joinBtn.AutoButtonColor = true; joinBtn.Active = true
+			joinStroke.Color = Color3.fromRGB(150, 235, 160)
+		end
+		-- Pill copy: "NEXT UP" when longest-waiting, "#N in line" when queued, plain "Spectating" otherwise.
+		if type(pos) == "number" and pos == 1 then
+			specLabel.Text = "Spectating \u{2014} NEXT UP!"; specStroke.Color = Color3.fromRGB(150, 235, 160)
+		elseif type(pos) == "number" and pos > 0 then
+			specLabel.Text = "Spectating \u{2014} #" .. tostring(pos) .. " in line"; specStroke.Color = Color3.fromRGB(255, 210, 80)
+		else
+			specLabel.Text = "Spectating"; specStroke.Color = Color3.fromRGB(255, 210, 80)
+		end
 	end
 end
 
@@ -156,9 +186,16 @@ joinBtn.Activated:Connect(function()
 	JoinRequest:FireServer()
 end)
 
-renderJoinButton()
-LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderJoinButton)
-LocalPlayer:GetAttributeChangedSignal("QueuePos"):Connect(renderJoinButton)
+leaveBtn.Activated:Connect(function()
+	-- Only request a leave while actually seated (the server re-validates + frees/backfills the seat).
+	if not isSeated() then return end
+	LeaveRequest:FireServer()
+end)
+
+renderLobbyHud()
+LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderLobbyHud)
+LocalPlayer:GetAttributeChangedSignal("QueuePos"):Connect(renderLobbyHud)
+LocalPlayer:GetAttributeChangedSignal("Rank"):Connect(renderLobbyHud)
 
 -- Mouse-wheel zoom: 0 = zoomed out (default high view), 1 = zoomed in. Scroll up to zoom in.
 local zoom = 0

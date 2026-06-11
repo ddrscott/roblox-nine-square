@@ -175,8 +175,28 @@ spectate + auto-join, and the server stays authoritative. The pieces:
   state: **"Join Game"** → **"In queue (#N)"** (full) → **hidden** once seated (the seated camera/HUD takes
   over). The M5.2 **proactive "auto-seat spectators into bot seats" sweep is disabled** so lobby watchers are
   never pulled into the court without tapping; **leave→backfill** (queued joiner first, else bot) is kept.
-  Seated players return to the lobby only on disconnect. With **0 humans** the 9 bots play a full, watchable
-  game from the lobby's vantage.
+  With **0 humans** the 9 bots play a full, watchable game from the lobby's vantage.
+- **Leave → Spectate (step off the court).** The counterpart to Join Game: a **seated** human (Rank > 0, not
+  Spectating) sees a **"Leave → Spectate"** button that fires a `LeaveRequest` `RemoteEvent` (self-healed
+  alongside `JoinRequest`). The **server** handler frees their seat via `unseatHuman` — the same `_backfillHook`
+  seats the longest-waiting queued spectator, else a bot, so the **rank is never empty** — then
+  `parkLobbyWatcher` returns them to the gallery lobby (Spectating = true, no rank, roam camera, Join Game
+  available again); they re-enter later via Join at the entry rank. If the **King** leaves this way while the
+  ball is parked for a hover-serve, it **re-serves** for the new King (the same wedge guard as the disconnect
+  path), so the loop never wedges. Server-authoritative — the client only requests.
+- **Right-side lobby UI (under the scoreboard).** Join Game, the new Leave → Spectate button, and the
+  Spectating / queue pill live in one **right-anchored** `ScreenGui` (`LobbyHud`) stacked vertically **beneath
+  the scoreboard** (the stats panel is top-right), so they no longer cover the centre of the view and stay clear
+  of the bottom-right mobile camera-mode toggle + the default touch jump button. Compact widths/heights on a
+  touch/portrait session; layout tunables are `GridConfig.lobbyUI*`.
+- **Fully enclosed foyer (can't fall out).** A roaming spectator stays contained anywhere in the gallery. The
+  central opening has its invisible cap (below); the **outer foyer** is enclosed by the four full-span
+  perimeter **fall-out walls** (`GalWallN/S/E/W`, `galleryWallHeight = 24` studs — well above a default
+  ~7-stud spectator jump — meeting the floor with no gap) + the `GalRoof` on top, while the floor **ring** tiles
+  fully around the opening (the N/S bands run the full X span, so the opening corners are floored). Verified by
+  walking/shoving the character against every edge + corner in Play (stays contained, never falls to the court
+  or off the building). These barriers live in the `Gallery` folder **outside** `NineSquare.Frame`, so they're
+  **not** in the ball/player court collision set (the gallery sits above the court).
 - **Invisible opening barrier.** A transparent (`Transparency=1`), `CanCollide`, anchored cap
   (`Gallery.OpeningBarrier`) spans the gallery floor opening at `galleryFloorY`, so lobby watchers **can't fall
   through** into the play area while the downward sightline stays clear. Teleporting a seated player **down** to
