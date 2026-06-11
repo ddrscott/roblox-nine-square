@@ -6,10 +6,18 @@ server** (`StudioMCP`, which ships inside Roblox Studio).
 
 ## Status
 
-**Milestone M4 (bots fill the empty squares; solo play fully functional) — complete** (accepted
-2026-06-10). M1 greybox is tagged `m1-greybox`; M2 folded into the M1 contact model; M3 built the
-grid + rotation + dethrone. **M5 (networking hardening / anti-cheat) is next.** Solo play in the place
-**"9 Square Beta"** is now a full game: the 8 non-human squares are **bots** that serve (when King) and
+**Milestone M5 (multiplayer + lobby) — complete** (closed out 2026-06-10). M1 greybox is tagged
+`m1-greybox`; M2 folded into the M1 contact model; M3 built the grid + rotation + dethrone; M4 made solo
+play a full game with bots. **M5** turns it into a build you can play with friends: **multiple real
+players** share the 9-square at once, **bots backfill** every empty seat, overflow players **spectate** from
+an upper-floor gallery and **auto-join** the next freed seat, the server is hardened to be **authoritative**
+enough to trust in a real session, and the lobby is **legible** — seat nameplates, a spectator/queue HUD,
+and brief join/leave/rotation feedback. See **["M5 multiplayer + lobby"](#m5--multiplayer--lobby) below** and
+the **["How to test with friends"](#how-to-test-with-friends) checklist**. **M6 (progression / leaderboard /
+audio-VFX / mobile) is next.**
+
+Solo play in the place **"9 Square Beta"** is still a full game: the non-human squares are **bots** that
+serve (when King) and
 **physically hit** incoming balls — bots are now **real hitters**, not an artificial launch. Each bot
 that intercepts a descending ball gets a moving **hit-sphere collider** (the same `{center, radius, vel}`
 shape the human carries), driven to an **off-center stand** relative to the ball and then **driven up and
@@ -42,7 +50,8 @@ M3 loop / rank HUD / camera are unchanged.
 - M1 design spec: [`docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md`](docs/superpowers/specs/2026-06-09-nine-square-m1-greybox-design.md)
 - M1 plan: [`docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md`](docs/superpowers/plans/2026-06-09-nine-square-m1-greybox.md)
 - **M3 design spec** (done): [`docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m3-rotation-design.md)
-- **M4 design spec** (current): [`docs/superpowers/specs/2026-06-10-nine-square-m4-bots-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m4-bots-design.md)
+- **M4 design spec** (done): [`docs/superpowers/specs/2026-06-10-nine-square-m4-bots-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m4-bots-design.md)
+- **M5 design spec** (done): [`docs/superpowers/specs/2026-06-10-nine-square-m5-multiplayer-design.md`](docs/superpowers/specs/2026-06-10-nine-square-m5-multiplayer-design.md)
 
 ## Build milestones (PRD §15)
 
@@ -54,8 +63,9 @@ M3 loop / rank HUD / camera are unchanged.
    expressive (revisit only if play ever feels too predictable).
 3. **M3** — Full grid + rotation + dethrone.  ✅ *done (accepted 2026-06-10)*
 4. **M4** — Bots fill empty squares; solo play fully functional.  ✅ *done (accepted 2026-06-10)*
-5. **M5** — Networking hardening / anti-cheat.  ← *current*
-6. **M6** — Progression, leaderboard, audio/VFX, mobile tuning.
+5. **M5** — Multiplayer + lobby (multi-human seating, bot backfill, spectator queue, gallery,
+   server-authority hardening, lobby UX).  ✅ *done (2026-06-10)*
+6. **M6** — Progression, leaderboard, audio/VFX, mobile tuning.  ← *next*
 
 ## Key design decisions (evolutions from the PRD)
 
@@ -96,8 +106,54 @@ M3 loop / rank HUD / camera are unchanged.
     the place. To keep the nicer benches, that template must persist in `ReplicatedStorage`. The railing
     around the opening is code-built (deterministic fall-guard) rather than asset-based.
 
+## M5 — multiplayer + lobby
+
+The build is playable with friends: 2–9 humans share the court, bots backfill the rest, overflow players
+spectate + auto-join, and the server stays authoritative. The pieces:
+
+- **Occupancy / seating (humans fill, bots backfill).** A **seat** is a rank 1..9 ↔ cell (King = rank 1 = C).
+  `RotationService.byRank[1..9]` is the single source of truth — each seat holds either a **human `Player`**
+  or a **bot** rig. Every seat starts as a bot, so it's **always a full 9-square**. A joining human takes the
+  **entry rank** (the highest-numbered seat a bot still holds, farthest from the King) by **displacing that
+  bot** — so everyone starts at the bottom and earns their way to C. Humans always outrank bots. Rotation,
+  serve, and dethrone are unchanged mechanically and work for **any** mix of humans and bots (any human King
+  hover-serves; any bot King auto-serves).
+- **Spectator overflow + auto-join (FIFO queue).** Spectators exist only when **humans > 9**. Extra joiners go
+  into a server **FIFO queue** and spawn in the gallery. When a seat frees (a human leaves, or a bot still
+  holds a seat while someone waits), the **longest-waiting** spectator is auto-seated at the entry rank. A
+  `Spectating` flag + 1-based `QueuePos` are replicated per spectator so the client shows the overlook camera
+  + a "Spectating — #N in line / NEXT UP!" HUD; the instant the server seats them, they flip back to a normal
+  seated camera/HUD. **Spectators never affect the ball** (their colliders are excluded from `bc:step` every
+  frame, re-checked against the live occupancy model).
+- **Upper-floor gallery** — see the spectator-gallery note under *Key design decisions* above (M5.3).
+- **Server-authority / anti-cheat.** The server owns the ball, contact resolution, scoring, seats, rotation,
+  serve, and the queue; the client only *proposes* its character pos/velocity. `HitResolver` **clamps** each
+  player's strike velocity to a plausible max, **caps the per-frame centre jump** (anti-teleport), and bounds
+  the contribution against a **server-mirrored stamina pool** — so a spoofed HRP can't manufacture a super-hit
+  or warp into the ball. Disconnects mid-rally / mid-serve / while King are handled so the queue + backfill
+  never wedge (no empty seats, no double-seating, no lost ball; a King leaving mid-hover-serve re-serves for
+  the new King). Inputs from unseated players are ignored.
+- **Lobby UX (M5.6) — make the table legible.** Three server-authoritative, lightweight surfaces over the
+  existing occupancy model (no gameplay logic changed — UX only):
+  - **Seat nameplates.** `RotationService` builds a `workspace.NineSquare.Nameplates` folder — one
+    `BillboardGui` per cell (fixed anchor, labels the *seat* not the moving body) — and **relabels them off
+    `byRank` on every occupancy change** (join / leave / auto-seat / rotation). Each plate shows a human's
+    **DisplayName** (cyan) or **"Bot"** (violet); the **King's plate is gold + crowned (`👑`)**. Server-built,
+    so it replicates to every client for free and never trusts the client for who's King.
+  - **Spectator / queue HUD.** Spectators see "Spectating — #N in line", promoted to **"NEXT UP!"** (green) at
+    position 1; the rank pill hides while spectating and returns on auto-seat.
+  - **Join / leave / rotation feedback.** A `HudEvent` `RemoteEvent` carries `{ kind, text, tone }`; the
+    client renders a short-lived **toast** under the rank pill (capped to 4 stacked lines so a burst never
+    spams). The server fires it on join, leave, queue auto-seat, dethrone, taking the King, and a player's own
+    rank change ("Moved up — now Rank N" / "Faulted — back to Rank 9"). The whole table sees join/leave; the
+    King/rank nudges are personal.
+  - Tunables (`nameplate*`) live in `GridConfig`.
+
 ## Known issues / next steps
 
+- **OOB / pipe-escape edge case (tracked separately).** On certain outer-bot out-of-bounds hits the ball can
+  fly to a very large Y and the deferred rotation can fail to resolve / wedge the rally. Not addressed in M5.6
+  (UX/docs only) — left as a separate item to fix in the physics/rotation path.
 - **Pipe/wall collision is dormant.** `BallController:_collide` correctly bounces the ball off the
   frame pipes + gym walls, BUT with the current high apex (~24) vs frame height (11) the ball arcs
   4–6 studs clear of every pipe and never reaches the walls — so it visually passes through the
@@ -108,6 +164,37 @@ M3 loop / rank HUD / camera are unchanged.
 - `Lighting.Technology` can't be set by script — set it to **ShadowMap/Future** in Studio Properties
   if you want real dynamic shadows (painted grid lines mean you don't strictly need it).
 
+## How to test with friends
+
+A checklist for a real multi-player session in **"9 Square Beta"**:
+
+1. **Publish + start.** Publish the place (the git repo is code-of-record; the place holds the build), then
+   either run a **Studio "Local Server" test** with 2–4 simulated players (Studio → Test → *Start* with
+   *Players* = N, *Server* mode) **or** join the published place from multiple devices/accounts.
+2. **Seats fill bottom-up.** The first human takes **Rank 9 / NW** (the entry seat, farthest from the King),
+   displacing a bot; each additional human takes the next-highest bot seat. Bots backfill everything else, so
+   it's **always a full 9-square**. Confirm each player's **nameplate** shows their name over their seat, and
+   the **King's plate is gold + crowned** (`👑`).
+3. **Climb + rotate.** Rally the ball; on a fault the grid rotates one step toward the King. Watch your **rank
+   pill** update and a brief **toast** appear ("Moved up — now Rank N" when you advance, "Faulted — back to
+   Rank 9" when you're knocked out). Take the center square to become **King** ("You're the KING! 👑").
+4. **Dethrone.** Fault while King → you drop to Rank 9 and the next occupant takes C; the whole table gets a
+   "X takes the throne" toast and the King square flashes.
+5. **Overflow → spectating.** Add a **10th** player: with all 9 seats human they spawn in the **upper gallery**
+   and see **"Spectating — #N in line"** (the longest-waiting shows **"NEXT UP!"**). They look straight down
+   onto the court through the gallery opening and **cannot affect the ball**.
+6. **Auto-join.** Have a seated player **leave**. The longest-waiting spectator is **auto-seated** into the
+   freed rank ("You're in! Seated at Rank N") and the line re-indexes. With no spectator waiting, a fresh bot
+   backfills — a seat is never empty.
+7. **What to look for:** every seat labeled (human name or "Bot"), King unmistakable, ranks shift cleanly on
+   faults, the queue HUD counts down, no errors in the Output, and **no wedged rally** (see the OOB note under
+   *Known issues* — if the ball ever flies off to a huge height and the rally stalls, that's the tracked
+   edge case, not your test).
+
+Verify over MCP: `start_stop_play`, `get_console_output` for the `[NineSquare]` / `[Rotation]` logs, and
+`execute_luau` against the **Server** datamodel to read `workspace.NineSquare.Nameplates` + each player's
+`Rank` / `Spectating` / `QueuePos` attributes (the authoritative data the HUD reflects).
+
 ## Layout
 
 - `src/shared/GridConfig.luau` — dimensions + pure grid/contact math (all tunables).
@@ -115,12 +202,18 @@ M3 loop / rank HUD / camera are unchanged.
   collision), `MatchService` (builds gym + court, player-cell lookup), `HitResolver` (the human's moving
   hit-sphere colliders), `RotationService` (9-rank occupancy + R15 bot rigs cloned from
   `ReplicatedStorage.BotRigTemplate` + layered idle/walk/run/jump anim tracks + `driveOccupant`/`restOccupant`
-  rig sync + rotation/dethrone), `BotController` (per-Heartbeat physical bot hitter: predicts the contact,
-  drives an off-center hit-sphere collider into the ball along the aim line, misses by under-driving;
-  returns colliders merged into `bc:step`), `NineSquareServer` (bootstrap + Heartbeat + the king-of-the-hill
-  loop; merges human + bot colliders into `bc:step`).
-- `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera.
-- `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side).
+  rig sync + rotation/dethrone; also owns the **M5.6 seat nameplates** — builds `workspace.NineSquare.Nameplates`
+  and relabels them off `byRank` on every occupancy change), `BotController` (per-Heartbeat physical bot hitter:
+  predicts the contact, drives an off-center hit-sphere collider into the ball along the aim line, misses by
+  under-driving; returns colliders merged into `bc:step`), `NineSquareServer` (bootstrap + Heartbeat + the
+  king-of-the-hill loop; merges human + bot colliders into `bc:step`; owns the **M5.1/M5.2 join/leave +
+  spectator FIFO queue**, the **M5.4 trust boundary**, and the **M5.6 `HudEvent` feed** — fires join / leave /
+  auto-seat / dethrone / King / rank-change toasts).
+- `src/client/NineSquareClient.client.luau` — shadow, strike ring, highlight, camera, **spectator overlook
+  camera + queue HUD** ("Spectating — #N in line / NEXT UP!").
+- `src/client/RankHud.client.luau` — server-authoritative rank pill + King-square indicator + the **M5.6 HUD
+  toast feed** (renders `HudEvent` notes; hides the pill while spectating).
+- `src/client/Movement.client.luau` — dash, double-jump flip, stamina + HUD bar (client-side, server-validated).
 - `docs/` — PRD, specs, plans.
 
 ## Continuing on another machine (e.g. Mac)

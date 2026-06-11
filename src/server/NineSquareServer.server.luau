@@ -101,6 +101,29 @@ local function placeOnePlayer(player: Player, cell: string)
 	if player.Character then placeAtCell(player.Character, cell) end
 end
 local rotation = RotationService.new(placeOnePlayer)
+
+-- ============================================================================================
+-- M5.6 -- HUD EVENT FEED. Brief, non-spammy on-screen feedback for the lobby moments a player needs to
+-- read: a player joined/left, a spectator was auto-seated, someone was dethroned, someone took the King.
+-- Server-authoritative: the server decides WHEN these fire (off the same occupancy model that drives
+-- nameplates + rotation), and the client only renders a short-lived toast. We add a `HudEvent`
+-- RemoteEvent under the existing NineSquareRemotes folder (self-healed here so a fresh place still works).
+--   payload = { kind = "join"|"leave"|"seated"|"dethrone"|"king"|"rank", text = string, tone = string? }
+-- `tone` ("good"|"bad"|"neutral") just colours the toast. fireHud(plr) targets one client; broadcastHud()
+-- goes to everyone (join/leave the whole table should see). Pure notification -- no rules ride on it.
+local Remotes = RS:WaitForChild("NineSquareRemotes")
+local HudEvent = Remotes:FindFirstChild("HudEvent")
+if not HudEvent then
+	HudEvent = Instance.new("RemoteEvent")
+	HudEvent.Name = "HudEvent"
+	HudEvent.Parent = Remotes
+end
+local function fireHud(plr: Player, kind: string, text: string, tone: string?)
+	if plr and plr.Parent then HudEvent:FireClient(plr, { kind = kind, text = text, tone = tone }) end
+end
+local function broadcastHud(kind: string, text: string, tone: string?)
+	HudEvent:FireAllClients({ kind = kind, text = text, tone = tone })
+end
 -- Replicate EACH seated player's OWN rank (server-authoritative; per-player now -- a human/bot mix means
 -- every human reads ITS seat). The client HUD (RankHud) observes the player's "Rank" attribute and shows
 -- "Rank N" / "KING".
@@ -180,6 +203,9 @@ rotation._backfillHook = function(rank: number, cell: string): any
 	nextPlr:SetAttribute("Rank", rank)                 -- replicate its new seat to the (now seated) client
 	print(("[NineSquare] AUTO-SEAT: %s (longest-waiting spectator) -> freed rank %d (%s)")
 		:format(nextPlr.Name, rank, cell))
+	-- M5.6 HUD feed: tell the auto-seated spectator they're in (personal) + the table they joined the court.
+	fireHud(nextPlr, "seated", "You're in! Seated at Rank " .. tostring(rank), "good")
+	broadcastHud("seated", nextPlr.DisplayName .. " joined the court from the queue", "neutral")
 	return {
 		kind = "human", player = nextPlr, id = "human_" .. tostring(nextPlr.UserId),
 		isDummy = false, rank = rank, cell = cell,
@@ -257,6 +283,13 @@ rotation.onDethrone = function(newKing)
 	print("[NineSquare] DETHRONED -- " .. newKing.id .. " takes the throne (rank 1 / C)")
 	MatchService.flashCell("C")
 	playDethrone()
+	-- M5.6 HUD feed: tell the new King they took the throne (personal "good"), and let the table know who
+	-- reigns now (broadcast). The old King's "you were dethroned" nudge fires from the rotation feed below.
+	local kingName = (newKing.kind == "human" and newKing.player) and newKing.player.DisplayName or "A bot"
+	if newKing.kind == "human" and newKing.player then
+		fireHud(newKing.player, "king", "You're the KING! \u{1F451}", "good")
+	end
+	broadcastHud("dethrone", kingName .. " takes the throne", "neutral")
 end
 
 -- ============================================================================================
@@ -384,7 +417,29 @@ bc.onRest = function()
 		local faultRank = pendingFaultRank
 		pendingFaultRank = nil
 		print(("[NineSquare] ball at rest -- applying deferred rotation (rank %d)"):format(faultRank))
+		-- M5.6 HUD feed: snapshot each seated human's rank BEFORE the shift so we can tell them how they
+		-- moved AFTER it. (onDethrone already covers the new King + dethrone broadcast; here we cover the
+		-- "you advanced toward the King" / "you faulted -> back to entry" personal nudges for everyone else.)
+		local before: { [Player]: number } = {}
+		for r = 1, 9 do
+			local o = rotation.byRank[r]
+			if o and o.kind == "human" and o.player then before[o.player] = r end
+		end
 		rotation:rotateOnFault(faultRank)
+		for r = 1, 9 do
+			local o = rotation.byRank[r]
+			if o and o.kind == "human" and o.player then
+				local was = before[o.player]
+				if was and r ~= was then
+					if r == 9 and was ~= 9 then
+						fireHud(o.player, "rank", "Faulted \u{2014} back to Rank 9", "bad")
+					elseif r < was and r ~= 1 then
+						-- moved UP toward the King (rank 1's "you're King" toast is handled by onDethrone)
+						fireHud(o.player, "rank", "Moved up \u{2014} now Rank " .. tostring(r), "good")
+					end
+				end
+			end
+		end
 	end
 	task.delay(G.serveDelay, function()
 		if bc.phase == "Rest" and not rallyArmed then
@@ -469,12 +524,18 @@ local function onJoin(plr: Player)
 		plr:SetAttribute("Spectating", false)
 		plr:SetAttribute("QueuePos", 0)
 		print(("[NineSquare] %s joined -> seated at rank %d (%s)"):format(plr.Name, rank, tostring(rotation:cellOfPlayer(plr))))
+		-- M5.6 HUD feed: welcome the joiner (personal) + tell the table someone joined (broadcast).
+		fireHud(plr, "join", "Seated at Rank " .. tostring(rank) .. " \u{2014} climb to the throne!", "good")
+		broadcastHud("join", plr.DisplayName .. " joined the game", "neutral")
 	else
 		-- Overflow (all 9 seats are humans): no seat -> SPECTATOR. Push onto the FIFO queue (sets the
 		-- Spectating/QueuePos attributes + parks them clear of the court) and auto-join the next freed seat.
 		plr:SetAttribute("Rank", 0)
 		enqueueSpectator(plr)
 		print(("[NineSquare] %s joined -> SPECTATOR #%d (overflow)"):format(plr.Name, #spectatorQueue))
+		-- M5.6 HUD feed: tell the overflow joiner they're spectating + their place in line.
+		fireHud(plr, "join", "All 9 seats full \u{2014} spectating, #" .. tostring(#spectatorQueue) .. " in line", "neutral")
+		broadcastHud("join", plr.DisplayName .. " is spectating (#" .. tostring(#spectatorQueue) .. " in line)", "neutral")
 	end
 	-- Bind this player's character to its seat on (re)spawn.
 	if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
@@ -491,8 +552,12 @@ local function onLeave(plr: Player)
 		dequeueSpectatorPlayer(plr)
 		print(("[NineSquare] %s left the spectator queue (line re-indexed; %d still waiting)")
 			:format(plr.Name, #spectatorQueue))
+		broadcastHud("leave", plr.DisplayName .. " left the queue", "neutral")
 		return
 	end
+	-- M5.6 HUD feed: a seated human left -> tell the table (the auto-seat/backfill nudge for whoever fills
+	-- the seat fires from the backfill hook above).
+	broadcastHud("leave", plr.DisplayName .. " left the game", "neutral")
 	-- M5.4 lifecycle robustness: was THIS leaver the current King? Capture it BEFORE the backfill so we can
 	-- recover a wedged hover-serve below (the King left while the ball hovered at C waiting for its
 	-- jump-serve that will now never come). Mid-rally/mid-settle leaves are already safe: the onLand/onRest

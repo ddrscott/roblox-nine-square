@@ -394,6 +394,19 @@ GridConfig.saveHighlightTransparency = 0.55  -- partial transparency on the (Neo
 GridConfig.saveHighlightThickness = 0.9   -- edge-segment cross-section (a touch fatter than beamThickness so it reads as a glow over the pipe)
 GridConfig.saveHighlightYOffset = 0.15    -- studs above frameHeight so the overlay sits just proud of the frame beams (no z-fight)
 
+-- ── Seat nameplates (M5.6) ──────────────────────────────────────────────────────────────────────
+-- A BillboardGui floats over each of the 9 seats showing WHO occupies it (a human's name or "Bot") so a
+-- table of friends can tell themselves apart and read the rotation. The King's plate is gold + crowned.
+-- The plates are server-built+driven (RotationService owns the occupancy model) under a fixed anchor per
+-- cell, so they replicate to every client automatically and never depend on client trust. Cosmetic only:
+-- the anchors are non-colliding, non-querying, invisible parts OUTSIDE the ball/player collision sets.
+GridConfig.nameplateHeight = GridConfig.frameHeight + 3   -- studs above the cell floor the plate floats at (above the frame pipes)
+GridConfig.nameplateSize = Vector2.new(7, 1.6)            -- BillboardGui size in studs (width, height)
+GridConfig.nameplateKingColor = Color3.fromRGB(255, 210, 80)   -- King plate text/stroke gold (matches the RankHud KING colour)
+GridConfig.nameplateHumanColor = Color3.fromRGB(120, 220, 255) -- a seated human's plate text (matches the rank pill cyan)
+GridConfig.nameplateBotColor = Color3.fromRGB(190, 175, 230)   -- a bot's plate text (a muted violet -- clearly "not a person")
+GridConfig.nameplateMaxDistance = 220                     -- studs the plate stays visible to (covers the gallery overlook)
+
 function GridConfig.cellForRank(rank: number): string
 	local cell = GridConfig.rankCells[rank]
 	assert(cell, "no cell for rank " .. tostring(rank))

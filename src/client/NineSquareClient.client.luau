@@ -85,9 +85,17 @@ local function renderSpectatorHud()
 	specGui.Enabled = spectating
 	if spectating then
 		local pos = LocalPlayer:GetAttribute("QueuePos")
-		specLabel.Text = (type(pos) == "number" and pos > 0)
-			and ("Spectating  --  #" .. tostring(pos) .. " in line")
-			or "Spectating"
+		if type(pos) == "number" and pos == 1 then
+			-- Longest-waiting: you take the next freed seat. Make the "you're up next" read unmistakable.
+			specLabel.Text = "Spectating  --  NEXT UP!"
+			specStroke.Color = Color3.fromRGB(150, 235, 160)
+		elseif type(pos) == "number" and pos > 0 then
+			specLabel.Text = "Spectating  --  #" .. tostring(pos) .. " in line"
+			specStroke.Color = Color3.fromRGB(255, 210, 80)
+		else
+			specLabel.Text = "Spectating"
+			specStroke.Color = Color3.fromRGB(255, 210, 80)
+		end
 	end
 end
 

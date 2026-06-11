@@ -9,6 +9,7 @@
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local G = require(RS.GridConfig)
+local Remotes = RS:WaitForChild("NineSquareRemotes")
 local LocalPlayer = Players.LocalPlayer
 
 -- ── (A) Rank readout ────────────────────────────────────────────────────────────────────────────
@@ -90,3 +91,61 @@ task.spawn(function()
 		task.wait(1)
 	end
 end)
+
+-- ── (C) HUD event toast feed (M5.6) ───────────────────────────────────────────────────────────────
+-- Brief, non-spammy on-screen notes for the lobby moments: a player joined/left, an auto-seat from the
+-- queue, a dethrone, taking the King, or this player's own rotation. The server (authoritative) fires
+-- HudEvent with { kind, text, tone }; we render a short-lived toast under the rank pill, capped to a few
+-- stacked lines so a burst (e.g. several joins) never spams the screen. Display only -- no rules here.
+local HudEvent = Remotes:FindFirstChild("HudEvent")
+if not HudEvent then HudEvent = Remotes:WaitForChild("HudEvent", 10) end
+
+if HudEvent then
+	local toastHolder = Instance.new("Frame")
+	toastHolder.Name = "ToastHolder"; toastHolder.AnchorPoint = Vector2.new(0.5, 0)
+	toastHolder.Position = UDim2.new(0.5, 0, 0, 64); toastHolder.Size = UDim2.fromOffset(340, 160)
+	toastHolder.BackgroundTransparency = 1; toastHolder.Parent = gui
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 4); layout.Parent = toastHolder
+
+	local TONE_COLOR = {
+		good = Color3.fromRGB(150, 235, 160),
+		bad = Color3.fromRGB(255, 140, 120),
+		neutral = Color3.fromRGB(225, 230, 238),
+	}
+	local MAX_TOASTS = 4          -- cap stacked lines so a burst never floods the screen
+	local TOAST_SECONDS = 3.2     -- how long each note lingers before it fades
+	local seq = 0
+
+	local function showToast(text: string, tone: string?)
+		-- Trim the oldest if we're at the cap (oldest = lowest LayoutOrder still present).
+		local kids = {}
+		for _, c in ipairs(toastHolder:GetChildren()) do
+			if c:IsA("TextLabel") then table.insert(kids, c) end
+		end
+		if #kids >= MAX_TOASTS then
+			table.sort(kids, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+			kids[1]:Destroy()
+		end
+
+		seq += 1
+		local toast = Instance.new("TextLabel")
+		toast.LayoutOrder = seq; toast.Size = UDim2.fromOffset(340, 28)
+		toast.BackgroundColor3 = Color3.fromRGB(20, 22, 28); toast.BackgroundTransparency = 0.25
+		toast.BorderSizePixel = 0; toast.Font = Enum.Font.GothamMedium; toast.TextSize = 15
+		toast.TextColor3 = TONE_COLOR[tone or "neutral"] or TONE_COLOR.neutral
+		toast.Text = text; toast.Parent = toastHolder
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = toast
+
+		task.delay(TOAST_SECONDS, function()
+			if toast and toast.Parent then toast:Destroy() end
+		end)
+	end
+
+	HudEvent.OnClientEvent:Connect(function(payload)
+		if type(payload) == "table" and type(payload.text) == "string" then
+			showToast(payload.text, payload.tone)
+		end
+	end)
+end

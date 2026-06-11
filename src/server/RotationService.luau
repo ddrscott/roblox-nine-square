@@ -88,6 +88,8 @@ export type RotationService = typeof(setmetatable(
 		_setHumanRank: ((player: Player, rank: number) -> ())?,  -- injected: replicate a player's rank
 		_backfillHook: ((rank: number, cell: string) -> Occupant?)?, -- injected: M5.2 leave override (default bot)
 		_dummyFolder: Folder?,                   -- workspace.NineSquare.Dummies (holds every bot rig)
+		_nameplateFolder: Folder?,               -- workspace.NineSquare.Nameplates (one plate per seat, M5.6)
+		_nameplates: { [number]: BillboardGui },  -- rank -> that seat's nameplate gui (M5.6)
 		onDethrone: ((newKing: Occupant) -> ())?,  -- optional: fires when the King (rank 1) faults
 	},
 	RotationService
@@ -106,6 +108,8 @@ function RotationService.new(placeHuman: (player: Player, cell: string) -> ()): 
 		_botSeq = 0,
 		_placeHuman = placeHuman,
 		_dummyFolder = nil,
+		_nameplateFolder = nil,
+		_nameplates = {},
 	}, RotationService)
 
 	-- Fresh "Dummies" folder for the rigs (rebuilt each construction, like the arena builders).
@@ -122,7 +126,94 @@ function RotationService.new(placeHuman: (player: Player, cell: string) -> ()): 
 	for rank = 1, RANKS do
 		self.byRank[rank] = self:_makeBot(rank)
 	end
+
+	-- M5.6: build the 9 seat nameplates (server-built -> replicate to every client). Then label them.
+	self:_buildNameplates()
+	self:_refreshNameplates()
 	return self
+end
+
+-- ============================================================================================
+-- M5.6 -- SEAT NAMEPLATES. A BillboardGui floats over each of the 9 cells showing WHO sits there (a
+-- human's display name or "Bot"); the King's plate is gold + crowned. The plates are SERVER-built and
+-- SERVER-driven off `byRank` (the authoritative occupancy model), so they replicate to every client for
+-- free and never trust the client for who's King / who's in a square. The anchors are fixed per cell
+-- (one per rank's home square) -- they do NOT track the moving rig/character, they just label the seat --
+-- and are non-colliding / non-querying / invisible, OUTSIDE the ball+player collision sets (cosmetic only).
+-- ============================================================================================
+
+-- Build the 9 fixed plate anchors + their BillboardGuis (one per cell). Called once in .new(); the text
+-- is (re)set by _refreshNameplates whenever occupancy changes (join/leave/auto-seat/rotation).
+function RotationService._buildNameplates(self: RotationService)
+	local ns = workspace:FindFirstChild("NineSquare")
+	if not ns then return end
+	local old = ns:FindFirstChild("Nameplates"); if old then old:Destroy() end
+	local folder = Instance.new("Folder"); folder.Name = "Nameplates"; folder.Parent = ns
+	self._nameplateFolder = folder
+	self._nameplates = {}
+
+	for rank = 1, RANKS do
+		local cell = G.cellForRank(rank)
+		-- A tiny invisible anchor at the cell's centre, up at nameplate height -- the plate's adornee.
+		local anchor = Instance.new("Part")
+		anchor.Name = "PlateAnchor_" .. tostring(rank)
+		anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+		anchor.Transparency = 1; anchor.Anchored = true; anchor.CanCollide = false; anchor.CanQuery = false
+		anchor.CastShadow = false
+		anchor.Position = G.cellCenter(cell) + Vector3.new(0, G.nameplateHeight, 0)
+		anchor.Parent = folder
+
+		local gui = Instance.new("BillboardGui")
+		gui.Name = "Plate_" .. tostring(rank)
+		gui.Size = UDim2.fromScale(G.nameplateSize.X, G.nameplateSize.Y)
+		gui.StudsOffsetWorldSpace = Vector3.new(0, 0, 0)
+		gui.AlwaysOnTop = false
+		gui.MaxDistance = G.nameplateMaxDistance
+		gui.LightInfluence = 0
+		gui.Adornee = anchor
+		gui.Parent = anchor
+
+		local label = Instance.new("TextLabel")
+		label.Name = "Label"; label.BackgroundTransparency = 1
+		label.Size = UDim2.fromScale(1, 1); label.Font = Enum.Font.GothamBold
+		label.TextScaled = true; label.TextColor3 = G.nameplateBotColor
+		label.Text = "Bot"; label.Parent = gui
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 2.5; stroke.Color = Color3.fromRGB(10, 12, 16); stroke.Transparency = 0.15
+		stroke.Parent = label
+
+		self._nameplates[rank] = gui
+	end
+end
+
+-- (Re)label every seat plate from the current occupancy: human -> display name, bot -> "Bot"; the King
+-- (rank 1) gets a gold crown prefix + gold text so the throne is unmistakable from any client. Called on
+-- every occupancy change (placeAll / join / leave / auto-seat / rotation). Server-authoritative; the text
+-- comes from `byRank` (no client input). Safe if the plates haven't been built (e.g. arena missing).
+function RotationService._refreshNameplates(self: RotationService)
+	for rank = 1, RANKS do
+		local gui = self._nameplates[rank]
+		if gui then
+			local label = gui:FindFirstChild("Label") :: TextLabel?
+			if label then
+				local occ = self.byRank[rank]
+				local isKing = (rank == 1)
+				local who: string
+				if occ and occ.kind == "human" and occ.player then
+					who = occ.player.DisplayName
+				else
+					who = "Bot"
+				end
+				if isKing then
+					label.Text = "\u{1F451} " .. who          -- crown glyph + occupant on the throne
+					label.TextColor3 = G.nameplateKingColor
+				else
+					label.Text = who
+					label.TextColor3 = (occ and occ.kind == "human") and G.nameplateHumanColor or G.nameplateBotColor
+				end
+			end
+		end
+	end
 end
 
 -- The y-offset (from the cell floor up to the rig's HumanoidRootPart centre) that puts the rig's feet
@@ -462,6 +553,7 @@ function RotationService.placeAll(self: RotationService)
 		if occ then self:_placeOccupant(occ) end
 	end
 	self:_syncHumanRank()
+	self:_refreshNameplates()
 end
 
 -- ============================================================================================
@@ -512,6 +604,7 @@ function RotationService.seatHuman(self: RotationService, player: Player): numbe
 		:format(player.Name, rank, occ.cell, displaced.id))
 	self:_placeOccupant(occ)
 	self:_syncHumanRank()
+	self:_refreshNameplates()
 	return rank
 end
 
@@ -545,6 +638,7 @@ function RotationService.unseatHuman(self: RotationService, player: Player): Occ
 		:format(player.Name, rank, cell, replacement.kind, replacement.id))
 	self:_placeOccupant(replacement)
 	self:_syncHumanRank()
+	self:_refreshNameplates()
 	return replacement
 end
 
