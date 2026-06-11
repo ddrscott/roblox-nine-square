@@ -114,21 +114,120 @@ end)
 -- Shift toggles FOLLOW mode: the camera tracks the local player (keeps them centred) instead of the
 -- fixed court overview. Tap LeftShift / RightShift to toggle.
 local followMode = false
+local function setFollowMode(on: boolean) end   -- forward decl (touch button label sync); defined after the GUI exists
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
 	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
-		followMode = not followMode
+		setFollowMode(not followMode)
 	end
 end)
 
--- Court camera: high and behind (south), looking down at the grid. The mouse wheel zooms between each
--- mode's far (out) and near (in) offsets; zooming in raises the look target so the view pitches up and
--- shows less floor. In follow mode the offsets are tighter (gym-safe) and centred on the player. The
--- focus point eases (camFollowSmooth) so toggling modes / following glides smoothly.
+-- ── TOUCH / MOBILE camera parity (pinch-zoom + on-screen mode toggle + fit-the-grid) ────────────────
+-- Phones have no mouse wheel (zoom) and no Shift (follow toggle), and a narrow portrait FOV can't fit the
+-- wide 3x3 grid. We treat a touch-enabled, keyboard-less session as mobile and: (1) drive the SAME `zoom`
+-- 0..1 lerp via a two-finger pinch, (2) show a thumb-reachable button that toggles court<->follow (the
+-- LeftShift equivalent), and (3) DEFAULT the framing to "fit the grid" so opening on a phone shows the whole
+-- court (the per-frame fit logic lives in updateCamera). Desktop mouse-wheel + LeftShift are untouched.
+local isTouch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- Pinch-to-zoom: TouchPinch gives a cumulative `scale` (1 = no change; >1 = fingers spreading = pinch OUT).
+-- We integrate scale CHANGES into `zoom`. Pinch out (scale rising) zooms OUT (zoom -> 0); pinch in zooms IN.
+local lastPinchScale = 1
+UserInputService.TouchPinch:Connect(function(_touchPositions, scale, _velocity, gpState)
+	if gpState == Enum.UserInputState.Begin then
+		lastPinchScale = scale
+		return
+	end
+	local d = scale - lastPinchScale
+	lastPinchScale = scale
+	-- pinch OUT (d > 0) should DECREASE zoom (toward the wide court view) -> subtract
+	zoom = math.clamp(zoom - d * G.camPinchSensitivity, 0, 1)
+end)
+
+-- On-screen camera-mode toggle (touch only): the LeftShift equivalent. A small, thumb-reachable button that
+-- flips court-overview <-> follow and shows the current mode.
+if isTouch then
+	local camGui = Instance.new("ScreenGui")
+	camGui.Name = "MobileCameraControls"; camGui.ResetOnSpawn = false
+	camGui.IgnoreGuiInset = true; camGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+	local btn = Instance.new("TextButton")
+	btn.AnchorPoint = Vector2.new(1, 1)
+	btn.Position = UDim2.new(1, -16, 1, -120)   -- bottom-right, above the default touch jump button
+	btn.Size = UDim2.fromOffset(116, 54)
+	btn.BackgroundColor3 = Color3.fromRGB(20, 22, 28); btn.BackgroundTransparency = 0.2
+	btn.BorderSizePixel = 0; btn.AutoButtonColor = true
+	btn.Font = Enum.Font.GothamBold; btn.TextSize = 16
+	btn.TextColor3 = Color3.fromRGB(235, 240, 245)
+	btn.Text = "Camera\nCourt"; btn.Parent = camGui
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = btn
+	local s = Instance.new("UIStroke"); s.Thickness = 1.5
+	s.Color = Color3.fromRGB(255, 210, 80); s.Transparency = 0.35; s.Parent = btn
+
+	function setFollowMode(on: boolean)
+		followMode = on
+		btn.Text = on and "Camera\nFollow" or "Camera\nCourt"
+		s.Color = on and Color3.fromRGB(150, 235, 160) or Color3.fromRGB(255, 210, 80)
+	end
+	btn.Activated:Connect(function() setFollowMode(not followMode) end)
+	setFollowMode(false)
+else
+	-- Desktop: no GUI; setFollowMode just flips the flag (keeps the LeftShift path identical to before).
+	function setFollowMode(on: boolean) followMode = on end
+end
+
+-- On touch, fit the WHOLE grid when zoomed out. The four grid CORNERS (+ a margin) are at +/-gridHalfExtent
+-- in X and Z, in the court's local frame (offsets from the focus / court origin).
+local gridHalfExtent = 1.5 * G.squareSize + G.camFitMarginStuds
+local gridCorners = {
+	Vector3.new(-gridHalfExtent, 0, -gridHalfExtent), Vector3.new(gridHalfExtent, 0, -gridHalfExtent),
+	Vector3.new(-gridHalfExtent, 0, gridHalfExtent), Vector3.new(gridHalfExtent, 0, gridHalfExtent),
+}
+
+-- Fit-the-grid (touch): given the design eye/look offsets (relative to the focus = court origin) and the live
+-- viewport aspect, return an eye offset + FieldOfView so all four grid CORNERS fit on screen. The court cam is
+-- TILTED (high + south, looking down), so the near (south) corners sit closer and subtend a wider angle than a
+-- focus-distance approximation predicts -- we therefore project every corner and pull back until the WORST one
+-- fits, rather than using a closed-form distance. On a narrow portrait FOV we first widen FieldOfView up to
+-- camMobileMaxFOV, then (still too tight) pull the eye back ALONG ITS OWN DIRECTION (binary search), capped at
+-- camFitMaxDistScale. We never pull CLOSER than the design distance, so landscape/wide aspects keep the design
+-- framing. (Pulling back may put the eye outside the south wall -- the existing wall-fade handles that.)
+local function worstCornerFrac(eyeOffset: Vector3, lookOffset: Vector3, fov: number, aspect: number): number
+	local inv = CFrame.lookAt(eyeOffset, lookOffset):Inverse()   -- offset-space view (focus at the origin)
+	local tanV = math.tan(math.rad(fov) / 2)
+	local tanH = tanV * aspect
+	local worst = 0
+	for _, c in ipairs(gridCorners) do
+		local lp = inv * c
+		local depth = -lp.Z                       -- distance in front of the camera
+		if depth <= 0 then return math.huge end   -- corner behind the camera -> never "fits"
+		worst = math.max(worst, math.abs((lp.X / depth) / tanH), math.abs((lp.Y / depth) / tanV))
+	end
+	return worst   -- <= 1 means every corner is within the frustum
+end
+local function fitEyeForGrid(eyeOffset: Vector3, lookOffset: Vector3): (Vector3, number)
+	local vp = cam.ViewportSize
+	local aspect = (vp.Y > 0) and (vp.X / vp.Y) or 1
+	local fov = G.camBaseFOV
+	-- already fits at the design framing (landscape / wide) -> keep it exactly as-is
+	if worstCornerFrac(eyeOffset, lookOffset, fov, aspect) <= 1 then return eyeOffset, fov end
+	-- widen FOV (up to the mobile cap) to reduce how far we must pull back
+	fov = math.min(G.camMobileMaxFOV, fov)
+	if worstCornerFrac(eyeOffset, lookOffset, fov, aspect) <= 1 then return eyeOffset, fov end
+	-- still too tight: pull the eye back along its direction; binary-search the smallest scale that fits, capped
+	local lo, hi, best = 1.0, G.camFitMaxDistScale, G.camFitMaxDistScale
+	for _ = 1, 22 do
+		local mid = (lo + hi) / 2
+		local cand = lookOffset + (eyeOffset - lookOffset) * mid
+		if worstCornerFrac(cand, lookOffset, fov, aspect) <= 1 then best = mid; hi = mid else lo = mid end
+	end
+	return lookOffset + (eyeOffset - lookOffset) * best, fov
+end
+
 local currentFocus: Vector3? = nil
 local function updateCamera()
 	cam.CameraType = Enum.CameraType.Scriptable
-	cam.FieldOfView = 58
+	cam.FieldOfView = G.camBaseFOV
 	-- SPECTATOR (M5.2): a fixed high court-overlook looking straight down at the whole 9-square, so an
 	-- overflow player watches the match while they wait. (The mezzanine gallery view is M5.3; this is the
 	-- temporary overlook.) Eases via currentFocus so flipping in/out of spectator mode glides smoothly.
@@ -142,16 +241,29 @@ local function updateCamera()
 	local target, farEye, farLook, nearEye, nearLook
 	local char = LocalPlayer.Character
 	local hrp = followMode and char and char:FindFirstChild("HumanoidRootPart")
+	local courtView = false
 	if hrp then
 		target = Vector3.new(hrp.Position.X, courtOrigin().Y, hrp.Position.Z)
 		farEye, farLook, nearEye, nearLook = G.camFollowFarEye, G.camFollowFarLook, G.camFollowNearEye, G.camFollowNearLook
 	else
 		target = courtOrigin()
 		farEye, farLook, nearEye, nearLook = G.camFarEye, G.camFarLook, G.camNearEye, G.camNearLook
+		courtView = true
 	end
 	currentFocus = currentFocus and currentFocus:Lerp(target, G.camFollowSmooth) or target
 	local focus = currentFocus :: Vector3
-	cam.CFrame = CFrame.lookAt(focus + farEye:Lerp(nearEye, zoom), focus + farLook:Lerp(nearLook, zoom))
+	local eyeOffset = farEye:Lerp(nearEye, zoom)
+	local lookOffset = farLook:Lerp(nearLook, zoom)
+	-- TOUCH: when zoomed out, fit the whole grid (handles narrow portrait FOV). The fit only PULLS BACK /
+	-- widens FOV beyond the design framing, so it's a no-op on landscape/wide aspects, and we fade it out as
+	-- the player pinches IN (zoom -> 1) so close-up framing is unaffected.
+	if isTouch and courtView then
+		local fitEye, fitFov = fitEyeForGrid(eyeOffset, lookOffset)
+		local w = 1 - zoom   -- full fit when zoomed out, none when zoomed all the way in
+		eyeOffset = eyeOffset:Lerp(fitEye, w)
+		cam.FieldOfView = G.camBaseFOV + (fitFov - G.camBaseFOV) * w
+	end
+	cam.CFrame = CFrame.lookAt(focus + eyeOffset, focus + lookOffset)
 end
 
 -- Camera-occlusion fade: the Scriptable camera bypasses Roblox's built-in auto-transparency, so when the

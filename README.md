@@ -83,6 +83,17 @@ M3 loop / rank HUD / camera are unchanged.
   They feed the velocity-proportional strike directly (no special-casing): a dash into the ball is a
   hard directional drive, a flip meets the ball higher and spikes. Client-authoritative for now
   (anti-cheat is M5); all tunables live in `GridConfig`.
+- **Camera (seated/court) — desktop + mobile parity** (`NineSquareClient.client.luau`): a high court
+  overview you can **zoom** (mouse-wheel on desktop, **two-finger pinch** on touch — both drive the same
+  `zoom` 0..1 lerp between the far/near eye+look offsets) and **toggle to follow-the-player** (LeftShift on
+  desktop, an on-screen **"Camera" button** on touch — shown only when `TouchEnabled` and no keyboard). On
+  touch the zoomed-out framing **fits the whole 3×3 grid** regardless of aspect: `fitEyeForGrid` projects the
+  four grid corners (+`camFitMarginStuds`) each frame against the live `Camera.ViewportSize` aspect, widens
+  `FieldOfView` up to `camMobileMaxFOV`, then pulls the eye back along its own direction (capped by
+  `camFitMaxDistScale`) until the worst corner fits — so a phone opens on the full court (pulling past the
+  south wall is fine; the **wall-fade** handles it). Desktop mouse-wheel + LeftShift are unchanged; the
+  spectator overlook camera (M5.2) is separate. Tunables: `camBaseFOV`, `camPinchSensitivity`,
+  `camFitMarginStuds`, `camMobileMaxFOV`, `camFitMaxDistScale` in `GridConfig`.
 - **Faults**: a ball that returns to the square it was struck from is a *self-fault*; landing outside
   the 9 squares is *out-of-bounds*. Both flash the square + play the oof sound, then re-serve.
 - **Scene**: an enclosed gym (`MatchService.buildGym`, build-once) with painted floor grid lines so

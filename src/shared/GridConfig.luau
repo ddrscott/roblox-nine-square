@@ -102,6 +102,7 @@ GridConfig.maxFrameDisplacement = 16  -- studs cap on a seated human collider's 
 -- "out" and "in" offsets below (relative to the court origin); zooming IN also raises the look target
 -- so the pitch flattens and you see less floor. zoom 0 = full out (default), 1 = full in.
 GridConfig.camZoomStep = 0.12       -- zoom change per mouse-wheel notch
+GridConfig.camBaseFOV = 58          -- vertical FieldOfView for the court camera (desktop + touch base; touch may widen toward camMobileMaxFOV to fit the grid)
 GridConfig.camFarEye = Vector3.new(0, 42, 38)   -- camera offset when zoomed OUT (the default view)
 GridConfig.camFarLook = Vector3.new(0, 7, 0)    -- look-at offset when zoomed out (steeper, more floor)
 GridConfig.camNearEye = Vector3.new(0, 24, 24)  -- camera offset when zoomed IN (closer + lower)
@@ -119,6 +120,17 @@ GridConfig.camFollowNearLook = Vector3.new(0, 10, 0)
 GridConfig.camWallFadeTransparency = 1.0   -- target transparency for an obstructing wall/ceiling (fully transparent)
 GridConfig.camWallFadeSpeed = 10           -- lerp rate per second toward the target (higher = snappier, no pop)
 GridConfig.camWallFadeMargin = 6           -- studs of slack so a wall fades just BEFORE the eye reaches its plane
+
+-- MOBILE / TOUCH camera (pinch-zoom + on-screen mode toggle + fit-the-grid). Touch devices have no mouse
+-- wheel (zoom) and no LeftShift (follow toggle), and a narrow portrait FOV can't fit the wide 3x3 grid
+-- (half-width = 1.5*squareSize = 21 studs). On touch we: (1) drive the SAME zoom 0..1 lerp via a two-finger
+-- pinch, (2) show a thumb-reachable on-screen button that toggles court<->follow, and (3) when zoomed OUT,
+-- pull the court eye back (along its own direction) just far enough that the whole grid WIDTH fits the live
+-- horizontal FOV (derived from FieldOfView + Camera.ViewportSize aspect each frame). Desktop is untouched.
+GridConfig.camPinchSensitivity = 1.1       -- pinch->zoom gain: zoom delta = (pinchScale-1)*sensitivity (pinch OUT = zoom out)
+GridConfig.camFitMarginStuds = 4           -- studs of margin added to the grid half-extent when fitting it on screen
+GridConfig.camMobileMaxFOV = 70            -- on touch, FieldOfView may widen up to this (from 58) to help fit the grid before pulling back
+GridConfig.camFitMaxDistScale = 2.2        -- safety cap: never scale the zoomed-out eye distance beyond this * the design distance
 
 -- Spectator overflow (M5.2). Players beyond the 9 seats spectate from a court-overlook view and auto-join
 -- the next freed seat (a live FIFO queue, server-authoritative). The gallery 3D build is M5.3; for now a
