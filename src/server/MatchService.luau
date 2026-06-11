@@ -559,14 +559,16 @@ function MatchService.buildGallery(origin: Vector3, gym: Instance, W: number, L:
 		end
 	end
 
-	-- Spectator spawn IN the gallery: a SpawnLocation on the south floor band (clear of the opening) so M5.2
-	-- spectators appear up here and can walk + watch through the opening. Neutral + non-team so it doesn't
-	-- override the court spawn for seated players (the server teleports seated humans to their cell anyway;
-	-- spectators are parked here by parkSpectator using the matching GridConfig.specSpawnOffset).
+	-- Spectator spawn IN the gallery: a SpawnLocation on the NORTH floor band (bench-free -- the bench is on the
+	-- SOUTH band -- and clear of the opening) so M5.2 spectators appear up here and can walk + watch ACROSS the
+	-- opening. Kept consistent with GridConfig.specSpawnOffset (Z=-28) so the trailing Custom camera sits north
+	-- over open floor, not on the bench. Neutral + non-team so it doesn't override the court spawn for seated
+	-- players (the server teleports seated humans to their cell anyway; spectators are parked here by
+	-- parkSpectator using the matching GridConfig.specSpawnOffset).
 	local sspawn = Instance.new("SpawnLocation")
 	sspawn.Name = "GallerySpawn"; sspawn.Anchored = true; sspawn.Neutral = true; sspawn.Enabled = false
 	sspawn.Size = Vector3.new(8, 1, 6)
-	sspawn.Position = origin + Vector3.new(0, floorTop + 0.5, op / 2 + side / 2)
+	sspawn.Position = origin + Vector3.new(0, floorTop + 0.5, G.specSpawnOffset.Z)
 	sspawn.Transparency = 1; sspawn.CanCollide = false
 	sspawn.Parent = gallery
 

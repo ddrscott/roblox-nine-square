@@ -144,7 +144,7 @@ GridConfig.camFitMaxDistScale = 2.2        -- safety cap: never scale the zoomed
 -- spawn height and the camera eye height so they track the gallery build (offsets are from the origin).
 GridConfig.specOverlookEye = Vector3.new(0, 60, 30)    -- spectator camera offset from the court origin (gallery height, south of the opening, looking down)
 GridConfig.specOverlookLook = Vector3.new(0, 4, 0)     -- spectator camera look-at offset (the court floor below the opening)
-GridConfig.specSpawnOffset = Vector3.new(0, 57, 30)    -- where a spectator's HRP is parked: on the gallery floor, south edge of the opening (galleryFloorY + ~3 foot-to-root; |z| past galleryOpening/2)
+GridConfig.specSpawnOffset = Vector3.new(0, 57, -28)   -- where a spectator's HRP is parked: NORTH gallery band (bench-free; the bench is on the SOUTH band), near the opening edge, facing +Z across the opening toward the court. The trailing (Custom) camera then sits NORTH over open floor -- no bench, clear of the north wall (galleryFloorY + ~3 foot-to-root; |z|=28 is just past galleryOpening/2=23 and ~11 studs short of the wall at cs/2=39)
 
 -- M5.3 Upper-floor spectator gallery (3D-asset build). A second level ABOVE the existing gym ceiling with a
 -- rectangular OPENING punched through BOTH the gym ceiling AND the gallery floor over the court ("knock out
