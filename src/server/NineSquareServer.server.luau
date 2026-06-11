@@ -40,8 +40,11 @@ local function setupLighting()
 		end
 		return
 	end
-	L.GeographicLatitude = 23.5   -- cancels Roblox's ~23.5deg sun tilt: noon sun ends up near the zenith
-	L.ClockTime = G.outdoorClockTime   -- midday-ish (~14): bright, sun well up for a clear day
+	-- Zenith sun: GeographicLatitude 23.5 (cancels Roblox's baked ~23.5deg axial tilt) + ClockTime 12 (solar
+	-- noon) puts the sun directly overhead, so Lighting:GetSunDirection() reads (0, 1, 0) (verified in Studio)
+	-- and shadows fall straight down -- the overhead frame's shadow lands centered on the court, not skewed.
+	L.GeographicLatitude = G.sunLatitude   -- 23.5: cancels the axial tilt so noon sun sits at the zenith
+	L.ClockTime = G.outdoorClockTime       -- 12: solar noon, sun at its highest (straight overhead)
 	L.GlobalShadows = true
 	L.Brightness = 3
 	L.Ambient = Color3.fromRGB(150, 150, 160)        -- lift interior light (the gym ceiling blocks the sun)

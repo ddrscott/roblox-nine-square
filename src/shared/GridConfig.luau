@@ -234,8 +234,13 @@ GridConfig.outdoorScatterSeed = 91577  -- fixed RNG seed so the hill/tree scatte
 GridConfig.outdoorTreeTemplateName = "OutdoorTreeTemplate"  -- name of a creator-store tree (Model/MeshPart)
                                        --   under ReplicatedStorage; cloned per tree. If absent, a simple
                                        --   code tree (trunk + foliage sphere) is built instead.
--- Clear-day lighting + Sky (applied in NineSquareServer.setupLighting). ClockTime ~14 = early afternoon sun up.
-GridConfig.outdoorClockTime = 14       -- midday-ish: bright, sun well up
+-- Clear-day lighting + Sky (applied in NineSquareServer.setupLighting). ClockTime 12 (solar noon) +
+-- sunLatitude 23.5 puts the sun at the ZENITH: GetSunDirection() reads exactly (0, 1, 0) (verified in Studio),
+-- so shadows fall straight down and the overhead frame's shadow lands centered/symmetric over the court.
+-- (sunLatitude 23.5 cancels Roblox's baked ~23.5deg axial tilt; ClockTime 12 keeps the sun due-overhead --
+-- ClockTime 14 was the old skew: it slid the sun west/south off the zenith.)
+GridConfig.outdoorClockTime = 12       -- solar noon: sun at its highest, due overhead
+GridConfig.sunLatitude = 23.5          -- cancels Roblox's ~23.5deg axial tilt so the noon sun sits at the zenith
 GridConfig.skySunAngularSize = 21      -- visible sun disc size (degrees) -- a clear, present sun
 GridConfig.skyColorBottom = Color3.fromRGB(190, 220, 245) -- pale blue at the horizon -> Atmosphere.Color (clear-day tint)
 GridConfig.atmosphereDensity = 0.30    -- subtle horizon haze for depth (0 = none); kept light so the day stays clear
