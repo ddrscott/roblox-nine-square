@@ -1,5 +1,6 @@
 # Work Queue
 
+- [-] Dim the save-pipe highlight + reset it when the ball resets — see [dim-reset-save-highlight.md](dim-reset-save-highlight.md)
 - [x] Bots hit physically — move feet to aim off-center + jump into the ball (no artificial launch) — see [physical-bots-offcenter.md](physical-bots-offcenter.md)
 - [x] Increase jump velocity 30% (more force to the ball; human + bot) — see [jump-velocity-30pct.md](jump-velocity-30pct.md)
 - [x] FIX (severe): attribute faults by over-the-pipe crossings, not the landing XZ (wrong knock-outs on low deflects) — see [pipe-crossing-fault-attribution.md](pipe-crossing-fault-attribution.md)
