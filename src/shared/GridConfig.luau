@@ -102,6 +102,28 @@ GridConfig.staminaRegen = 28        -- energy regained per second while not spen
 GridConfig.dashCost = 30            -- energy spent per dash (must have >= this to dash)
 GridConfig.flipCost = 35            -- energy spent per double-jump flip (must have >= this to flip)
 
+-- MOBILE / TOUCH movement controls. Desktop binds dash to a double-tap of W/A/S/D and the flip to a
+-- double-tap of Space (KEYBOARD). Phones have no keyboard -- only the thumbstick + the touch jump button --
+-- so neither fired. Two touch additions (client input/UI ONLY; the dash/flip PHYSICS + stamina gating are
+-- unchanged):
+--   1. FLIP via a platform-agnostic JUMP double-tap. The flip trigger now listens to
+--      `UserInputService.JumpRequest` (fires for the touch jump button, Space, AND gamepad A) instead of a
+--      keyboard-Space-only InputBegan branch -- two JumpRequests within `doubleTapWindow` => the existing
+--      flip (first press = the normal jump, second while airborne = the flip). Works on touch/keyboard/gamepad
+--      with ONE code path; desktop double-tap-space feels identical.
+--   2. DASH BUTTON (touch only). A thumb-reachable on-screen "Dash" button (shown only when TouchEnabled and
+--      keyboard-less, like the mobile camera toggle) fires the existing dash burst DIRECTED by the current
+--      input: the thumbstick (`Humanoid.MoveDirection`) if moving, else the character's facing. Desktop keeps
+--      the double-tap-WASD dash and shows NO button.
+-- Placed bottom-RIGHT, STACKED ABOVE the camera-mode toggle (itself above the default touch jump button) so
+-- all three sit in the right-thumb column with NO overlap. Look matches the shared uiStyle button.
+GridConfig.dashButtonText = "Dash"                          -- on-screen dash button label (touch only)
+GridConfig.dashButtonSize = Vector2.new(116, 54)            -- pixel size (matches the camera-toggle button)
+GridConfig.dashButtonOffset = Vector2.new(-16, -186)        -- AnchorPoint (1,1) px offset from the screen's bottom-right.
+                                                            --   x=-16 right inset; y=-186 stacks it ABOVE the camera toggle
+                                                            --   (-120) which is above the default jump button (~bottom-right)
+                                                            --   -> jump / camera / dash never overlap.
+
 -- ============================================================================================
 -- M5.4 -- SERVER-AUTHORITY / ANTI-CHEAT clamp tunables. The strike reads each SEATED human's replicated
 -- HumanoidRootPart velocity + position as a moving hit-sphere collider (HitResolver), then BallController

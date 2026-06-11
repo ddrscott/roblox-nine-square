@@ -13,14 +13,23 @@
 -- the stamina pool server-side, so a tampered client that removes the gating below, spoofs its HRP
 -- velocity, or warps cannot manufacture a super-hit or warp the collider into the ball. Server-authoritative.
 --
---   * Dash        -- double-tap a movement key (W/A/S/D) within doubleTapWindow -> a brief horizontal
---                    velocity burst in that (camera-relative) direction. Horizontal only, so it can't
---                    fling you up or out of the gym. Gated + costed by stamina.
---   * Flip jump   -- double-tap Space while airborne -> ONE extra mid-air jump with a cosmetic forward
---                    flip; sets upward velocity (reach higher / spike) + a small forward boost. Resets
---                    on landing. Gated + costed by stamina.
+--   * Dash        -- DESKTOP: double-tap a movement key (W/A/S/D) within doubleTapWindow. TOUCH: tap the
+--                    on-screen "Dash" button. Either fires the SAME brief horizontal velocity burst. On
+--                    desktop the direction is camera-relative (the tapped key); on touch it's DIRECTED by the
+--                    current input -- the thumbstick (Humanoid.MoveDirection) if moving, else the character's
+--                    facing. Horizontal only, so it can't fling you up or out of the gym. Gated by stamina.
+--   * Flip jump   -- double-tap JUMP while airborne -> ONE extra mid-air jump with a cosmetic forward flip;
+--                    sets upward velocity (reach higher / spike) + a small forward boost. The JUMP trigger is
+--                    platform-agnostic via UserInputService.JumpRequest (fires for the touch jump button,
+--                    Space, AND gamepad A), so "tap jump twice" flips on touch/keyboard/gamepad with one code
+--                    path. Resets on landing. Gated + costed by stamina.
 --   * Stamina     -- shared 0..max pool; dash/flip cost a chunk, regenerates over time when idle.
 --                    Shown as a simple HUD bar.
+--
+--   MOBILE (this update): the flip trigger generalized from a keyboard-Space InputBegan branch to
+--   JumpRequest (so the touch jump button double-tap flips), plus a touch-only on-screen Dash button. The
+--   dash/flip PHYSICS + stamina logic are UNCHANGED -- only the input TRIGGERS were added/generalized.
+--   Desktop is identical (double-tap WASD dash + double-tap Space flip; no Dash button shown).
 --
 -- All numbers live in ReplicatedStorage.GridConfig.
 local RS = game:GetService("ReplicatedStorage")
@@ -153,6 +162,33 @@ local function dash(screenDir: Vector3)
 	dashHorizVel = Vector3.new(dir.X * G.dashSpeed, 0, dir.Z * G.dashSpeed)
 end
 
+-- WORLD-direction dash (mobile Dash button). There's no "double-tap a direction" on a thumbstick, so the
+-- touch Dash button fires the SAME burst DIRECTED by the current input: the thumbstick (Humanoid.MoveDirection,
+-- already a world-space unit vector) if the player is moving, else the character's facing (HRP LookVector).
+-- Reuses the exact dash burst + the dash-jump momentum maintainer (only the direction SOURCE differs from the
+-- camera-relative keyboard dash). Stamina-gated identically.
+local function dashWorld(worldDir: Vector3)
+	if not hrp then return end
+	if not canSpend(G.dashCost) then return end
+	local flat = Vector3.new(worldDir.X, 0, worldDir.Z)
+	flat = (flat.Magnitude > 1e-3) and flat.Unit or Vector3.new(0, 0, -1)
+	spend(G.dashCost)
+	local cur = hrp.AssemblyLinearVelocity
+	hrp.AssemblyLinearVelocity = Vector3.new(flat.X * G.dashSpeed, cur.Y, flat.Z * G.dashSpeed)
+	dashUntil = os.clock() + G.dashDuration
+	dashHorizVel = Vector3.new(flat.X * G.dashSpeed, 0, flat.Z * G.dashSpeed)
+end
+
+-- The direction a mobile Dash should go: the thumbstick if moving, else where the character faces.
+local function currentMoveOrFacing(): Vector3
+	if humanoid then
+		local md = humanoid.MoveDirection      -- world-space; zero when the thumbstick is centred
+		if md.Magnitude > 1e-3 then return md end
+	end
+	if hrp then return hrp.CFrame.LookVector end
+	return Vector3.new(0, 0, -1)
+end
+
 -- ---------------------------------------------------------------------------------------------------
 -- Flip jump -- double-tap Space while airborne -> one extra jump + cosmetic forward flip
 -- ---------------------------------------------------------------------------------------------------
@@ -214,20 +250,38 @@ end
 -- ---------------------------------------------------------------------------------------------------
 -- Input
 -- ---------------------------------------------------------------------------------------------------
+-- FLIP -- platform-agnostic JUMP double-tap. UserInputService.JumpRequest fires whenever the player
+-- requests a jump, regardless of source: the TOUCH jump button, the SPACEBAR, or the gamepad A button.
+-- The first request is the normal jump (handled by the default controller); a SECOND request within
+-- doubleTapWindow (while airborne) triggers the existing flip. This single path replaces the old
+-- keyboard-Space-only InputBegan branch, so "tap jump twice -> flip" now works on touch/keyboard/gamepad
+-- with identical desktop feel.
+-- NOTE: JumpRequest fires REPEATEDLY (every frame, ~16ms apart) while the jump button/key is HELD down, not
+-- just on the press edge. A genuine double-tap has a release-then-repress, so its two requests are separated
+-- by a human gap (>~80ms); the held-button auto-repeats are far tighter. We therefore only count a second
+-- request as a "tap" when the gap is ABOVE a small floor (JUMP_REPEAT_FLOOR) AND within doubleTapWindow --
+-- so holding jump never auto-triggers a flip, but tapping twice does. (flipJump's usedAirJump/isAirborne
+-- guards still cap it to ONE flip per airtime as a backstop.)
+local JUMP_REPEAT_FLOOR = 0.08   -- s: min gap between two JumpRequests to count as a deliberate double-tap (rejects held-button auto-repeat ~16ms)
+local lastJumpRequest = 0
+UIS.JumpRequest:Connect(function()
+	local now = os.clock()
+	local gap = now - lastJumpRequest
+	if lastJumpRequest > 0 and gap >= JUMP_REPEAT_FLOOR and gap <= G.doubleTapWindow then
+		flipJump()
+		lastJumpRequest = 0
+	elseif gap >= JUMP_REPEAT_FLOOR then
+		-- only (re)arm on a non-repeat request, so a stream of held auto-repeats doesn't keep resetting the
+		-- timestamp to "now" (which would make the eventual release+repress look instantaneous).
+		lastJumpRequest = now
+	end
+end)
+
+-- DASH (desktop) -- double-tap W/A/S/D for a camera-relative horizontal burst. Touch has no keyboard, so
+-- the on-screen Dash button below covers mobile.
 UIS.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
 	local key = input.KeyCode
-	if key == Enum.KeyCode.Space then
-		-- a normal first jump is handled by the default controller; double-tap = the extra flip
-		local now = os.clock()
-		if lastTap[key] and (now - lastTap[key]) <= G.doubleTapWindow then
-			flipJump()
-			lastTap[key] = nil
-		else
-			lastTap[key] = now
-		end
-		return
-	end
 	local screenDir = DIRS[key]
 	if screenDir then
 		local now = os.clock()
@@ -239,6 +293,43 @@ UIS.InputBegan:Connect(function(input, gpe)
 		end
 	end
 end)
+
+-- DASH BUTTON (touch only). Shown when the session is touch-enabled AND keyboard-less (a phone/tablet), the
+-- same gate the mobile camera toggle uses. Tapping it dashes in the current input direction (thumbstick if
+-- moving, else facing). Placed bottom-right, stacked ABOVE the camera-mode toggle (which is above the default
+-- touch jump button) so jump / camera / dash never overlap. Look matches the shared uiStyle button.
+local isTouch = UIS.TouchEnabled and not UIS.KeyboardEnabled
+if isTouch then
+	local dashGui = Instance.new("ScreenGui")
+	dashGui.Name = "MobileDashControls"
+	dashGui.ResetOnSpawn = false
+	dashGui.IgnoreGuiInset = true
+	dashGui.Parent = playerGui
+
+	local btn = Instance.new("TextButton")
+	btn.AnchorPoint = Vector2.new(1, 1)
+	btn.Position = UDim2.new(1, G.dashButtonOffset.X, 1, G.dashButtonOffset.Y)
+	btn.Size = UDim2.fromOffset(G.dashButtonSize.X, G.dashButtonSize.Y)
+	btn.BackgroundColor3 = G.uiStyle.buttonNeutralFill
+	btn.BackgroundTransparency = G.uiStyle.buttonBgTransparency
+	btn.BorderSizePixel = 0
+	btn.AutoButtonColor = true
+	btn.Font = G.uiStyle.buttonFont
+	btn.TextSize = 18
+	btn.TextColor3 = G.uiStyle.buttonText
+	btn.Text = G.dashButtonText
+	btn.Parent = dashGui
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, G.uiStyle.buttonCorner); c.Parent = btn
+	local s = Instance.new("UIStroke")
+	s.Thickness = G.uiStyle.buttonStrokeThickness
+	s.Color = G.uiStyle.accentInfo
+	s.Transparency = G.uiStyle.buttonStrokeTransparency
+	s.Parent = btn
+
+	btn.Activated:Connect(function()
+		dashWorld(currentMoveOrFacing())
+	end)
+end
 
 -- ---------------------------------------------------------------------------------------------------
 -- Per-frame: hold the dash velocity for its short window, regenerate stamina, update HUD
