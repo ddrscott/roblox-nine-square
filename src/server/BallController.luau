@@ -82,6 +82,7 @@ function BallController.new()
 	local self = setmetatable({}, BallController)
 	local ball = Instance.new("Part")
 	ball.Name = "Ball"; ball.Shape = Enum.PartType.Ball; ball.Anchored = true; ball.CanCollide = false
+	ball.CastShadow = true              -- real overhead-sun shadow reads ball position (replaces the old fake disc)
 	ball.Size = Vector3.new(G.ballRadius*2, G.ballRadius*2, G.ballRadius*2)
 	-- matte coral: a near-white colour trips the scene Bloom and glows like a light source
 	ball.Color = Color3.fromRGB(235, 92, 74); ball.Material = Enum.Material.Plastic

@@ -1,6 +1,6 @@
 # Work Queue
 
-- [-] Remove the artificial ball + player shadows (real sun shadows now show position) — keep the strike ring + landing highlight; ensure the ball CastShadow=true — see [remove-fake-shadows-use-real-sun.md](remove-fake-shadows-use-real-sun.md)
+- [x] Remove the artificial ball + player shadows (real sun shadows now show position) — keep the strike ring + landing highlight; ensure the ball CastShadow=true — see [remove-fake-shadows-use-real-sun.md](remove-fake-shadows-use-real-sun.md)
 - [ ] Slow the ball a little (lower gravity ~0.8x, keep one consistent gravity for serve+bots) so it's easier to contact — see [slow-ball-gravity-easier-contact.md](slow-ball-gravity-easier-contact.md)
 - [x] HUD refactor (standard + Studio-editable): StarterGui-authored, layout-driven, responsive, component-based — subsumes the corner-polish — see [hud-refactor-standard-studio-editable.md](hud-refactor-standard-studio-editable.md)
 - [~] Polish top-right cluster: readable STAMINA / less-bold Join / Spectating-as-label — SUPERSEDED by the HUD refactor (folded in) — see [fix-right-cluster-stamina-join-spectating.md](fix-right-cluster-stamina-join-spectating.md)

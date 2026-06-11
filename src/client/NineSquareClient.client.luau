@@ -1,7 +1,8 @@
 --!strict
 -- StarterPlayer.StarterPlayerScripts.NineSquareClient
--- Soft height-aware ball shadow, strike-height ring, predicted-landing highlight, and a clear fixed
--- high court camera. Serving is physical (no button) -- get under the ball and jump.
+-- Strike-height ring, predicted-landing highlight, and a clear fixed high court camera. Position shadows are
+-- the real overhead sun's job now (the old fake ball/player discs were removed). Serving is physical (no
+-- button) -- get under the ball and jump.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -19,36 +20,27 @@ local function courtOrigin(): Vector3
 	return G.origin
 end
 
--- Soft shadow: stacked translucent discs that grow + fade with ball height (fakes a soft penumbra).
-local shadowFolder = Instance.new("Folder"); shadowFolder.Name = "BallShadow"; shadowFolder.Parent = workspace
-local discSpecs = { { r = 1.3, a = 0.42 }, { r = 2.1, a = 0.60 }, { r = 3.0, a = 0.80 } }
-local discs = {}
-for i, spec in ipairs(discSpecs) do
-	local d = Instance.new("Part")
-	d.Name = "ShadowDisc" .. i; d.Anchored = true; d.CanCollide = false; d.CastShadow = false
-	d.Shape = Enum.PartType.Cylinder; d.Orientation = Vector3.new(0, 0, 90)
-	d.Color = Color3.new(0, 0, 0); d.Material = Enum.Material.SmoothPlastic; d.Transparency = 1
-	d.Parent = shadowFolder
-	discs[i] = { part = d, spec = spec }
-end
+-- Position shadows (the fake ball discs + the player disc) were REMOVED -- the sun is overhead now and casts
+-- real straight-down shadows under the ball + players, so the artificial ones are redundant. We keep the two
+-- GAMEPLAY cues below (the strike-height ring + the predicted-landing highlight); those are NOT position
+-- shadows. The strike ring is re-homed onto a minimal invisible anchor that tracks the ball's floor XZ.
 
--- Strike-height ring on the core disc: green/small when the ball is at strike height.
-local ringGui = Instance.new("BillboardGui"); ringGui.Size = UDim2.fromScale(6, 6); ringGui.Parent = discs[1].part
+-- Strike-ring anchor: a single tiny invisible, non-colliding, non-querying part that sits on the floor under
+-- the ball. It exists ONLY to host the strike-ring BillboardGui (replacing the old core shadow disc); it
+-- never collides, never casts a shadow, and is never seen.
+local ringAnchor = Instance.new("Part")
+ringAnchor.Name = "StrikeRingAnchor"; ringAnchor.Anchored = true; ringAnchor.CanCollide = false
+ringAnchor.CanQuery = false; ringAnchor.CastShadow = false; ringAnchor.Transparency = 1
+ringAnchor.Size = Vector3.new(0.1, 0.1, 0.1); ringAnchor.Parent = workspace
+
+-- Strike-height ring (hit-timing cue): green/small when the ball is at strike height, red/large otherwise.
+local ringGui = Instance.new("BillboardGui"); ringGui.Size = UDim2.fromScale(6, 6); ringGui.Parent = ringAnchor
 local ring = Instance.new("ImageLabel")
 ring.BackgroundTransparency = 1; ring.Size = UDim2.fromScale(1, 1); ring.ImageTransparency = 1
 ring.Image = "rbxassetid://5028857084"; ring.ImageColor3 = Color3.fromRGB(255, 80, 80); ring.Parent = ringGui
 
 local highlight = Instance.new("SelectionBox")
 highlight.LineThickness = 0.08; highlight.Color3 = Color3.fromRGB(255, 210, 80); highlight.Parent = workspace
-
--- Player ground shadow: a soft dark disc under the local player so you can read your position on the
--- floor relative to the ball's shadow. It grows + fades with jump height (also a jump-height cue).
-local playerShadow = Instance.new("Part")
-playerShadow.Name = "PlayerShadow"; playerShadow.Anchored = true; playerShadow.CanCollide = false
-playerShadow.CanQuery = false; playerShadow.CastShadow = false
-playerShadow.Shape = Enum.PartType.Cylinder; playerShadow.Orientation = Vector3.new(0, 0, 90)
-playerShadow.Color = Color3.new(0, 0, 0); playerShadow.Material = Enum.Material.SmoothPlastic; playerShadow.Transparency = 1
-playerShadow.Parent = shadowFolder
 
 local state: any = nil
 BallSync.OnClientEvent:Connect(function(data) state = data end)
@@ -363,34 +355,13 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	updateCamera()
 	updateWallFade(dt)
-	-- player ground shadow: tracks the local player's XZ; grows + fades with jump height
-	local pchar = LocalPlayer.Character
-	local phrp = pchar and pchar:FindFirstChild("HumanoidRootPart")
-	if phrp then
-		local po = courtOrigin()
-		local ph = math.max(0, (phrp.Position.Y - 2.5) - po.Y)   -- feet height above the floor
-		local pgrow = 1 + math.clamp(ph / 16, 0, 1.5) * 0.7
-		playerShadow.Size = Vector3.new(0.1, 5 * pgrow, 5 * pgrow)
-		playerShadow.Position = Vector3.new(phrp.Position.X, po.Y + 0.04, phrp.Position.Z)
-		playerShadow.Transparency = math.clamp(0.55 + ph / 30, 0, 0.92)
-	else
-		playerShadow.Transparency = 1
-	end
 	local ns = workspace:FindFirstChild("NineSquare")
 	local ball = ns and ns:FindFirstChild("Ball")
+	-- Keep the strike-ring anchor on the floor directly under the ball (its XZ), so the ring renders where the
+	-- old core shadow disc used to be. (Position shadows are now the real sun's job.)
 	if ball then
 		local o = courtOrigin()
-		local h = math.max(0, ball.Position.Y - o.Y)             -- ball height above the floor
-		local grow = 1 + math.clamp(h / G.frameHeight, 0, 1.5) * 0.8   -- bigger when higher
-		local fade = math.clamp(h / (G.frameHeight * 1.4), 0, 1) * 0.45 -- fainter when higher
-		for i, dd in ipairs(discs) do
-			local diameter = G.ballRadius * 2 * dd.spec.r * grow
-			dd.part.Size = Vector3.new(0.12, diameter, diameter)
-			dd.part.Position = Vector3.new(ball.Position.X, o.Y + 0.05 + i * 0.008, ball.Position.Z)
-			dd.part.Transparency = math.clamp(dd.spec.a + fade, 0, 1)
-		end
-	else
-		for _, dd in ipairs(discs) do dd.part.Transparency = 1 end
+		ringAnchor.Position = Vector3.new(ball.Position.X, o.Y + 0.05, ball.Position.Z)
 	end
 	-- strike ring (height cue) + predicted-landing highlight while a ball is live
 	local active = state ~= nil and ball ~= nil and state.kind ~= "idle"
