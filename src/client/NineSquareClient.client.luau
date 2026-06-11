@@ -53,6 +53,48 @@ playerShadow.Parent = shadowFolder
 local state: any = nil
 BallSync.OnClientEvent:Connect(function(data) state = data end)
 
+-- ── Spectator state (M5.2) ───────────────────────────────────────────────────────────────────────
+-- When this client is an overflow spectator (humans > 9 seats) the server replicates a `Spectating` flag
+-- and a 1-based `QueuePos` ("#N in line"). We show a court-overlook camera + a "Spectating -- #N in line"
+-- HUD, and flip cleanly back to the normal seated camera/HUD the instant the server auto-seats us
+-- (Spectating -> false). Server-authoritative -- the client only reflects these attributes.
+local function isSpectating(): boolean
+	return LocalPlayer:GetAttribute("Spectating") == true
+end
+
+local specGui = Instance.new("ScreenGui")
+specGui.Name = "SpectatorHud"; specGui.ResetOnSpawn = false; specGui.Enabled = false
+specGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local specPill = Instance.new("Frame")
+specPill.AnchorPoint = Vector2.new(0.5, 1)
+specPill.Position = UDim2.new(0.5, 0, 1, -28); specPill.Size = UDim2.fromOffset(280, 44)
+specPill.BackgroundColor3 = Color3.fromRGB(20, 22, 28); specPill.BackgroundTransparency = 0.2
+specPill.BorderSizePixel = 0; specPill.Parent = specGui
+local specCorner = Instance.new("UICorner"); specCorner.CornerRadius = UDim.new(0, 10); specCorner.Parent = specPill
+local specStroke = Instance.new("UIStroke"); specStroke.Thickness = 1.5
+specStroke.Color = Color3.fromRGB(255, 210, 80); specStroke.Transparency = 0.35; specStroke.Parent = specPill
+
+local specLabel = Instance.new("TextLabel")
+specLabel.BackgroundTransparency = 1; specLabel.Size = UDim2.fromScale(1, 1)
+specLabel.Font = Enum.Font.GothamBold; specLabel.TextSize = 18
+specLabel.TextColor3 = Color3.fromRGB(235, 240, 245); specLabel.Text = "Spectating"; specLabel.Parent = specPill
+
+local function renderSpectatorHud()
+	local spectating = isSpectating()
+	specGui.Enabled = spectating
+	if spectating then
+		local pos = LocalPlayer:GetAttribute("QueuePos")
+		specLabel.Text = (type(pos) == "number" and pos > 0)
+			and ("Spectating  --  #" .. tostring(pos) .. " in line")
+			or "Spectating"
+	end
+end
+
+renderSpectatorHud()
+LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderSpectatorHud)
+LocalPlayer:GetAttributeChangedSignal("QueuePos"):Connect(renderSpectatorHud)
+
 -- Mouse-wheel zoom: 0 = zoomed out (default high view), 1 = zoomed in. Scroll up to zoom in.
 local zoom = 0
 UserInputService.InputChanged:Connect(function(input)
@@ -79,6 +121,16 @@ local currentFocus: Vector3? = nil
 local function updateCamera()
 	cam.CameraType = Enum.CameraType.Scriptable
 	cam.FieldOfView = 58
+	-- SPECTATOR (M5.2): a fixed high court-overlook looking straight down at the whole 9-square, so an
+	-- overflow player watches the match while they wait. (The mezzanine gallery view is M5.3; this is the
+	-- temporary overlook.) Eases via currentFocus so flipping in/out of spectator mode glides smoothly.
+	if isSpectating() then
+		local o = courtOrigin()
+		currentFocus = currentFocus and currentFocus:Lerp(o, G.camFollowSmooth) or o
+		local focus = currentFocus :: Vector3
+		cam.CFrame = CFrame.lookAt(focus + G.specOverlookEye, focus + G.specOverlookLook)
+		return
+	end
 	local target, farEye, farLook, nearEye, nearLook
 	local char = LocalPlayer.Character
 	local hrp = followMode and char and char:FindFirstChild("HumanoidRootPart")

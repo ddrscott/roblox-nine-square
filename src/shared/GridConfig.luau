@@ -87,6 +87,16 @@ GridConfig.camWallFadeTransparency = 1.0   -- target transparency for an obstruc
 GridConfig.camWallFadeSpeed = 10           -- lerp rate per second toward the target (higher = snappier, no pop)
 GridConfig.camWallFadeMargin = 6           -- studs of slack so a wall fades just BEFORE the eye reaches its plane
 
+-- Spectator overflow (M5.2). Players beyond the 9 seats spectate from a court-overlook view and auto-join
+-- the next freed seat (a live FIFO queue, server-authoritative). The gallery 3D build is M5.3; for now a
+-- spectator just spawns clear of the court at a temporary overlook and watches from a high look-down camera.
+-- specOverlookEye/Look are offsets (from the court origin) for the spectator camera -- higher + further back
+-- than the player court cam so the whole 9-square reads. specSpawnOffset is where a spectator's character is
+-- parked (clear of the court collision sets) until they're auto-seated; the real gallery spawn arrives in M5.3.
+GridConfig.specOverlookEye = Vector3.new(0, 58, 52)    -- spectator camera offset from the court origin (high, behind)
+GridConfig.specOverlookLook = Vector3.new(0, 4, 0)     -- spectator camera look-at offset (slightly above the floor)
+GridConfig.specSpawnOffset = Vector3.new(0, 34, 46)    -- where a spectator's HRP is parked (clear of the court / temp overlook)
+
 -- Court center on the floor; set at runtime by the server.
 GridConfig.origin = Vector3.new(0, 0, 0)
 

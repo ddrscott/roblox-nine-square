@@ -35,7 +35,16 @@ rankLabel.Text = "Rank ?"; rankLabel.Parent = pill
 local KING_COLOR = Color3.fromRGB(255, 210, 80)
 local NORMAL_COLOR = Color3.fromRGB(120, 220, 255)
 
+-- While this client is an overflow SPECTATOR (M5.2), the rank pill is meaningless (no seat) -- hide it; the
+-- SpectatorHud ("Spectating -- #N in line") owns the screen instead. The pill returns the instant the server
+-- auto-seats us (Spectating -> false) and replicates a real Rank.
+local function isSpectating(): boolean
+	return LocalPlayer:GetAttribute("Spectating") == true
+end
+
 local function render(rank: number?)
+	if isSpectating() then pill.Visible = false; return end
+	pill.Visible = true
 	if rank == nil then return end
 	if rank <= 1 then
 		rankLabel.Text = "KING"
@@ -49,10 +58,13 @@ local function render(rank: number?)
 end
 
 -- The "Rank" attribute is server-owned; observe it and re-render on every change.
-render(LocalPlayer:GetAttribute("Rank") :: number?)
-LocalPlayer:GetAttributeChangedSignal("Rank"):Connect(function()
+local function renderFromAttr()
 	render(LocalPlayer:GetAttribute("Rank") :: number?)
-end)
+end
+renderFromAttr()
+LocalPlayer:GetAttributeChangedSignal("Rank"):Connect(renderFromAttr)
+-- Re-render on spectator transitions too (hide while spectating, restore the pill on auto-seat).
+LocalPlayer:GetAttributeChangedSignal("Spectating"):Connect(renderFromAttr)
 
 -- ── (B) King-square indicator ────────────────────────────────────────────────────────────────────
 -- A glowing gold box around cell C's floor marker so the throne is always visible. The court is built

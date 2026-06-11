@@ -107,9 +107,106 @@ local rotation = RotationService.new(placeOnePlayer)
 rotation._setHumanRank = function(player: Player, rank: number)
 	player:SetAttribute("Rank", rank)
 end
--- M5.1 leave-backfill hook: M5.2's spectator queue will set rotation._backfillHook to seat the longest-
--- waiting spectator into a freed seat. Until then it stays nil and unseatHuman falls through to a fresh bot
--- (so a leaving human never leaves a rank empty). Left intentionally unset here.
+-- ============================================================================================
+-- M5.2 -- SPECTATOR OVERFLOW QUEUE + AUTO-JOIN. Spectators exist ONLY when humans > 9 seats: a joiner
+-- beyond the 9 seats is parked in SPECTATOR state (no seat, no ball collider, spawned clear of the court)
+-- and pushed onto a server FIFO queue. Whenever a seat could be filled -- a human leaves (the M5.1
+-- _backfillHook fires), OR a spectator is waiting while a BOT still holds a seat (the proactive sweep) --
+-- the LONGEST-WAITING spectator is auto-seated at the entry rank (displacing a bot). Net: bots only ever
+-- hold seats no human (seated or queued) wants; a freed seat goes to a spectator before a bot. FIFO order
+-- is stable; a spectator disconnecting leaves the queue cleanly. Spectators NEVER affect the ball (they're
+-- excluded from the colliders fed to bc:step) and never score. Server-authoritative throughout.
+-- ============================================================================================
+
+-- The FIFO spectator queue: index 1 is the LONGEST-waiting (next to be seated). Players only; bots never
+-- queue. A `Spectating` flag + `QueuePos` (1-based line position) are replicated to each spectator's client
+-- as attributes (the client shows the overlook camera + a "Spectating -- #N in line" HUD off these).
+local spectatorQueue: { Player } = {}
+
+local function isSpectator(plr: Player): boolean
+	return table.find(spectatorQueue, plr) ~= nil
+end
+
+-- Re-replicate every spectator's 1-based queue position (and the seated/clear flag) after any queue change,
+-- so each waiting client's HUD shows the right "#N in line". A seated/removed player has Spectating=false.
+local function syncSpectatorAttrs()
+	for i, plr in ipairs(spectatorQueue) do
+		plr:SetAttribute("Spectating", true)
+		plr:SetAttribute("QueuePos", i)
+	end
+end
+
+-- Park a spectator's character clear of the court (a temporary overlook; the real gallery spawn is M5.3) so
+-- it never sits in a square / feeds the ball. Idempotent + safe to call on (re)spawn.
+local function parkSpectator(plr: Player)
+	local char = plr.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp and hrp:IsA("BasePart") then
+		hrp.CFrame = CFrame.new(G.origin + G.specSpawnOffset)
+	end
+end
+
+-- Enqueue a player as a spectator (overflow: all 9 seats are humans). FIFO -- appended at the tail.
+local function enqueueSpectator(plr: Player)
+	if isSpectator(plr) then return end
+	table.insert(spectatorQueue, plr)
+	syncSpectatorAttrs()
+	parkSpectator(plr)
+	print(("[NineSquare] SPECTATOR: %s queued at #%d (overflow -- all 9 seats are humans)")
+		:format(plr.Name, #spectatorQueue))
+end
+
+-- Remove a player from the queue (they got seated, or disconnected). Clears their spectator flags and
+-- re-indexes everyone behind them so the FIFO line stays contiguous + stable. Returns true if removed.
+local function dequeueSpectatorPlayer(plr: Player): boolean
+	local i = table.find(spectatorQueue, plr)
+	if not i then return false end
+	table.remove(spectatorQueue, i)
+	plr:SetAttribute("Spectating", false)
+	plr:SetAttribute("QueuePos", 0)
+	syncSpectatorAttrs()   -- re-index the remaining line (#N shifts up)
+	return true
+end
+
+-- The M5.1 leave-backfill hook: when a seated human leaves, seat the LONGEST-waiting spectator into the
+-- freed rank (returns a human Occupant for RotationService to install) instead of spawning a bot. The
+-- spectator is popped off the FIFO head, flipped out of spectator state, and bound to its new seat (its
+-- character is teleported to the cell by _placeOccupant). Returns nil when the queue is empty -> a bot
+-- backfills (M5.1 default). The returned occupant's rank/cell are stamped by unseatHuman.
+rotation._backfillHook = function(rank: number, cell: string): any
+	local nextPlr = spectatorQueue[1]
+	if not nextPlr then return nil end                 -- no spectator waiting -> fall through to a bot
+	dequeueSpectatorPlayer(nextPlr)                     -- pop the head + re-index the line
+	nextPlr:SetAttribute("Rank", rank)                 -- replicate its new seat to the (now seated) client
+	print(("[NineSquare] AUTO-SEAT: %s (longest-waiting spectator) -> freed rank %d (%s)")
+		:format(nextPlr.Name, rank, cell))
+	return {
+		kind = "human", player = nextPlr, id = "human_" .. tostring(nextPlr.UserId),
+		isDummy = false, rank = rank, cell = cell,
+	}
+end
+
+-- Proactive seating sweep: seat queued spectators into ANY bot-held seat (humans always outrank bots).
+-- The leave-hook covers the "a human left" case; this covers the "a spectator is waiting while a bot still
+-- holds a seat" case (defensive -- with the join/leave logic that state shouldn't normally arise, but a
+-- disconnect race or a future code path could leave a displaceable bot under a waiting spectator). Seats the
+-- LONGEST-waiting spectator first (FIFO) at the entry rank via the SAME seatHuman path a fresh joiner uses,
+-- so bots only ever hold seats no human wants. Re-places the board if anyone was seated.
+local function trySeatSpectatorsFromBots()
+	local seatedAny = false
+	while #spectatorQueue > 0 do
+		-- Any bot-held seat left? seatHuman picks the entry rank (highest bot seat) + displaces that bot.
+		local plr = spectatorQueue[1]
+		local rank = rotation:seatHuman(plr)
+		if not rank then break end                     -- all 9 seats human -> stop (the rest stay queued)
+		dequeueSpectatorPlayer(plr)
+		print(("[NineSquare] AUTO-SEAT (sweep): %s (longest-waiting spectator) -> bot-held rank %d")
+			:format(plr.Name, rank))
+		seatedAny = true
+	end
+	return seatedAny
+end
+
 rotation:placeAll()
 print(("[NineSquare] rotation occupancy ready (full 9-square: all bots until humans join; King = %s)")
 	:format(tostring(rotation:kingOccupant().id)))
@@ -306,7 +403,15 @@ RunService.Heartbeat:Connect(function(dt)
 	-- and hand the WHOLE list to bc:step, so the same swept collision resolves both. A bot hit thus flies
 	-- via the real physical strike (no bc:launch); a missed/under-jumped swing makes no contact -> the ball
 	-- falls -> onLand fault. The human's volley is unchanged.
-	local colliders = HitResolver.playerColliders()
+	-- SPECTATORS NEVER AFFECT THE BALL: drop any collider for a player who isn't seated (M5.2). A seated
+	-- human has a rank in the occupancy model; a queued spectator does not -> its hit-sphere is excluded
+	-- here so it can't strike, deflect, or score. (Bots feed their own colliders below; they're always seated.)
+	local colliders = {}
+	for _, c in ipairs(HitResolver.playerColliders()) do
+		if rotation:rankOfPlayer(c.player) then
+			table.insert(colliders, c)
+		end
+	end
 	for _, c in ipairs(bots:update(dt)) do
 		table.insert(colliders, c)
 	end
@@ -336,12 +441,15 @@ serveNextRally()
 -- own square. Spectator overflow (humans > 9) is M5.2 -- here seatHuman just returns nil and we log it.
 -- ============================================================================================
 
--- Spawn / respawn a SEATED player into their current ranked square. Late-loading clients also get a ball
--- resync. A player with no seat (overflow / spectator, M5.2) is left at the default spawn for now.
+-- Spawn / respawn a player into the right place: a SEATED player goes to its ranked square; an overflow
+-- SPECTATOR (M5.2) is parked clear of the court at the temporary overlook (the real gallery spawn is M5.3).
+-- Late-loading clients also get a ball resync.
 local function placeAtCourtAndSync(plr: Player, char: Model)
 	local cell = rotation:cellOfPlayer(plr)
 	if cell then
 		placeAtCell(char, cell)
+	elseif isSpectator(plr) then
+		parkSpectator(plr)
 	end
 	task.delay(1, function() bc:resync() end)
 end
@@ -351,11 +459,16 @@ local function onJoin(plr: Player)
 	-- pushes their "Rank" attribute. nil = overflow (all 9 seats human) -> M5.2 spectator queue.
 	local rank = rotation:seatHuman(plr)
 	if rank then
+		-- Seated: ensure they're flagged OUT of spectator state (covers any prior overflow attribute).
+		plr:SetAttribute("Spectating", false)
+		plr:SetAttribute("QueuePos", 0)
 		print(("[NineSquare] %s joined -> seated at rank %d (%s)"):format(plr.Name, rank, tostring(rotation:cellOfPlayer(plr))))
 	else
-		-- Overflow: no seat. Seed a benign attribute so the HUD isn't blank; M5.2 owns the spectator path.
+		-- Overflow (all 9 seats are humans): no seat -> SPECTATOR. Push onto the FIFO queue (sets the
+		-- Spectating/QueuePos attributes + parks them clear of the court) and auto-join the next freed seat.
 		plr:SetAttribute("Rank", 0)
-		print(("[NineSquare] %s joined -> NO SEAT (overflow; spectator queue is M5.2)"):format(plr.Name))
+		enqueueSpectator(plr)
+		print(("[NineSquare] %s joined -> SPECTATOR #%d (overflow)"):format(plr.Name, #spectatorQueue))
 	end
 	-- Bind this player's character to its seat on (re)spawn.
 	if plr.Character then placeAtCourtAndSync(plr, plr.Character) end
@@ -363,11 +476,22 @@ local function onJoin(plr: Player)
 end
 
 local function onLeave(plr: Player)
-	-- Backfill the freed seat (spectator hook -> bot) so a rank is never empty + the game never wedges.
+	-- A SPECTATOR leaving just exits the FIFO queue cleanly (no seat to free, the line re-indexes) -- it
+	-- never held a seat so there's nothing to backfill.
+	if isSpectator(plr) then
+		dequeueSpectatorPlayer(plr)
+		print(("[NineSquare] %s left the spectator queue (line re-indexed; %d still waiting)")
+			:format(plr.Name, #spectatorQueue))
+		return
+	end
+	-- A SEATED human leaving frees its rank: the _backfillHook seats the longest-waiting spectator if one
+	-- is queued, else a fresh bot -- so a rank is never empty + the game never wedges.
 	local repl = rotation:unseatHuman(plr)
 	if repl then
 		print(("[NineSquare] %s left -> seat backfilled with %s %s"):format(plr.Name, repl.kind, repl.id))
 	end
+	-- Defensive: if (somehow) a bot still holds a seat while spectators wait, sweep them into it now.
+	trySeatSpectatorsFromBots()
 end
 
 Players.PlayerAdded:Connect(onJoin)
